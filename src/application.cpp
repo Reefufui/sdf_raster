@@ -4,10 +4,19 @@
 
 #include "application.hpp"
 
-Application::Application(int a_width, int a_height, const std::string& a_title)
+Application::Application(int a_width, int a_height)
     : width(a_width)
     , height(a_height)
-    , title(a_title)
+    , camera({0.0f, 0.0f, 100.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 60.0f, (float)a_width / a_height, 0.1f, 100.0f)
+    , triangle_mesh()
+    , user_data({this}) {
+    init_renderer();
+}
+
+Application::Application(int a_width, int a_height, const std::string& a_window_title)
+    : width(a_width)
+    , height(a_height)
+    , window_title(a_window_title)
     , camera({0.0f, 0.0f, 3.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 45.0f, (float)a_width / a_height, 0.1f, 100.0f)
     , triangle_mesh()
     , user_data({this}) {
@@ -20,6 +29,10 @@ Application::~Application() {
     cleanup();
 }
 
+void Application::run(const std::string& a_filename) {
+    this->renderer->render(this->camera, this->triangle_mesh, a_filename);
+}
+
 void Application::run() {
     main_loop();
 }
@@ -29,7 +42,7 @@ void Application::init_window() {
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    this->window = glfwCreateWindow(this->width, this->height, this->title.c_str(), nullptr, nullptr);
+    this->window = glfwCreateWindow(this->width, this->height, this->window_title.c_str(), nullptr, nullptr);
     if (!this->window) {
         glfwTerminate();
         throw std::runtime_error("Failed to create GLFW window.");
@@ -48,7 +61,7 @@ void Application::init_vulkan() {
 }
 
 void Application::init_renderer() {
-    this->renderer = std::make_unique<CpuRenderer>(this->vulkan_context); // TODO: GpuRenderer
+    this->renderer = std::make_unique<CpuRenderer>(this->vulkan_context);
     this->renderer->init(this->width, this->height, this->window);
 }
 

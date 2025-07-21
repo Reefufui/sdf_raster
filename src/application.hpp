@@ -14,10 +14,12 @@
 
 class Application {
 public:
+    Application(int a_width, int a_height);
     Application(int width, int height, const std::string& title);
     ~Application();
 
     void run();
+    void run(const std::string& a_filename);
 
 private:
     void cleanup();
@@ -34,7 +36,7 @@ private:
     GLFWwindow* window;
     int width;
     int height;
-    std::string title;
+    std::string window_title;
 
     struct UserData {
         Application* app;

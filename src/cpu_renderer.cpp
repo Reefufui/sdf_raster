@@ -3,6 +3,8 @@
 #include <fstream>
 #include <vector>
 
+#include "Image2d.h"
+
 #include "camera.hpp"
 #include "cpu_renderer.hpp"
 #include "mesh.hpp"
@@ -35,6 +37,15 @@ CpuRenderer::~CpuRenderer() {
 void CpuRenderer::init(int a_width, int a_height, GLFWwindow* /*window*/) {
     this->width = a_width;
     this->height = a_height;
+    this->sdf_grid_min = LiteMath::float3(-1.5f, -1.5f, -1.5f);
+    this->sdf_grid_max = LiteMath::float3(1.5f, 1.5f, 1.5f);
+    this->sdf_grid_res_x = 64;
+    this->sdf_grid_res_y = 64;
+    this->sdf_grid_res_z = 64;
+    this->sphere1_center = LiteMath::float3(0.0f, 0.0f, 0.0f);
+    this->sphere1_radius = 0.8f;
+    this->sphere2_center = LiteMath::float3(0.8f, 0.0f, 0.0f);
+    this->sphere2_radius = 0.4f;
     create_cpu_render_target(this->width, this->height);
     create_vulkan_display_resources();
 }
@@ -49,9 +60,11 @@ void CpuRenderer::resize(int a_width, int a_height) {
         return;
     }
 
-    vkDeviceWaitIdle(this->vulkan_context->get_device());
+    if (this->vulkan_context) {
+        vkDeviceWaitIdle(this->vulkan_context->get_device());
+        destroy_vulkan_display_resources();
+    }
 
-    destroy_vulkan_display_resources();
     destroy_cpu_render_target();
 
     this->width = a_width;
@@ -69,6 +82,10 @@ void CpuRenderer::destroy_cpu_render_target() {
 }
 
 void CpuRenderer::create_vulkan_display_resources() {
+    if (!this->vulkan_context) {
+        return;
+    }
+
     this->vulkan_context->create_image_and_view(
         this->width, this->height,
         VK_FORMAT_R8G8B8A8_UNORM,
@@ -269,6 +286,10 @@ void CpuRenderer::create_vulkan_display_resources() {
 }
 
 void CpuRenderer::destroy_vulkan_display_resources() {
+    if (!this->vulkan_context) {
+        return;
+    }
+
     VkDevice device = this->vulkan_context->get_device();
     if (device == VK_NULL_HANDLE) return;
 
@@ -295,11 +316,10 @@ void CpuRenderer::destroy_vulkan_display_resources() {
     staging_buffer_memory_ = VK_NULL_HANDLE;
 }
 
-void CpuRenderer::render(const Camera& camera, const Mesh& mesh) {
-    clear_framebuffer(0xFF000000); // Черный фон (ARGB)
+void CpuRenderer::perform_cpu_rendering_pass(const Camera& camera, const Mesh& mesh) {
+    clear_framebuffer(0xFF000000); // Очищаем буфер кадра, например, черным цветом
 
-    // Получаем MVP матрицу
-    LiteMath::float4x4 model_matrix = LiteMath::translate4x4(LiteMath::float3(0.0f, 0.0f, -2.0f)); // Сдвигаем треугольник, чтобы он был виден
+    LiteMath::float4x4 model_matrix = LiteMath::translate4x4(LiteMath::float3(0.0f, 0.0f, 0.0f));
     LiteMath::float4x4 view_matrix = camera.get_view_matrix();
     LiteMath::float4x4 proj_matrix = camera.get_projection_matrix();
     LiteMath::float4x4 mvp = proj_matrix * view_matrix * model_matrix;
@@ -307,30 +327,26 @@ void CpuRenderer::render(const Camera& camera, const Mesh& mesh) {
     const auto& vertices = mesh.get_vertices();
     const auto& indices = mesh.get_indices();
 
-    // Обрабатываем треугольники (очень базовая растеризация, без отсечения, без глубины)
     for (size_t i = 0; i < indices.size(); i += 3) {
         const Vertex& v0_raw = vertices[indices[i + 0]];
         const Vertex& v1_raw = vertices[indices[i + 1]];
         const Vertex& v2_raw = vertices[indices[i + 2]];
 
-        // Трансформируем вершины в clip space
         LiteMath::float4 p0 = mvp * LiteMath::to_float4(v0_raw.position, 1.0f);
         LiteMath::float4 p1 = mvp * LiteMath::to_float4(v1_raw.position, 1.0f);
         LiteMath::float4 p2 = mvp * LiteMath::to_float4(v2_raw.position, 1.0f);
 
-        // Perspective Divide (из clip space в NDC space)
-        if (p0.w == 0.0f || p1.w == 0.0f || p2.w == 0.0f) continue; // Избегаем деления на ноль
+        if (p0.w == 0.0f || p1.w == 0.0f || p2.w == 0.0f) continue;
         p0 = p0 / p0.w;
         p1 = p1 / p1.w;
         p2 = p2 / p2.w;
 
-        // Viewport transform (из NDC в экранные координаты)
         float half_width = this->width / 2.0f;
         float half_height = this->height / 2.0f;
 
         LiteMath::float4 v0_screen = LiteMath::float4(
             p0.x * half_width + half_width,
-            p0.y * -half_height + half_height, // Инверсия Y для соответствия экранным координатам (Y вниз)
+            p0.y * -half_height + half_height,
             p0.z,
             p0.w
         );
@@ -347,47 +363,58 @@ void CpuRenderer::render(const Camera& camera, const Mesh& mesh) {
             p2.w
         );
 
-        // Растеризуем треугольник
         draw_triangle(v0_screen, v1_screen, v2_screen, v0_raw.color, v1_raw.color, v2_raw.color);
     }
+}
 
-    // --- Передача CPU framebuffer на GPU и отображение ---
+void CpuRenderer::save_framebuffer_to_file(const std::string& filename) {
+    LiteImage::Image2D<uint32_t> image_to_save(width, height, framebuffer.data());
+    bool success = LiteImage::SaveImage<uint32_t>(filename.c_str(), image_to_save);
 
-    // Копируем данные из CPU framebuffer в промежуточный (staging) буфер
+    if (success) {
+        std::cout << "Framebuffer successfully saved to: " << filename << std::endl;
+    } else {
+        std::cerr << "Failed to save framebuffer to: " << filename << ". Check file extension and library support (e.g., STB_IMAGE)." << std::endl;
+    }
+}
+
+void CpuRenderer::display_rendered_frame_with_vulkan() {
+    if (!this->vulkan_context) {
+        throw std::runtime_error("[display_rendered_frame_with_vulkan]: vulkan context not inited");
+    }
+
     void* data;
-    vkMapMemory(this->vulkan_context->get_device(), staging_buffer_memory_, 0, this->width * this->height * sizeof(uint32_t), 0, &data);
+    MY_VK_CHECK(vkMapMemory(this->vulkan_context->get_device(), staging_buffer_memory_, 0, this->width * this->height * sizeof(uint32_t), 0, &data));
     memcpy(data, this->framebuffer.data(), this->width * this->height * sizeof(uint32_t));
     vkUnmapMemory(this->vulkan_context->get_device(), staging_buffer_memory_);
 
-    // Начинаем одноразовый командный буфер для операции копирования
     VkCommandBuffer transfer_cmd_buf = vk_utils::createCommandBuffer(this->vulkan_context->get_device(), this->vulkan_context->get_command_pool());
-
-    // Переводим VkImage в VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL для копирования
     this->vulkan_context->transition_image_layout(transfer_cmd_buf, cpu_texture_image_, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-    // Копируем данные из буфера в изображение
     this->vulkan_context->copy_buffer_to_image(transfer_cmd_buf, staging_buffer_, cpu_texture_image_, this->width, this->height);
-
-    // Переводим VkImage в VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL для семплирования в шейдере
     this->vulkan_context->transition_image_layout(transfer_cmd_buf, cpu_texture_image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-    // Завершаем и отправляем одноразовый командный буфер
     vk_utils::executeCommandBufferNow(transfer_cmd_buf, this->vulkan_context->get_graphics_queue(), this->vulkan_context->get_device());
 
-    // --- Запись команд для отображения квада в командный буфер swapchain ---
     VkCommandBuffer cmd_buf = this->vulkan_context->begin_frame();
     if (cmd_buf == VK_NULL_HANDLE) {
-        return; // Пропуск кадра из-за ресайза или других проблем
+        return;
     }
 
-    // Привязываем пайплайн и набор дескрипторов
     vkCmdBindPipeline(cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_);
     vkCmdBindDescriptorSets(cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_, 0, 1, &descriptor_set_, 0, nullptr);
-
-    // Отрисовываем полноэкранный квад (6 вершин для двух треугольников, без привязки вершинного буфера)
     vkCmdDraw(cmd_buf, 6, 1, 0, 0);
 
     this->vulkan_context->end_frame(cmd_buf);
+}
+
+void CpuRenderer::render(const Camera& camera, const Mesh& mesh) {
+    perform_cpu_rendering_pass(camera, mesh);
+    display_rendered_frame_with_vulkan();
+}
+
+void CpuRenderer::render(const Camera& camera, const Mesh& mesh, const std::string& a_filename) {
+    // perform_cpu_rendering_pass(camera, mesh);
+    perform_cpu_sdf_rendering_pass(camera);
+    save_framebuffer_to_file(a_filename);
 }
 
 void CpuRenderer::clear_framebuffer(uint32_t a_color) {
@@ -443,6 +470,100 @@ void CpuRenderer::draw_triangle(const LiteMath::float4& v0_screen, const LiteMat
                 LiteMath::float3 interpolated_color = lambda0 * c0_orig + lambda1 * c1_orig + lambda2 * c2_orig;
                 set_pixel(x, y, pack_color(interpolated_color));
             }
+        }
+    }
+}
+
+float CpuRenderer::calculate_analytical_sdf(const LiteMath::float3& p) const {
+    float dist1 = LiteMath::length(p - this->sphere1_center) - this->sphere1_radius;
+    float dist2 = LiteMath::length(p - this->sphere2_center) - this->sphere2_radius;
+
+    return std::min(dist1, dist2);
+}
+
+float CpuRenderer::sample_sdf_trilinear(const LiteMath::float3& world_pos) const {
+    LiteMath::float3 grid_range = this->sdf_grid_max - this->sdf_grid_min;
+    LiteMath::float3 normalized_pos = (world_pos - this->sdf_grid_min) / grid_range;
+
+    LiteMath::float3 scaled_pos = LiteMath::float3(
+        normalized_pos.x * (this->sdf_grid_res_x - 1),
+        normalized_pos.y * (this->sdf_grid_res_y - 1),
+        normalized_pos.z * (this->sdf_grid_res_z - 1)
+    );
+
+    int x0 = static_cast<int>(std::floor(scaled_pos.x));
+    int y0 = static_cast<int>(std::floor(scaled_pos.y));
+    int z0 = static_cast<int>(std::floor(scaled_pos.z));
+
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+    int z1 = z0 + 1;
+
+    x0 = std::clamp(x0, 0, this->sdf_grid_res_x - 1);
+    y0 = std::clamp(y0, 0, this->sdf_grid_res_y - 1);
+    z0 = std::clamp(z0, 0, this->sdf_grid_res_z - 1);
+    x1 = std::clamp(x1, 0, this->sdf_grid_res_x - 1);
+    y1 = std::clamp(y1, 0, this->sdf_grid_res_y - 1);
+    z1 = std::clamp(z1, 0, this->sdf_grid_res_z - 1);
+
+    float u = scaled_pos.x - x0;
+    float v = scaled_pos.y - y0;
+    float w = scaled_pos.z - z0;
+
+    auto get_world_coord_from_grid_idx = [&](int gx, int gy, int gz) {
+        float fx = static_cast<float>(gx) / (this->sdf_grid_res_x - 1);
+        float fy = static_cast<float>(gy) / (this->sdf_grid_res_y - 1);
+        float fz = static_cast<float>(gz) / (this->sdf_grid_res_z - 1);
+        return this->sdf_grid_min + LiteMath::float3(fx * grid_range.x, fy * grid_range.y, fz * grid_range.z);
+    };
+
+    float v000 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x0, y0, z0));
+    float v100 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x1, y0, z0));
+    float v010 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x0, y1, z0));
+    float v110 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x1, y1, z0));
+    float v001 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x0, y0, z1));
+    float v101 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x1, y0, z1));
+    float v011 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x0, y1, z1));
+    float v111 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x1, y1, z1));
+
+    float c00 = v000 * (1 - u) + v100 * u;
+    float c10 = v010 * (1 - u) + v110 * u;
+    float c01 = v001 * (1 - u) + v101 * u;
+    float c11 = v011 * (1 - u) + v111 * u;
+
+    float c0 = c00 * (1 - v) + c10 * v;
+    float c1 = c01 * (1 - v) + c11 * v;
+
+    float interpolated_sdf = c0 * (1 - w) + c1 * w;
+
+    return interpolated_sdf;
+}
+
+void CpuRenderer::perform_cpu_sdf_rendering_pass(const Camera& camera) {
+    clear_framebuffer(0xFF000000);
+
+    // Пример использования sample_sdf_trilinear:
+    // LiteMath::float3 test_point = LiteMath::float3(0.1f, 0.1f, 0.1f);
+    // float sdf_value = sample_sdf_trilinear(test_point);
+    // std::cout << "SDF at (" << test_point.x << ", " << test_point.y << ", " << test_point.z << "): " << sdf_value << std::endl;
+
+    LiteMath::float3 camera_pos = camera.get_position();
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            LiteMath::float3 world_coord = LiteMath::float3(
+                (static_cast<float>(x) / width - 0.5f) * 3.0f,
+                (static_cast<float>(y) / height - 0.5f) * 3.0f,
+                this->sphere1_center.z
+            );
+            float sdf_val = sample_sdf_trilinear(world_coord);
+
+            LiteMath::float3 color;
+            if (sdf_val < 0.0f) {
+                color = LiteMath::float3(std::clamp(-sdf_val * 2.0f, 0.0f, 1.0f), 0.0f, 0.0f);
+            } else {
+                color = LiteMath::float3(0.0f, 0.0f, std::clamp(sdf_val * 2.0f, 0.0f, 1.0f));
+            }
+            set_pixel(x, y, pack_color(color));
         }
     }
 }

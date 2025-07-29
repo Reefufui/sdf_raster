@@ -8,6 +8,7 @@
 #include "camera.hpp"
 #include "cpu_renderer.hpp"
 #include "mesh.hpp"
+#include "sdf_grid.hpp"
 #include "utils.hpp"
 
 static std::vector<uint32_t> read_shader_file(const std::string& filename) {
@@ -37,15 +38,6 @@ CpuRenderer::~CpuRenderer() {
 void CpuRenderer::init(int a_width, int a_height, GLFWwindow* /*window*/) {
     this->width = a_width;
     this->height = a_height;
-    this->sdf_grid_min = LiteMath::float3(-1.5f, -1.5f, -1.5f);
-    this->sdf_grid_max = LiteMath::float3(1.5f, 1.5f, 1.5f);
-    this->sdf_grid_res_x = 64;
-    this->sdf_grid_res_y = 64;
-    this->sdf_grid_res_z = 64;
-    this->sphere1_center = LiteMath::float3(0.0f, 0.0f, 0.0f);
-    this->sphere1_radius = 0.8f;
-    this->sphere2_center = LiteMath::float3(0.8f, 0.0f, 0.0f);
-    this->sphere2_radius = 0.4f;
     create_cpu_render_target(this->width, this->height);
     create_vulkan_display_resources();
 }
@@ -411,9 +403,13 @@ void CpuRenderer::render(const Camera& camera, const Mesh& mesh) {
     display_rendered_frame_with_vulkan();
 }
 
-void CpuRenderer::render(const Camera& camera, const Mesh& mesh, const std::string& a_filename) {
-    // perform_cpu_rendering_pass(camera, mesh);
-    perform_cpu_sdf_rendering_pass(camera);
+void CpuRenderer::render(const Camera& a_camera, const Mesh& a_mesh, const std::string& a_filename) {
+    perform_cpu_rendering_pass(a_camera, a_mesh);
+    save_framebuffer_to_file(a_filename);
+}
+
+void CpuRenderer::render(const Camera& a_camera, const SdfGrid& a_sdf_grid, const std::string& a_filename) {
+    perform_cpu_sdf_rendering_pass(a_camera, a_sdf_grid);
     save_framebuffer_to_file(a_filename);
 }
 
@@ -474,72 +470,7 @@ void CpuRenderer::draw_triangle(const LiteMath::float4& v0_screen, const LiteMat
     }
 }
 
-float CpuRenderer::calculate_analytical_sdf(const LiteMath::float3& p) const {
-    float dist1 = LiteMath::length(p - this->sphere1_center) - this->sphere1_radius;
-    float dist2 = LiteMath::length(p - this->sphere2_center) - this->sphere2_radius;
-
-    return std::min(dist1, dist2);
-}
-
-float CpuRenderer::sample_sdf_trilinear(const LiteMath::float3& world_pos) const {
-    LiteMath::float3 grid_range = this->sdf_grid_max - this->sdf_grid_min;
-    LiteMath::float3 normalized_pos = (world_pos - this->sdf_grid_min) / grid_range;
-
-    LiteMath::float3 scaled_pos = LiteMath::float3(
-        normalized_pos.x * (this->sdf_grid_res_x - 1),
-        normalized_pos.y * (this->sdf_grid_res_y - 1),
-        normalized_pos.z * (this->sdf_grid_res_z - 1)
-    );
-
-    int x0 = static_cast<int>(std::floor(scaled_pos.x));
-    int y0 = static_cast<int>(std::floor(scaled_pos.y));
-    int z0 = static_cast<int>(std::floor(scaled_pos.z));
-
-    int x1 = x0 + 1;
-    int y1 = y0 + 1;
-    int z1 = z0 + 1;
-
-    x0 = std::clamp(x0, 0, this->sdf_grid_res_x - 1);
-    y0 = std::clamp(y0, 0, this->sdf_grid_res_y - 1);
-    z0 = std::clamp(z0, 0, this->sdf_grid_res_z - 1);
-    x1 = std::clamp(x1, 0, this->sdf_grid_res_x - 1);
-    y1 = std::clamp(y1, 0, this->sdf_grid_res_y - 1);
-    z1 = std::clamp(z1, 0, this->sdf_grid_res_z - 1);
-
-    float u = scaled_pos.x - x0;
-    float v = scaled_pos.y - y0;
-    float w = scaled_pos.z - z0;
-
-    auto get_world_coord_from_grid_idx = [&](int gx, int gy, int gz) {
-        float fx = static_cast<float>(gx) / (this->sdf_grid_res_x - 1);
-        float fy = static_cast<float>(gy) / (this->sdf_grid_res_y - 1);
-        float fz = static_cast<float>(gz) / (this->sdf_grid_res_z - 1);
-        return this->sdf_grid_min + LiteMath::float3(fx * grid_range.x, fy * grid_range.y, fz * grid_range.z);
-    };
-
-    float v000 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x0, y0, z0));
-    float v100 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x1, y0, z0));
-    float v010 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x0, y1, z0));
-    float v110 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x1, y1, z0));
-    float v001 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x0, y0, z1));
-    float v101 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x1, y0, z1));
-    float v011 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x0, y1, z1));
-    float v111 = calculate_analytical_sdf(get_world_coord_from_grid_idx(x1, y1, z1));
-
-    float c00 = v000 * (1 - u) + v100 * u;
-    float c10 = v010 * (1 - u) + v110 * u;
-    float c01 = v001 * (1 - u) + v101 * u;
-    float c11 = v011 * (1 - u) + v111 * u;
-
-    float c0 = c00 * (1 - v) + c10 * v;
-    float c1 = c01 * (1 - v) + c11 * v;
-
-    float interpolated_sdf = c0 * (1 - w) + c1 * w;
-
-    return interpolated_sdf;
-}
-
-void CpuRenderer::perform_cpu_sdf_rendering_pass(const Camera& camera) {
+void CpuRenderer::perform_cpu_sdf_rendering_pass(const Camera& camera, const SdfGrid& a_sdf_grid) {
     clear_framebuffer(0xFF000000);
 
     // Пример использования sample_sdf_trilinear:
@@ -553,9 +484,9 @@ void CpuRenderer::perform_cpu_sdf_rendering_pass(const Camera& camera) {
             LiteMath::float3 world_coord = LiteMath::float3(
                 (static_cast<float>(x) / width - 0.5f) * 3.0f,
                 (static_cast<float>(y) / height - 0.5f) * 3.0f,
-                this->sphere1_center.z
+                0.0f
             );
-            float sdf_val = sample_sdf_trilinear(world_coord);
+            float sdf_val = a_sdf_grid.sample(world_coord);
 
             LiteMath::float3 color;
             if (sdf_val < 0.0f) {

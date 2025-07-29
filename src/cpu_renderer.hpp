@@ -17,7 +17,8 @@ public:
 
     void init(int width, int height, GLFWwindow* window) override;
     void render(const Camera& camera, const Mesh& mesh) override;
-    void render(const Camera& camera, const Mesh& mesh, const std::string& a_filename) override;
+    void render(const Camera& a_camera, const Mesh& a_mesh, const std::string& a_filename) override;
+    void render(const Camera& a_camera, const SdfGrid& a_sdf_grid, const std::string& a_filename) override;
     void resize(int width, int height) override;
     void shutdown() override;
 
@@ -33,7 +34,7 @@ private:
 
     float calculate_analytical_sdf(const LiteMath::float3& p) const;
     float sample_sdf_trilinear(const LiteMath::float3& world_pos) const;
-    void perform_cpu_sdf_rendering_pass(const Camera& camera);
+    void perform_cpu_sdf_rendering_pass(const Camera& camera, const SdfGrid& sdf_grid);
 
     void clear_framebuffer(uint32_t color);
     void draw_triangle(const LiteMath::float4& v0_screen, const LiteMath::float4& v1_screen, const LiteMath::float4& v2_screen,
@@ -47,17 +48,6 @@ private:
     int width = 0;
     int height = 0;
     std::vector<uint32_t> framebuffer; // RGBA
-
-    LiteMath::float3 sdf_grid_min;
-    LiteMath::float3 sdf_grid_max;
-    int sdf_grid_res_x;
-    int sdf_grid_res_y;
-    int sdf_grid_res_z;
-
-    LiteMath::float3 sphere1_center;
-    float sphere1_radius;
-    LiteMath::float3 sphere2_center;
-    float sphere2_radius;
 
     VkBuffer staging_buffer_ = VK_NULL_HANDLE;
     VkDeviceMemory cpu_texture_image_memory_ = VK_NULL_HANDLE;

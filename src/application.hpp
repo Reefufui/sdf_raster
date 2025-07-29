@@ -10,6 +10,7 @@
 #include "cpu_renderer.hpp"
 #include "mesh.hpp"
 #include "renderer.hpp"
+#include "sdf_grid.hpp"
 #include "vulkan_context.hpp"
 
 class Application {

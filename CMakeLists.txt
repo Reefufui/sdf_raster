@@ -94,11 +94,12 @@ message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 message(STATUS "Vulkan libraries: ${Vulkan_LIBRARIES}")
 
 add_executable(${PROJECT_NAME}
-    src/main.cpp
     src/application.cpp
     src/camera.cpp
     src/cpu_renderer.cpp
+    src/main.cpp
     src/mesh.cpp
+    src/sdf_grid.cpp
     src/vulkan_context.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_buffers.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_context.cpp

@@ -30,7 +30,10 @@ Application::~Application() {
 }
 
 void Application::run(const std::string& a_filename) {
-    this->renderer->render(this->camera, this->triangle_mesh, a_filename);
+    // this->renderer->render(this->camera, this->triangle_mesh, a_filename);
+
+    SdfGrid sdf_grid ("./example_grid.grid");
+    this->renderer->render(this->camera, sdf_grid, a_filename);
 }
 
 void Application::run() {

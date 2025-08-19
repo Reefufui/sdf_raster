@@ -98,6 +98,7 @@ add_executable(${PROJECT_NAME}
     src/camera.cpp
     src/cpu_renderer.cpp
     src/main.cpp
+    src/marching_cubes.cpp
     src/mesh.cpp
     src/sdf_grid.cpp
     src/vulkan_context.cpp

@@ -9,6 +9,8 @@
 
 struct GLFWwindow;
 
+namespace sdf_raster {
+
 class VulkanContext : public vk_utils::VulkanContext {
 public:
     VulkanContext();
@@ -69,4 +71,6 @@ private:
 
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 };
+
+}
 

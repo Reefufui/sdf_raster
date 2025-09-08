@@ -7,6 +7,8 @@
 #include "vulkan_context.hpp"
 #include "utils.hpp"
 
+namespace sdf_raster {
+
 static VKAPI_ATTR VkResult VKAPI_CALL vk_create_debug_utils_messenger_ext(
     VkInstance a_instance,
     const VkDebugUtilsMessengerCreateInfoEXT* a_create_info,
@@ -577,5 +579,7 @@ void VulkanContext::copy_buffer_to_image(VkCommandBuffer cmd_buf, VkBuffer buffe
     region.imageExtent = {width, height, 1};
 
     vkCmdCopyBufferToImage(cmd_buf, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+}
+
 }
 

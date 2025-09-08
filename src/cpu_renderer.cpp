@@ -11,6 +11,8 @@
 #include "sdf_grid.hpp"
 #include "utils.hpp"
 
+namespace sdf_raster {
+
 static std::vector<uint32_t> read_shader_file(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
@@ -497,5 +499,7 @@ void CpuRenderer::perform_cpu_sdf_rendering_pass(const Camera& camera, const Sdf
             set_pixel(x, y, pack_color(color));
         }
     }
+}
+
 }
 

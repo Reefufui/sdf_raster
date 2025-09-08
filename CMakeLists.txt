@@ -82,13 +82,6 @@ message(STATUS "Vulkan found: ${Vulkan_FOUND}")
 message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 message(STATUS "Vulkan libraries: ${Vulkan_LIBRARIES}")
 
-find_package(OpenMP REQUIRED)
-if (OpenMP_FOUND)
-    message(STATUS "OpenMP found. Adding OpenMP flags.")
-else()
-    message(FATAL_ERROR "OpenMP not found! Please install libomp (brew install libomp) or gcc (brew install gcc).")
-endif()
-
 message(STATUS "Vulkan found: ${Vulkan_FOUND}")
 message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 message(STATUS "Vulkan libraries: ${Vulkan_LIBRARIES}")
@@ -100,6 +93,7 @@ add_executable(${PROJECT_NAME}
     src/main.cpp
     src/marching_cubes.cpp
     src/mesh.cpp
+    src/mesh2.cpp
     src/sdf_grid.cpp
     src/vulkan_context.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_buffers.cpp
@@ -126,11 +120,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     volk
     Vulkan::Vulkan
 )
-
-if (OpenMP_FOUND)
-    target_compile_options(${PROJECT_NAME} PUBLIC ${OpenMP_CXX_FLAGS})
-    target_link_libraries(${PROJECT_NAME} PUBLIC OpenMP::OpenMP_CXX)
-endif()
 
 add_custom_command(
     TARGET ${PROJECT_NAME} POST_BUILD
@@ -160,4 +149,22 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     # (Это та же директория, что и для libMoltenVK.dylib в твоем случае)
     INSTALL_RPATH "${VULKAN_SDK}/lib" # <-- Указываем директорию
 )
+
+target_compile_options(${PROJECT_NAME} PRIVATE -fopenmp)
+target_link_options(${PROJECT_NAME} PRIVATE -fopenmp)
+
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    message(STATUS "Configuring for Debug build...")
+    # Попробуйте ТОЛЬКО -g и -O0
+    target_compile_options(${PROJECT_NAME} PRIVATE -g -O0 -Wall -Wextra)
+    target_link_options(${PROJECT_NAME} PRIVATE -g)
+elseif(CMAKE_BUILD_TYPE MATCHES Release)
+    message(STATUS "Configuring for Release build...")
+    target_compile_options(${PROJECT_NAME} PRIVATE -O3 -DNDEBUG -Wall -Wextra)
+    target_link_options(${PROJECT_NAME} PRIVATE -O3)
+elseif(CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
+    message(STATUS "Configuring for Release with Debug Info build...")
+    target_compile_options(${PROJECT_NAME} PRIVATE -O2 -g -DNDEBUG -Wall -Wextra)
+    target_link_options(${PROJECT_NAME} PRIVATE -O2 -g)
+endif()
 

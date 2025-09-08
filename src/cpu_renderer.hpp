@@ -9,6 +9,7 @@
 #include "renderer.hpp"
 #include "vulkan_context.hpp"
 
+namespace sdf_raster {
 
 class CpuRenderer : public IRenderer {
 public:
@@ -62,4 +63,6 @@ private:
     VkPipeline graphics_pipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout_ = VK_NULL_HANDLE;
 };
+
+}
 

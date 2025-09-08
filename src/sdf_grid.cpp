@@ -3,6 +3,8 @@
 
 #include "sdf_grid.hpp"
 
+namespace sdf_raster {
+
 SdfGrid::SdfGrid(const std::string& path) {
     std::ifstream fs(path, std::ios::binary);
     fs.read((char *)&this->size, 3 * sizeof(unsigned));
@@ -85,4 +87,5 @@ float SdfGrid::sample(const LiteMath::float3& world_pos) const {
     return interpolated_sdf;
 }
 
+}
 

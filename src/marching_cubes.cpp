@@ -4,58 +4,29 @@
 
 #include "marching_cubes.hpp"
 
-std::vector<Point> MarchingCubes::generateSphere(int radius, int number) {
-    std::vector<Point> res;
-    int iter = number;
+namespace sdf_raster {
 
-    //use polar coordinate to generate the sphere
-    for(int a=0; a <iter; ++a)
-        for(int b=0; b<iter; ++b) {
-            float alpha = (float)a/iter * 2. * 3.1415926;
-            float beta = (float)b/iter * 2. * 3.1415926;
-            float z = radius * sin(alpha) + radius;
-            float y = radius * cos(alpha) * sin(beta) + radius;
-            float x = radius * cos(alpha) * cos(beta) + radius;
-            res.emplace_back(Point(x,y,z));
+void MarchingCubes::constructGrid(const SdfGrid& a_sdf_grid) {
+    const auto size = a_sdf_grid.get_size ();
+
+    for (size_t z = 0; z < size.z; ++z) {
+        for (size_t y = 0; y < size.y; ++y) {
+            for (size_t x = 0; x < size.x; ++x) {
+                const auto distance = a_sdf_grid.get_distance(x, y, z);
+                if (distance <= 0.f) {
+                    vertices_(x, y, z, 1);
+                }
+            }
         }
-
-    return res;
-}
-
-
-std::vector<Point> MarchingCubes::processPoints(std::istream &in)
-{
-    std::vector<Point> Points;
-    float max = 0, min = 0; //record the largest value
-    while(in)
-    {
-
-        float x,y,z;
-        if(!(in >> x >> y >> z)){
-
-            break;
-            //throw std::runtime_error("point not valid");
-        }
-        auto max1 = std::max({x,y,z});
-        auto min1 = std::min({x,y,z});
-
-        max = max1 > max? max1 : max;
-        min = min1 < min? min1: min;
-
-        Points.emplace_back(Point(x,y,z));
-
     }
 
-    //all points will be shifted by offset_ towards (0,0,0)
-    //and then align to the grid of the specific resolution
-    size_ = (max - min)/res_;
+    const float max = a_sdf_grid.get_sdf_grid_max().x;
+    const float min = a_sdf_grid.get_sdf_grid_min().x;
+    size_ = (max - min) / res_;
     offset_ = min;
-
-    return Points;
-
 }
 
-void MarchingCubes::constructGrid(const std::vector<Point>& points)
+void MarchingCubes::constructGrid(const std::vector<LiteMath::float3>& points)
 {
     int isoScale = res_/100 * isoLevel_;
 
@@ -73,7 +44,7 @@ void MarchingCubes::constructGrid(const std::vector<Point>& points)
                 for(int k = floor(z)-isoScale; k<= ceil(z)+isoScale; ++k){
                     if(i<0 || j<0 || k<0 || i>res_ || j>res_ || k>res_)
                         continue;
-                    float distance = glm::distance(Point(i,j,k),Point(x,y,z));
+                    float distance = LiteMath::length(LiteMath::float3(i,j,k) - LiteMath::float3(x,y,z));
                     //std::cout << distance <<'\n';
 
                     if(distance <= isoScale) {
@@ -88,7 +59,7 @@ void MarchingCubes::constructGrid(const std::vector<Point>& points)
 
 }
 
-Point MarchingCubes::VertexInterp(const Vertex &v1, const Vertex &v2) {
+LiteMath::float3 MarchingCubes::VertexInterp(const Vertex &v1, const Vertex &v2) {
     if(abs(isoLevel_ - v1.getValue()) < 0.00001)
         return v1.getPoint();
 
@@ -99,7 +70,7 @@ Point MarchingCubes::VertexInterp(const Vertex &v1, const Vertex &v2) {
         return v1.getPoint();
 
     float tmp;
-    Point p;
+    LiteMath::float3 p;
 
     tmp = (isoLevel_ - v1.getValue())/(v2.getValue() - v1.getValue());
     p = v1.getPoint() + tmp * (v2.getPoint() - v1.getPoint());
@@ -111,15 +82,12 @@ Point MarchingCubes::VertexInterp(const Vertex &v1, const Vertex &v2) {
 }
 
 void MarchingCubes::generateMesh() {
-    int faceindex = 0;
-
-    //iterator each voxel
-    for(int i=0; i<res_; ++i)
-        for(int j=0; j<res_; ++j)
-            for(int k=0; k<res_; ++k){
+    for (int i = 0; i < res_; ++i) {
+        for (int j = 0; j < res_; ++j) {
+            for (int k = 0; k < res_; ++k) {
                 unsigned int cubeindex = 0;
                 Vertex voxelPivot = vertices_.get(i,j,k);
-                Point vertList[12];
+                LiteMath::float3 vertList[12];
 
                 //determine the index of edgeTable for each voxel
                 for(unsigned int m=0; m<8; ++m){
@@ -175,24 +143,28 @@ void MarchingCubes::generateMesh() {
                     vertList[11] = VertexInterp(vertices_(voxelPivot.getPoint(3)),
                             vertices_(voxelPivot.getPoint(7)));
 
-                //get the triangle from the vertList
-                int trinum = 0;
-                for(int n=0; triTable[cubeindex][n] != -1; n+=3 ){
-
-                    // add the three points in the mesh
-                    int index1 = mesh_.addPoint(vertList[triTable[cubeindex][n]] * size_ + offset_, faceindex);
-                    int index2 = mesh_.addPoint(vertList[triTable[cubeindex][n+1]]* size_ + offset_, faceindex);
-                    int index3 = mesh_.addPoint(vertList[triTable[cubeindex][n+2]]* size_ + offset_, faceindex);
-
-                    // add the triangle index in the mesh.
-                    mesh_.addFace(index1, index2, index3);
-
+                for (int n = 0; triTable[cubeindex][n] != -1; n += 3) {
+                    auto a = sdf_raster::Vertex {
+                        vertList[triTable[cubeindex][n]] * size_ + offset_
+                            , LiteMath::float3 {1.f} // TODO: color
+                        , LiteMath::float3 {1.f} // TODO: normal
+                    };
+                    auto b = sdf_raster::Vertex {
+                        vertList[triTable[cubeindex][n + 1]] * size_ + offset_
+                            , LiteMath::float3 {1.f} // TODO: color
+                        , LiteMath::float3 {1.f} // TODO: normal
+                    };
+                    auto c = sdf_raster::Vertex {
+                        vertList[triTable[cubeindex][n + 2]] * size_ + offset_
+                            , LiteMath::float3 {1.f} // TODO: color
+                        , LiteMath::float3 {1.f} // TODO: normal
+                    };
+                    this->mesh.add_triangle(a, b, c);
                 }
-
             }
-
-
+        }
+    }
 }
 
-
+}
 

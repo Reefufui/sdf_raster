@@ -4,6 +4,8 @@
 
 #include "LiteMath.h"
 
+namespace sdf_raster {
+
 class SdfGrid {
 public:
     SdfGrid(const std::string& path);
@@ -22,6 +24,9 @@ public:
 
     void save_sdf_grid(const std::string &path);
 
+    const LiteMath::float3 get_sdf_grid_min() const { return this->sdf_grid_min; }
+    const LiteMath::float3 get_sdf_grid_max() const { return this->sdf_grid_max; }
+
 private:
     const LiteMath::float3 sdf_grid_max = LiteMath::float3(1.f, 1.f, 1.f);
     const LiteMath::float3 sdf_grid_min = LiteMath::float3(-1.f, -1.f, -1.f);
@@ -29,4 +34,6 @@ private:
     LiteMath::uint3 size;
     std::vector<float> data;
 };
+
+}
 

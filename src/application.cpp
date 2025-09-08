@@ -1,8 +1,12 @@
 #include <chrono>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 
 #include "application.hpp"
+#include "marching_cubes.hpp"
+
+namespace sdf_raster {
 
 Application::Application(int a_width, int a_height)
     : width(a_width)
@@ -33,7 +37,16 @@ void Application::run(const std::string& a_filename) {
     // this->renderer->render(this->camera, this->triangle_mesh, a_filename);
 
     SdfGrid sdf_grid ("./example_grid.grid");
-    this->renderer->render(this->camera, sdf_grid, a_filename);
+
+    MarchingCubes mc (sdf_grid.get_size ().x - 1u);
+    mc.constructGrid(sdf_grid);
+    mc.generateMesh();
+    // Daniel::Mesh mesh {mc.getMesh2 ()};
+    const Mesh& mesh = mc.getMesh ();
+
+    // std::ofstream bunny ("bunny.off");
+    // bunny << mesh;
+    this->renderer->render(this->camera, mesh, a_filename);
 }
 
 void Application::run() {
@@ -113,5 +126,7 @@ void Application::cursor_pos_callback(GLFWwindow* window, double xpos, double yp
 
 Application* Application::get_app_ptr(GLFWwindow* a_window) {
     return static_cast<UserData*>(glfwGetWindowUserPointer(a_window))->app;
+}
+
 }
 

@@ -13,6 +13,8 @@
 #include "sdf_grid.hpp"
 #include "vulkan_context.hpp"
 
+namespace sdf_raster {
+
 class Application {
 public:
     Application(int a_width, int a_height);
@@ -48,4 +50,6 @@ private:
     std::shared_ptr<VulkanContext> vulkan_context;
     std::unique_ptr<IRenderer> renderer;
 };
+
+}
 

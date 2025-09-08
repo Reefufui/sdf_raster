@@ -114,15 +114,9 @@ public:
         return out;
     }
 
-
 private:
     std::vector<Point> point_; // stores the vertices
     std::vector<std::array<int,3>> faces_; // stores the faces
     std::unordered_map<Point,int> index_; // maps a point to its index
-
-
-
-
-
 };
 

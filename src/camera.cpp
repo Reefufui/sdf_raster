@@ -2,6 +2,8 @@
 
 #include "camera.hpp"
 
+namespace sdf_raster {
+
 Camera::Camera(LiteMath::float3 position, LiteMath::float3 look_at, LiteMath::float3 up, float fov_deg, float aspect_ratio, float near_plane, float far_plane)
     : position_(position),
       look_at_(look_at),
@@ -55,5 +57,7 @@ LiteMath::float4x4 Camera::get_view_matrix() const {
 
 LiteMath::float4x4 Camera::get_projection_matrix() const {
     return LiteMath::perspectiveMatrix(LiteMath::DEG_TO_RAD * fov_deg_, aspect_ratio_, near_plane_, far_plane_);
+}
+
 }
 

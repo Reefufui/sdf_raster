@@ -1,53 +1,23 @@
-//
-// Created by Daniel on 2019-07-10.
-//
-
 #pragma once
 
 #include <cassert>
 #include <iostream>
 #include <vector>
 
-#include "mesh2.hpp"
+#include "mesh.hpp"
+#include "sdf_grid.hpp"
 
-class Vertex{
-public:
-    Vertex() = default;
-    Vertex(const Point& point): point_(point), value_(0){};
-    Vertex(const Point& point, float value): point_(point), value_(value){};
-    void setValue(float value){value_ = value;};
+namespace sdf_raster {
 
-    //return the point and value of this vertex
-    Point getPoint() const {return point_;};
-    float getValue() const {return value_;};
-
-    //return the point of different point in a voxel
-    Point getPoint(unsigned int n){
-        assert(n <8);
-        int i,j,k;
-        k = n%2;
-        n >>= 1;
-        j = n%2;
-        n >>= 1;
-        i = n;
-        return Point(point_.x+i,point_.y+j,point_.z+k);
-    }
-
-private:
-    Point point_;
-    float value_;
-};
-
-
-//an array to store the vertices
 class Vertices{
 public:
-    Vertices(int resX, int resY, int resZ):resX_(resX),resY_(resY),resZ_(resZ){
+    Vertices(int resX, int resY, int resZ)
+        :resX_(resX),resY_(resY),resZ_(resZ){
         vertex_ = new Vertex[resX*resY*resZ];
         for(int i=0; i<resX_; ++i)
             for(int j=0; j<resY_; ++j)
                 for(int k=0; k<resZ_; ++k)
-                    vertex_[i*resY_*resZ_+j*resZ_+k] = Vertex(Point(i,j,k));
+                    vertex_[i*resY_*resZ_+j*resZ_+k] = Vertex(LiteMath::float3(i,j,k));
     }
     ~Vertices(){delete[] vertex_;}
 
@@ -62,7 +32,7 @@ public:
     }
 
     //return the vertex at this point
-    Vertex operator()(const Point& point){
+    Vertex operator()(const LiteMath::float3& point){
         return this->get(point.x, point.y, point.z);
     }
 
@@ -78,12 +48,12 @@ class Voxel{
 public:
 
 private:
-    Point pivot_;
+    LiteMath::float3 pivot_;
     float val_;
 
 };
 
-class MarchingCubes{
+class MarchingCubes {
 public:
     //default resolution: 100*100*100, default isovalue is 0.5
     explicit MarchingCubes(int resolution=100, float isovalue = 0.5):
@@ -94,37 +64,18 @@ public:
         offset_ = 0;
     };
 
-    ~MarchingCubes(){
-        //delete[] voxels_;
-    }
-
-    // process and store the input point cloud
-    std::vector<Point> processPoints(std::istream &in);
-
-    // random generate a set of points to represent the object
-    static std::vector<Point> generateSphere(int radius, int number);
-
-    // decide the value of each vertex using
-    void constructGrid(const std::vector<Point>& points);
-
+    void constructGrid(const SdfGrid& a_sdf_grid);
     void generateMesh();
-
-    Mesh& getMesh() {return mesh_;}
-
-    Point VertexInterp(const Vertex& v1, const Vertex& v2);
-
-    // get the value of the n-th index vertex of the grid
-    // whose most significant vertex is the parameter vertex
-    //float getGridValue(unsigned int n, const Vertices& vertex);
-
+    Mesh& getMesh() { return this->mesh; }
+    LiteMath::float3 VertexInterp(const Vertex& v1, const Vertex& v2);
 
 private:
     int res_; //resolution of the object: res * res * res
     float isoLevel_;
     float size_; // the size of each voxel
     float offset_;
-    Vertices vertices_ ;
-    Mesh mesh_;
+    Vertices vertices_;
+    Mesh mesh;
 
     int edgeTable[256]={
         0x0  , 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c,
@@ -418,4 +369,6 @@ private:
         {0, 3, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
         {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}};
 };
+
+}
 

@@ -5,6 +5,8 @@
 
 #include "GLFW/glfw3.h"
 
+namespace sdf_raster {
+
 class Camera;
 class Mesh;
 class SdfGrid;
@@ -19,4 +21,6 @@ public:
     virtual void resize(int a_width, int a_height) = 0;
     virtual void shutdown() = 0;
 };
+
+}
 

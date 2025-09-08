@@ -3,6 +3,8 @@
 #include "GLFW/glfw3.h"
 #include "LiteMath.h"
 
+namespace sdf_raster {
+
 class Camera {
 public:
     Camera(LiteMath::float3 position, LiteMath::float3 look_at, LiteMath::float3 up, float fov_deg, float aspect_ratio, float near_plane, float far_plane);
@@ -32,4 +34,6 @@ private:
     float pitch_ = 0.0f; // Начальный тангаж (pitch)
     float mouse_sensitivity_ = 0.1f;
 };
+
+}
 

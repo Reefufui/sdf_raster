@@ -10,6 +10,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-copy")
+
 set(VULKAN_SDK "$ENV{VULKAN_SDK}")
 
 # Проверяем, была ли переменная VULKAN_SDK установлена в окружении CMake
@@ -87,22 +89,22 @@ message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 message(STATUS "Vulkan libraries: ${Vulkan_LIBRARIES}")
 
 add_executable(${PROJECT_NAME}
+    ${litemath_SOURCE_DIR}/Image2d.cpp
+    ${vk_utils_project_SOURCE_DIR}/vk_alloc_simple.cpp
+    ${vk_utils_project_SOURCE_DIR}/vk_buffers.cpp
+    ${vk_utils_project_SOURCE_DIR}/vk_context.cpp
+    ${vk_utils_project_SOURCE_DIR}/vk_copy.cpp
+    ${vk_utils_project_SOURCE_DIR}/vk_images.cpp
+    ${vk_utils_project_SOURCE_DIR}/vk_utils.cpp
     src/application.cpp
     src/camera.cpp
     src/cpu_renderer.cpp
     src/main.cpp
     src/marching_cubes.cpp
     src/mesh.cpp
-    src/mesh2.cpp
     src/sdf_grid.cpp
+    src/sdf_octree.cpp
     src/vulkan_context.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_buffers.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_context.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_utils.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_alloc_simple.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_images.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_copy.cpp
-    ${litemath_SOURCE_DIR}/Image2d.cpp
 )
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC USE_STB_IMAGE)

@@ -5,6 +5,7 @@
 
 #include "application.hpp"
 #include "marching_cubes.hpp"
+#include "sdf_octree.hpp"
 
 namespace sdf_raster {
 
@@ -36,17 +37,25 @@ Application::~Application() {
 void Application::run(const std::string& a_filename) {
     // this->renderer->render(this->camera, this->triangle_mesh, a_filename);
 
-    SdfGrid sdf_grid ("./example_grid.grid");
+    SdfOctree scene {};
+    load_sdf_octree (scene, "../assets/sdf/example_octree_large.octree");
+    MarchingCubesSettings settings;
+    settings.iso_level = 0.0f;
+    settings.max_threads = 1;
+    const std::vector <Mesh> meshes = create_mesh_marching_cubes (settings, scene);
 
-    MarchingCubes mc (sdf_grid.get_size ().x - 1u);
-    mc.constructGrid(sdf_grid);
-    mc.generateMesh();
+    // SdfGrid sdf_grid ("./example_grid.grid");
+    // SdfOctree sdf_grid ("./example_grid.grid");
+
+    // MarchingCubes mc (sdf_grid.get_size ().x - 1u);
+    // mc.constructGrid(sdf_grid);
+    // mc.generateMesh();
     // Daniel::Mesh mesh {mc.getMesh2 ()};
-    const Mesh& mesh = mc.getMesh ();
+    // const Mesh& mesh = mc.getMesh ();
 
     // std::ofstream bunny ("bunny.off");
     // bunny << mesh;
-    this->renderer->render(this->camera, mesh, a_filename);
+    this->renderer->render(this->camera, meshes[0], a_filename);
 }
 
 void Application::run() {

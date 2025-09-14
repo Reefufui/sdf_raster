@@ -1,170 +1,222 @@
-#include <algorithm>
-#include <cmath>
-#include <random>
+#include <iostream>
 
+#include "omp.h"
+
+#include "marching_cubes_lookup_table.hpp"
 #include "marching_cubes.hpp"
 
 namespace sdf_raster {
 
-void MarchingCubes::constructGrid(const SdfGrid& a_sdf_grid) {
-    const auto size = a_sdf_grid.get_size ();
+struct VoxelInfo {
+    LiteMath::float3 min_corner;
+    float voxel_size;
+    const float (*sdf_values)[8];
+};
 
-    for (size_t z = 0; z < size.z; ++z) {
-        for (size_t y = 0; y < size.y; ++y) {
-            for (size_t x = 0; x < size.x; ++x) {
-                const auto distance = a_sdf_grid.get_distance(x, y, z);
-                if (distance <= 0.f) {
-                    vertices_(x, y, z, 1);
-                }
-            }
-        }
-    }
+struct NodeContext {
+    const SdfOctreeNode* node;
+    VoxelInfo voxel_info;
+};
 
-    const float max = a_sdf_grid.get_sdf_grid_max().x;
-    const float min = a_sdf_grid.get_sdf_grid_min().x;
-    size_ = (max - min) / res_;
-    offset_ = min;
+struct ThreadLocalBucket {
+    std::vector <VoxelInfo> found_leaves;
+    std::vector <NodeContext> children_contexts;
+};
+
+std::vector <NodeContext> init_octree_root_context (const SdfOctreeNode* root) {
+    NodeContext root_context;
+    root_context.node = root;
+    root_context.voxel_info.voxel_size = 2.f;
+    root_context.voxel_info.min_corner = {-1.0f, -1.0f, -1.0f};
+    root_context.voxel_info.sdf_values = nullptr;
+    return {root_context};
 }
 
-void MarchingCubes::constructGrid(const std::vector<LiteMath::float3>& points)
-{
-    int isoScale = res_/100 * isoLevel_;
+std::vector <VoxelInfo> collect_all_leaf_info (const SdfOctree& scene) {
+    if (scene.nodes.empty ()) {
+        throw std::runtime_error {"[collect_all_leaf_info]: empty sdf"};
+    }
 
-    // align the point to the grid starting from (0,0,0) with the resolution
-    for(auto point: points){
-        float x = (point.x - offset_) / size_;
-        float y = (point.y - offset_) / size_;
-        float z = (point.z - offset_) / size_;
-        //std::cout << x <<' '<< y <<' ' << z<< '\n';
+    std::vector <NodeContext> current_level_contexts = init_octree_root_context (&scene.nodes [0]);
+    std::vector <VoxelInfo> all_leaf_info;
 
-        //find the neighbor gird voxel of the point. For each vertex
-        //the value varies (0,1), equals 1 when it's just the vertex
-        for(int i = floor(x)-isoScale; i<= ceil(x)+isoScale; ++i){
-            for(int j = floor(y)-isoScale ; j<= ceil(y)+isoScale; ++j){
-                for(int k = floor(z)-isoScale; k<= ceil(z)+isoScale; ++k){
-                    if(i<0 || j<0 || k<0 || i>res_ || j>res_ || k>res_)
-                        continue;
-                    float distance = LiteMath::length(LiteMath::float3(i,j,k) - LiteMath::float3(x,y,z));
-                    //std::cout << distance <<'\n';
+    while (!current_level_contexts.empty ()) {
+        std::vector <ThreadLocalBucket> thread_local_bucket (omp_get_max_threads ());
 
-                    if(distance <= isoScale) {
-                        vertices_(i, j, k, 1);
+        #pragma omp parallel
+        {
+            int thread_id = omp_get_thread_num ();
 
+            #pragma omp for schedule(dynamic)
+            for (size_t i = 0; i < current_level_contexts.size (); ++i) {
+                const NodeContext& current_context = current_level_contexts [i];
+
+                if (current_context.node->offset == 0) {
+                    VoxelInfo leaf_info = current_context.voxel_info;
+                    leaf_info.sdf_values = &(current_context.node->values);
+                    thread_local_bucket [thread_id].found_leaves.push_back (leaf_info);
+                } else {
+                    float child_voxel_size = current_context.voxel_info.voxel_size * 0.5f;
+
+                    for (unsigned int k = 0; k < 8; ++k) {
+                        size_t child_index = current_context.node->offset + k;
+                        if (child_index >= scene.nodes.size ()) {
+                            throw std::runtime_error {"[collect_all_leaf_info]: out of bounds."};
+                        }
+
+                        LiteMath::float3 corner_offset = {0.0f, 0.0f, 0.0f};
+                        if ((k >> 0) & 1) corner_offset.x = child_voxel_size;
+                        if ((k >> 1) & 1) corner_offset.y = child_voxel_size;
+                        if ((k >> 2) & 1) corner_offset.z = child_voxel_size;
+
+                        NodeContext child_context;
+                        child_context.node = &scene.nodes [child_index];
+                        child_context.voxel_info.min_corner = current_context.voxel_info.min_corner + corner_offset;
+                        child_context.voxel_info.voxel_size = child_voxel_size;
+                        child_context.voxel_info.sdf_values = nullptr;
+                        thread_local_bucket [thread_id].children_contexts.push_back (child_context);
                     }
-
                 }
             }
         }
+
+        size_t total_leaves_found_this_level = 0;
+        for (int tid = 0; tid < omp_get_max_threads (); ++tid) {
+            total_leaves_found_this_level += thread_local_bucket [tid].found_leaves.size ();
+        }
+        all_leaf_info.reserve (all_leaf_info.size () + total_leaves_found_this_level);
+
+        for (int tid = 0; tid < omp_get_max_threads (); ++tid) {
+            all_leaf_info.insert (all_leaf_info.end ()
+                                   , thread_local_bucket [tid].found_leaves.begin ()
+                                   , thread_local_bucket [tid].found_leaves.end ()
+                                   );
+        }
+
+        std::vector <NodeContext> next_level_contexts;
+        for (int tid = 0; tid < omp_get_max_threads (); ++tid) {
+            next_level_contexts.insert (next_level_contexts.end ()
+                                     , thread_local_bucket [tid].children_contexts.begin ()
+                                     , thread_local_bucket [tid].children_contexts.end ()
+                                     );
+        }
+
+        current_level_contexts = std::move (next_level_contexts);
     }
 
+    return all_leaf_info;
 }
 
-LiteMath::float3 MarchingCubes::VertexInterp(const Vertex &v1, const Vertex &v2) {
-    if(abs(isoLevel_ - v1.getValue()) < 0.00001)
-        return v1.getPoint();
+LiteMath::float3 interpolate_vertex (float isolevel, LiteMath::float3 p1, LiteMath::float3 p2, float valp1, float valp2) {
+    if (std::abs (isolevel - valp1) < 0.00001)
+        return (p1);
+    if (std::abs (isolevel - valp2) < 0.00001)
+        return (p2);
+    if (std::abs (valp1 - valp2) < 0.00001)
+        return (p1);
 
-    if(abs(isoLevel_ - v2.getValue()) < 0.00001)
-        return v2.getPoint();
+    float mu = (isolevel - valp1) / (valp2 - valp1);
 
-    if(abs(v1.getValue() - v2.getValue()) < 0.00001)
-        return v1.getPoint();
-
-    float tmp;
     LiteMath::float3 p;
-
-    tmp = (isoLevel_ - v1.getValue())/(v2.getValue() - v1.getValue());
-    p = v1.getPoint() + tmp * (v2.getPoint() - v1.getPoint());
-
-    //the final point should be restored to the original scale
-    //p = p * size_ + offset_;
-
-    return p;
+    p.x = p1.x + mu * (p2.x - p1.x);
+    p.y = p1.y + mu * (p2.y - p1.y);
+    p.z = p1.z + mu * (p2.z - p1.z);
+    return (p);
 }
 
-void MarchingCubes::generateMesh() {
-    for (int i = 0; i < res_; ++i) {
-        for (int j = 0; j < res_; ++j) {
-            for (int k = 0; k < res_; ++k) {
-                unsigned int cubeindex = 0;
-                Vertex voxelPivot = vertices_.get(i,j,k);
-                LiteMath::float3 vertList[12];
+void process_leaf_node (const VoxelInfo& voxel_info, Mesh& mesh, const float iso_level) {
+    // 0: (min_x, min_y, min_z)
+    // 1: (max_x, min_y, min_z)
+    // 2: (max_x, max_y, min_z)
+    // 3: (min_x, max_y, min_z)
+    // 4: (min_x, min_y, max_z)
+    // 5: (max_x, min_y, max_z)
+    // 6: (max_x, max_y, max_z)
+    // 7: (min_x, max_y, max_z)
+    LiteMath::float3 corners [8];
+    corners [0] = voxel_info.min_corner;
+    corners [1] = {voxel_info.min_corner.x + voxel_info.voxel_size, voxel_info.min_corner.y, voxel_info.min_corner.z};
+    corners [2] = {voxel_info.min_corner.x + voxel_info.voxel_size, voxel_info.min_corner.y + voxel_info.voxel_size, voxel_info.min_corner.z};
+    corners [3] = {voxel_info.min_corner.x, voxel_info.min_corner.y + voxel_info.voxel_size, voxel_info.min_corner.z};
+    corners [4] = {voxel_info.min_corner.x, voxel_info.min_corner.y, voxel_info.min_corner.z + voxel_info.voxel_size};
+    corners [5] = {voxel_info.min_corner.x + voxel_info.voxel_size, voxel_info.min_corner.y, voxel_info.min_corner.z + voxel_info.voxel_size};
+    corners [6] = {voxel_info.min_corner.x + voxel_info.voxel_size, voxel_info.min_corner.y + voxel_info.voxel_size, voxel_info.min_corner.z + voxel_info.voxel_size};
+    corners [7] = {voxel_info.min_corner.x, voxel_info.min_corner.y + voxel_info.voxel_size, voxel_info.min_corner.z + voxel_info.voxel_size};
+    const auto& corner_values = *voxel_info.sdf_values;
 
-                //determine the index of edgeTable for each voxel
-                for(unsigned int m=0; m<8; ++m){
-                    if(vertices_(voxelPivot.getPoint(m)).getValue() < isoLevel_)
-                        cubeindex |= (1 << m);
-                }
-                if(edgeTable[cubeindex] == 0)
-                    continue;
-
-                if(edgeTable[cubeindex] & 1)
-                    vertList[0] = VertexInterp(voxelPivot, vertices_(voxelPivot.getPoint(1)));
-
-                if(edgeTable[cubeindex] & 2)
-                    vertList[1] = VertexInterp(vertices_(voxelPivot.getPoint(1)),
-                            vertices_(voxelPivot.getPoint(2)));
-
-                if(edgeTable[cubeindex] & 4)
-                    vertList[2] = VertexInterp(vertices_(voxelPivot.getPoint(2)),
-                            vertices_(voxelPivot.getPoint(3)));
-
-                if(edgeTable[cubeindex] & 8)
-                    vertList[3] = VertexInterp(vertices_(voxelPivot.getPoint(3)),voxelPivot);
-
-                if(edgeTable[cubeindex] & 16)
-                    vertList[4] = VertexInterp(vertices_(voxelPivot.getPoint(4)),
-                            vertices_(voxelPivot.getPoint(5)));
-
-                if(edgeTable[cubeindex] & 32)
-                    vertList[5] = VertexInterp(vertices_(voxelPivot.getPoint(5)),
-                            vertices_(voxelPivot.getPoint(6)));
-
-                if(edgeTable[cubeindex] & 64)
-                    vertList[6] = VertexInterp(vertices_(voxelPivot.getPoint(6)),
-                            vertices_(voxelPivot.getPoint(7)));
-
-                if(edgeTable[cubeindex] & 128)
-                    vertList[7] = VertexInterp(vertices_(voxelPivot.getPoint(7)),
-                            vertices_(voxelPivot.getPoint(4)));
-
-                if(edgeTable[cubeindex] & 256)
-                    vertList[8] = VertexInterp(vertices_(voxelPivot.getPoint(0)),
-                            vertices_(voxelPivot.getPoint(4)));
-
-                if(edgeTable[cubeindex] & 512)
-                    vertList[9] = VertexInterp(vertices_(voxelPivot.getPoint(1)),
-                            vertices_(voxelPivot.getPoint(5)));
-
-                if(edgeTable[cubeindex] & 1024)
-                    vertList[10] = VertexInterp(vertices_(voxelPivot.getPoint(2)),
-                            vertices_(voxelPivot.getPoint(6)));
-
-                if(edgeTable[cubeindex] & 2048)
-                    vertList[11] = VertexInterp(vertices_(voxelPivot.getPoint(3)),
-                            vertices_(voxelPivot.getPoint(7)));
-
-                for (int n = 0; triTable[cubeindex][n] != -1; n += 3) {
-                    auto a = sdf_raster::Vertex {
-                        vertList[triTable[cubeindex][n]] * size_ + offset_
-                            , LiteMath::float3 {1.f} // TODO: color
-                        , LiteMath::float3 {1.f} // TODO: normal
-                    };
-                    auto b = sdf_raster::Vertex {
-                        vertList[triTable[cubeindex][n + 1]] * size_ + offset_
-                            , LiteMath::float3 {1.f} // TODO: color
-                        , LiteMath::float3 {1.f} // TODO: normal
-                    };
-                    auto c = sdf_raster::Vertex {
-                        vertList[triTable[cubeindex][n + 2]] * size_ + offset_
-                            , LiteMath::float3 {1.f} // TODO: color
-                        , LiteMath::float3 {1.f} // TODO: normal
-                    };
-                    this->mesh.add_triangle(a, b, c);
-                }
-            }
+    int cube_index = 0;
+    for (int i = 0; i < 8; ++i) {
+        if (corner_values [i] < iso_level) {
+            cube_index |= (1 << i);
         }
+    }
+    int edge_mask = edgeTable [cube_index];
+    if (edge_mask == 0) {
+        return;
+    }
+
+    LiteMath::float3 vertlist [12];
+    if (edge_mask & 1)
+        vertlist[0] = interpolate_vertex (iso_level, corners [0], corners [1], corner_values [0], corner_values [1]);
+    if (edge_mask & 2)
+        vertlist[1] = interpolate_vertex (iso_level, corners [1], corners [2], corner_values [1], corner_values [2]);
+    if (edge_mask & 4)
+        vertlist[2] = interpolate_vertex (iso_level, corners [2], corners [3], corner_values [2], corner_values [3]);
+    if (edge_mask & 8)
+        vertlist[3] = interpolate_vertex (iso_level, corners [3], corners [0], corner_values [3], corner_values [0]);
+    if (edge_mask & 16)
+        vertlist[4] = interpolate_vertex (iso_level, corners [4], corners [5], corner_values [4], corner_values [5]);
+    if (edge_mask & 32)
+        vertlist[5] = interpolate_vertex (iso_level, corners [5], corners [6], corner_values [5], corner_values [6]);
+    if (edge_mask & 64)
+        vertlist[6] = interpolate_vertex (iso_level, corners [6], corners [7], corner_values [6], corner_values [7]);
+    if (edge_mask & 128)
+        vertlist[7] = interpolate_vertex (iso_level, corners [7], corners [4], corner_values [7], corner_values [4]);
+    if (edge_mask & 256)
+        vertlist[8] = interpolate_vertex (iso_level, corners [0], corners [4], corner_values [0], corner_values [4]);
+    if (edge_mask & 512)
+        vertlist[9] = interpolate_vertex (iso_level, corners [1], corners [5], corner_values [1], corner_values [5]);
+    if (edge_mask & 1024)
+        vertlist[10] = interpolate_vertex (iso_level, corners [2], corners [6], corner_values [2], corner_values [6]);
+    if (edge_mask & 2048)
+        vertlist[11] = interpolate_vertex (iso_level, corners [3], corners [7], corner_values [3], corner_values [7]);
+
+    const int *edges = triTable [cube_index];
+    for (int i = 0; edges [i] != -1; ++i) {
+        Vertex vertex;
+        vertex.position = vertlist [edges [i]];
+        vertex.color = LiteMath::float3 {1.0f};
+        mesh.add_vertex_fast (vertex);
     }
 }
 
+std::vector <Mesh> create_mesh_marching_cubes (const MarchingCubesSettings settings, const SdfOctree& scene) {
+    const auto previous_num_threads = omp_get_max_threads ();
+    omp_set_num_threads (settings.max_threads);
+    const auto leaves = collect_all_leaf_info (scene);
+    printf ("SDF-Octree leaves count: %u\n", (unsigned) leaves.size ());
+
+    std::vector <Mesh> thread_meshes (settings.max_threads);
+    #pragma omp parallel
+    {
+        auto& current_thread_mesh = thread_meshes [omp_get_thread_num ()];
+
+        #pragma omp for schedule (dynamic) nowait
+        for (size_t i = 0; i < leaves.size (); ++i) {
+            process_leaf_node (leaves [i], current_thread_mesh, settings.iso_level);
+        }
+    }
+
+    for (int tid = 0; tid < settings.max_threads; ++tid) {
+        printf ("Marching Cubes [%u]: %u vertices, %u triangles\n"
+                , (unsigned) tid
+                , (unsigned) thread_meshes [tid].get_vertices ().size ()
+                , (unsigned) thread_meshes [tid].get_indices ().size () / 3
+                );
+    }
+
+    omp_set_num_threads (previous_num_threads);
+    return thread_meshes;
 }
 
+}

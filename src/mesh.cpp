@@ -34,8 +34,8 @@ Mesh::Mesh() {
     };
 }
 
-Mesh::Mesh(std::vector<Vertex>&& verts, std::vector<uint32_t>&& idxs)
-    : vertices(std::move(verts)), indices(std::move(idxs)) {}
+Mesh::Mesh(std::vector<uint32_t>&& idxs, std::vector<Vertex>&& verts)
+    : indices(std::move(idxs)) ,vertices(std::move(verts)) {}
 
 void Mesh::set_data(std::vector<Vertex>&& verts, std::vector<uint32_t>&& idxs) {
     vertices = std::move(verts);
@@ -45,6 +45,17 @@ void Mesh::set_data(std::vector<Vertex>&& verts, std::vector<uint32_t>&& idxs) {
 void Mesh::clear() {
     vertices.clear();
     indices.clear();
+}
+
+void Mesh::add_vertex(Vertex v) {
+    uint32_t index = this->index_vertex(v);
+    this->indices.push_back(index);
+}
+
+void Mesh::add_vertex_fast(Vertex v) {
+    int new_index = vertices.size();
+    this->indices.push_back(new_index);
+    this->vertices.push_back(v);
 }
 
 void Mesh::add_triangle(Vertex a, Vertex b, Vertex c) {
@@ -62,10 +73,10 @@ uint32_t Mesh::index_vertex(const Vertex& v) {
     if (it != vertex_to_index.end()) {
         return it->second;
     } else {
-        int newIndex = vertices.size();
+        int new_index = vertices.size();
         vertices.push_back(v);
-        vertex_to_index[v] = newIndex;
-        return newIndex;
+        vertex_to_index[v] = new_index;
+        return new_index;
     }
 }
 

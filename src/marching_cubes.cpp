@@ -124,7 +124,19 @@ LiteMath::float3 interpolate_vertex (float isolevel, LiteMath::float3 p1, LiteMa
     return (p);
 }
 
-void process_leaf_node (const VoxelInfo& voxel_info, Mesh& mesh, const float iso_level) {
+LiteMath::float3 estimate_normal (const SdfOctree& scene, const LiteMath::float3& p, float eps = 1e-4f) {
+    float dx = sample_sdf (scene, {p.x + eps, p.y, p.z}) - sample_sdf (scene, {p.x - eps, p.y, p.z});
+    float dy = sample_sdf (scene, {p.x, p.y + eps, p.z}) - sample_sdf (scene, {p.x, p.y - eps, p.z});
+    float dz = sample_sdf (scene, {p.x, p.y, p.z + eps}) - sample_sdf (scene, {p.x, p.y, p.z - eps});
+    LiteMath::float3 n = {dx, dy, dz};
+    return LiteMath::normalize (n);
+}
+
+void process_leaf_node (const VoxelInfo& voxel_info
+                        , Mesh& mesh
+                        , const float iso_level
+                        , const SdfOctree& scene
+                        ) {
     // 0: (min_x, min_y, min_z)
     // 1: (max_x, min_y, min_z)
     // 2: (max_x, max_y, min_z)
@@ -186,6 +198,7 @@ void process_leaf_node (const VoxelInfo& voxel_info, Mesh& mesh, const float iso
         Vertex vertex;
         vertex.position = vertlist [edges [i]];
         vertex.color = LiteMath::float3 {1.0f};
+        vertex.normal = estimate_normal (scene, vertex.position);
         mesh.add_vertex_fast (vertex);
     }
 }
@@ -203,7 +216,7 @@ std::vector <Mesh> create_mesh_marching_cubes (const MarchingCubesSettings setti
 
         #pragma omp for schedule (dynamic) nowait
         for (size_t i = 0; i < leaves.size (); ++i) {
-            process_leaf_node (leaves [i], current_thread_mesh, settings.iso_level);
+            process_leaf_node (leaves [i], current_thread_mesh, settings.iso_level, scene);
         }
     }
 

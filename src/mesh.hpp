@@ -52,8 +52,8 @@ namespace sdf_raster {
     
     private:
         std::unordered_map<Vertex, uint32_t, VertexHash> vertex_to_index;
-        std::vector<uint32_t> indices;
-        std::vector<Vertex> vertices;
+        std::vector<uint32_t> indices {};
+        std::vector<Vertex> vertices {};
     };
     
 }

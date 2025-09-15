@@ -19,6 +19,7 @@ struct SdfOctree {
 void load_sdf_octree (SdfOctree &scene, const std::string &path);
 void save_sdf_octree (const SdfOctree &scene, const std::string &path);
 void dump_sdf_octree_text (const SdfOctree &scene, const std::string &path_to_dump);
+float sample_sdf (const SdfOctree& scene, const LiteMath::float3& p);
 
 }
 

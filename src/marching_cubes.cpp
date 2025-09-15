@@ -139,7 +139,7 @@ void process_leaf_node (const VoxelInfo& voxel_info
                         ) {
     float corner_values [8];
     for (int i = 0; i < 8; ++i) {
-        corner_values [i] = (*voxel_info.sdf_values) [octree_index_to_marching_cubes_index [i]];
+        corner_values [i] = (*voxel_info.sdf_values) [i];
     }
 
     const LiteMath::float3 voxel_size_modifier {voxel_info.voxel_size};
@@ -147,7 +147,11 @@ void process_leaf_node (const VoxelInfo& voxel_info
     LiteMath::float3 corners [8];
 
     for (int i = 0; i < 8; ++i) {
-        corners [i] = voxel_info.min_corner + corner_offsets [i] * voxel_size_modifier;
+        LiteMath::float3 corner_offset = {0.0f, 0.0f, 0.0f};
+        if ((i >> 0) & 1) corner_offset.x = voxel_info.voxel_size;
+        if ((i >> 1) & 1) corner_offset.y = voxel_info.voxel_size;
+        if ((i >> 2) & 1) corner_offset.z = voxel_info.voxel_size;
+        corners [i] = voxel_info.min_corner + corner_offset;
         // corner_values [i] = sample_sdf (scene, corners [i]);
 
         if (corner_values [i] < iso_level) {
@@ -155,41 +159,32 @@ void process_leaf_node (const VoxelInfo& voxel_info
         }
     }
 
-    int edge_mask = edge_table [cube_index];
+    int edge_mask = cube_index_2_edge_mask [cube_index];
     if (edge_mask == 0) {
         return;
     }
 
-    LiteMath::float3 vertlist [12];
-    if (edge_mask & 1)
-        vertlist[0] = interpolate_vertex (iso_level, corners [0], corners [1], corner_values [0], corner_values [1]);
-    if (edge_mask & 2)
-        vertlist[1] = interpolate_vertex (iso_level, corners [1], corners [2], corner_values [1], corner_values [2]);
-    if (edge_mask & 4)
-        vertlist[2] = interpolate_vertex (iso_level, corners [2], corners [3], corner_values [2], corner_values [3]);
-    if (edge_mask & 8)
-        vertlist[3] = interpolate_vertex (iso_level, corners [3], corners [0], corner_values [3], corner_values [0]);
-    if (edge_mask & 16)
-        vertlist[4] = interpolate_vertex (iso_level, corners [4], corners [5], corner_values [4], corner_values [5]);
-    if (edge_mask & 32)
-        vertlist[5] = interpolate_vertex (iso_level, corners [5], corners [6], corner_values [5], corner_values [6]);
-    if (edge_mask & 64)
-        vertlist[6] = interpolate_vertex (iso_level, corners [6], corners [7], corner_values [6], corner_values [7]);
-    if (edge_mask & 128)
-        vertlist[7] = interpolate_vertex (iso_level, corners [7], corners [4], corner_values [7], corner_values [4]);
-    if (edge_mask & 256)
-        vertlist[8] = interpolate_vertex (iso_level, corners [0], corners [4], corner_values [0], corner_values [4]);
-    if (edge_mask & 512)
-        vertlist[9] = interpolate_vertex (iso_level, corners [1], corners [5], corner_values [1], corner_values [5]);
-    if (edge_mask & 1024)
-        vertlist[10] = interpolate_vertex (iso_level, corners [2], corners [6], corner_values [2], corner_values [6]);
-    if (edge_mask & 2048)
-        vertlist[11] = interpolate_vertex (iso_level, corners [3], corners [7], corner_values [3], corner_values [7]);
+    LiteMath::float3 edge_vertices [12];
+    int edge_bit = 1;
+    for (int i = 0; i < 12; ++i) {
+        // if ((edge_mask & edge_bit) == 0) {
+        //     continue;
+        // }
 
-    const int *local_indices = triangles_table [cube_index];
-    for (int i = 0; local_indices [i] != -1; ++i) {
+        const auto corner_indices = edge_corners [i];
+        edge_vertices [i] = interpolate_vertex (iso_level
+                                                , corners [corner_indices.x]
+                                                , corners [corner_indices.y]
+                                                , corner_values [corner_indices.x]
+                                                , corner_values [corner_indices.y]
+                                                );
+        edge_bit <<= 1;
+    }
+
+    const int *triangle_indices = cube_index_2_triangle_indices [cube_index];
+    for (int i = 0; triangle_indices [i] != -1; ++i) {
         Vertex vertex;
-        vertex.position = vertlist [local_indices [i]];
+        vertex.position = edge_vertices [triangle_indices [i]];
         vertex.normal = estimate_normal (scene, vertex.position);
         mesh.add_vertex_fast (vertex);
     }

@@ -1,3 +1,5 @@
+#include <fstream>
+
 #include "mesh.hpp"
 
 namespace sdf_raster {
@@ -69,6 +71,40 @@ uint32_t Mesh::index_vertex(const Vertex& v) {
         vertex_to_index[v] = new_index;
         return new_index;
     }
+}
+
+void save_mesh_as_obj (const Mesh& mesh, const std::string& filename) {
+    printf ("Saving mesh to '%s'...\n", filename.c_str ());
+
+    std::ofstream out (filename);
+    if (!out) {
+        throw std::runtime_error ("Failed to open file: " + filename);
+    }
+
+    const auto& vertices = mesh.get_vertices ();
+    const auto& indices  = mesh.get_indices ();
+
+    for (const auto& v : vertices) {
+        out << "v " 
+            << v.position.x << " " << v.position.y << " " << v.position.z 
+            << "\n";
+    }
+    for (const auto& v : vertices) {
+        out << "vn " 
+            << v.normal.x << " " << v.normal.y << " " << v.normal.z 
+            << "\n";
+    }
+
+    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        uint32_t i0 = indices[i + 0] + 1;
+        uint32_t i1 = indices[i + 1] + 1;
+        uint32_t i2 = indices[i + 2] + 1;
+        out << "f "
+            << i0 << "//" << i0 << " "
+            << i1 << "//" << i1 << " "
+            << i2 << "//" << i2 << "\n";
+    }
+    printf ("Saved mesh to '%s'.\n", filename.c_str ());
 }
 
 }

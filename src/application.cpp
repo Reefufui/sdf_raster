@@ -43,19 +43,8 @@ void Application::run(const std::string& a_filename) {
     settings.iso_level = 0.0f;
     settings.max_threads = 1;
     const std::vector <Mesh> meshes = create_mesh_marching_cubes (settings, scene);
-
-    // SdfGrid sdf_grid ("./example_grid.grid");
-    // SdfOctree sdf_grid ("./example_grid.grid");
-
-    // MarchingCubes mc (sdf_grid.get_size ().x - 1u);
-    // mc.constructGrid(sdf_grid);
-    // mc.generateMesh();
-    // Daniel::Mesh mesh {mc.getMesh2 ()};
-    // const Mesh& mesh = mc.getMesh ();
-
-    // std::ofstream bunny ("bunny.off");
-    // bunny << mesh;
-    this->renderer->render(this->camera, meshes[0], a_filename);
+    save_mesh_as_obj (meshes [0], "result.obj");
+    this->renderer->render (this->camera, meshes [0], a_filename);
 }
 
 void Application::run() {

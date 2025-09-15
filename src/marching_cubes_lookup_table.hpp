@@ -4,7 +4,23 @@
 
 namespace sdf_raster {
 
-static const int edgeTable [256] = {
+//                                                          {0, 1, 2, 3, 4, 5, 6, 7};
+static const int octree_index_to_marching_cubes_index [8] = {0, 4, 5, 1, 2, 6, 7, 3};
+// static const int octree_index_to_marching_cubes_index [8] = {0, 4, 5, 1, 2, 6, 7, 3}; // xyz
+// static const int octree_index_to_marching_cubes_index [8] = {0, 1, 5, 4, 2, 3, 7, 6}; // zyx
+
+static const LiteMath::float3 corner_offsets [8]  = {
+  LiteMath::float3 (0.f, 0.f, 0.f)
+  , LiteMath::float3 (1.f, 0.f, 0.f)
+  , LiteMath::float3 (1.f, 0.f, 1.f)
+  , LiteMath::float3 (0.f, 0.f, 1.f)
+  , LiteMath::float3 (0.f, 1.f, 0.f)
+  , LiteMath::float3 (1.f, 1.f, 0.f)
+  , LiteMath::float3 (1.f, 1.f, 1.f)
+  , LiteMath::float3 (0.f, 1.f, 1.f)
+};
+
+static const int edge_table [256] = {
   0x0 , 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c
   , 0x80c, 0x905, 0xa0f, 0xb06, 0xc0a, 0xd03, 0xe09, 0xf00
   , 0x190, 0x99 , 0x393, 0x29a, 0x596, 0x49f, 0x795, 0x69c
@@ -39,7 +55,7 @@ static const int edgeTable [256] = {
   , 0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x0
 };
 
-static const int triTable [256][16] = {
+static const int triangles_table [256][16] = {
   {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
   , {0, 8, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
   , {0, 1, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}

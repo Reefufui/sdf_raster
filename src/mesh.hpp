@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -55,6 +56,8 @@ namespace sdf_raster {
         std::vector<uint32_t> indices {};
         std::vector<Vertex> vertices {};
     };
+
+    void save_mesh_as_obj (const Mesh& mesh, const std::string& filename);
     
 }
 

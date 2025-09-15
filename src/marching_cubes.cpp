@@ -137,32 +137,25 @@ void process_leaf_node (const VoxelInfo& voxel_info
                         , const float iso_level
                         , const SdfOctree& scene
                         ) {
-    // 0: (min_x, min_y, min_z)
-    // 1: (max_x, min_y, min_z)
-    // 2: (max_x, max_y, min_z)
-    // 3: (min_x, max_y, min_z)
-    // 4: (min_x, min_y, max_z)
-    // 5: (max_x, min_y, max_z)
-    // 6: (max_x, max_y, max_z)
-    // 7: (min_x, max_y, max_z)
-    LiteMath::float3 corners [8];
-    corners [0] = voxel_info.min_corner;
-    corners [1] = {voxel_info.min_corner.x + voxel_info.voxel_size, voxel_info.min_corner.y, voxel_info.min_corner.z};
-    corners [2] = {voxel_info.min_corner.x + voxel_info.voxel_size, voxel_info.min_corner.y + voxel_info.voxel_size, voxel_info.min_corner.z};
-    corners [3] = {voxel_info.min_corner.x, voxel_info.min_corner.y + voxel_info.voxel_size, voxel_info.min_corner.z};
-    corners [4] = {voxel_info.min_corner.x, voxel_info.min_corner.y, voxel_info.min_corner.z + voxel_info.voxel_size};
-    corners [5] = {voxel_info.min_corner.x + voxel_info.voxel_size, voxel_info.min_corner.y, voxel_info.min_corner.z + voxel_info.voxel_size};
-    corners [6] = {voxel_info.min_corner.x + voxel_info.voxel_size, voxel_info.min_corner.y + voxel_info.voxel_size, voxel_info.min_corner.z + voxel_info.voxel_size};
-    corners [7] = {voxel_info.min_corner.x, voxel_info.min_corner.y + voxel_info.voxel_size, voxel_info.min_corner.z + voxel_info.voxel_size};
-    const auto& corner_values = *voxel_info.sdf_values;
-
-    int cube_index = 0;
+    float corner_values [8];
     for (int i = 0; i < 8; ++i) {
+        corner_values [i] = (*voxel_info.sdf_values) [octree_index_to_marching_cubes_index [i]];
+    }
+
+    const LiteMath::float3 voxel_size_modifier {voxel_info.voxel_size};
+    int cube_index = 0;
+    LiteMath::float3 corners [8];
+
+    for (int i = 0; i < 8; ++i) {
+        corners [i] = voxel_info.min_corner + corner_offsets [i] * voxel_size_modifier;
+        // corner_values [i] = sample_sdf (scene, corners [i]);
+
         if (corner_values [i] < iso_level) {
             cube_index |= (1 << i);
         }
     }
-    int edge_mask = edgeTable [cube_index];
+
+    int edge_mask = edge_table [cube_index];
     if (edge_mask == 0) {
         return;
     }
@@ -193,11 +186,10 @@ void process_leaf_node (const VoxelInfo& voxel_info
     if (edge_mask & 2048)
         vertlist[11] = interpolate_vertex (iso_level, corners [3], corners [7], corner_values [3], corner_values [7]);
 
-    const int *edges = triTable [cube_index];
-    for (int i = 0; edges [i] != -1; ++i) {
+    const int *local_indices = triangles_table [cube_index];
+    for (int i = 0; local_indices [i] != -1; ++i) {
         Vertex vertex;
-        vertex.position = vertlist [edges [i]];
-        vertex.color = LiteMath::float3 {1.0f};
+        vertex.position = vertlist [local_indices [i]];
         vertex.normal = estimate_normal (scene, vertex.position);
         mesh.add_vertex_fast (vertex);
     }

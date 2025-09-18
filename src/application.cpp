@@ -15,7 +15,7 @@ Application::Application(int a_width, int a_height)
     , camera({0.0f, 0.0f, 100.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 60.0f, (float)a_width / a_height, 0.1f, 100.0f)
     , triangle_mesh()
     , user_data({this}) {
-    init_renderer();
+    // init_renderer();
 }
 
 Application::Application(int a_width, int a_height, const std::string& a_window_title)
@@ -27,7 +27,7 @@ Application::Application(int a_width, int a_height, const std::string& a_window_
     , user_data({this}) {
     init_window();
     init_vulkan();
-    init_renderer();
+    // init_renderer();
 }
 
 Application::~Application() {
@@ -75,8 +75,8 @@ void Application::init_vulkan() {
 }
 
 void Application::init_renderer() {
-    this->renderer = std::make_unique<CpuRenderer>(this->vulkan_context);
-    this->renderer->init(this->width, this->height, this->window);
+    // this->renderer = std::make_unique<CpuRenderer>(this->vulkan_context);
+    // this->renderer->init(this->width, this->height, this->window);
 }
 
 void Application::main_loop() {

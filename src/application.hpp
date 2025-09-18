@@ -7,7 +7,6 @@
 #include "GLFW/glfw3.h"
 
 #include "camera.hpp"
-#include "cpu_renderer.hpp"
 #include "mesh.hpp"
 #include "renderer.hpp"
 #include "sdf_grid.hpp"

@@ -4,7 +4,6 @@
 #include <stdexcept>
 #include <vector>
 
-#include "utils.hpp"
 #include "vulkan_context.hpp"
 
 namespace sdf_raster {
@@ -18,28 +17,35 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_utils_message_callback (
 	return VK_FALSE;
 }
 
-void VulkanContext::init (GLFWwindow* a_window, int a_width, int a_height) {
+void VulkanContext::init (int a_width, int a_height) {
     VK_CHECK_RESULT (volkInitialize ());
     this->create_instance ();
+    this->setup_debug_utils_messenger ();
     this->physical_device = vk_utils::findPhysicalDevice (this->get_instance (), true, 0, {});
     this->create_device ();
-    this->compute_command_pool_reset = vk_utils::createCommandPool (this->get_device (), this->queue_ids.compute, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    this->graphics_command_pool_reset = vk_utils::createCommandPool (this->get_device (), this->queue_ids.graphics, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    this->transfer_command_pool_reset = vk_utils::createCommandPool (this->get_device (), this->queue_ids.transfer, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    this->compute_command_pool_transistent = vk_utils::createCommandPool (this->get_device (), this->queue_ids.compute, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
-    this->graphics_command_pool_transistent = vk_utils::createCommandPool (this->get_device (), this->queue_ids.graphics, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
-    this->transfer_command_pool_transistent = vk_utils::createCommandPool (this->get_device (), this->queue_ids.transfer, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
-    setup_debug_utils_messenger ();
+    this->create_command_pools ();
+    this->get_device_queues ();
+    this->copy_helper = std::make_shared <vk_utils::PingPongCopyHelper> (this->get_physical_device ()
+            , this->get_device ()
+            , this->get_transfer_queue ()
+            , this->device_queue_ids.transfer
+            , 64 * 1024 * 1024); // staging buffer size
 
-    this->window = a_window;
-    exit (0);
-    // MY_VK_CHECK (glfwCreateWindowSurface (this->get_instance (), this->window, nullptr, &this->surface));
+    if (this->window) {
+        VK_CHECK_RESULT (glfwCreateWindowSurface (this->get_instance (), this->window, nullptr, &this->surface));
+    }
+
     // create_swap_chain(a_width, a_height);
     // create_image_views();
     // create_render_pass();
     // create_framebuffers();
     // create_command_buffers();
     // create_sync_objects();
+}
+
+void VulkanContext::init (GLFWwindow* a_window, int a_width, int a_height) {
+    this->window = a_window;
+    this->init (a_width, a_height);
 }
 
 void VulkanContext::create_instance () {
@@ -55,6 +61,15 @@ void VulkanContext::create_instance () {
     std::vector <const char *> instance_layers {};
     std::vector <const char *> instance_extensions {};
 
+    if (this->window) {
+        uint32_t glfwExtensionCount = 0;
+        const char** glfwExtensions = glfwGetRequiredInstanceExtensions (&glfwExtensionCount);
+
+        for (size_t i = 0; i < glfwExtensionCount; ++i) {
+            instance_extensions.push_back (glfwExtensions [i]);
+        }
+    }
+
     instance_layers.push_back("VK_LAYER_KHRONOS_validation");
 
     this->instance = vk_utils::createInstance (enable_validation_layers
@@ -63,24 +78,6 @@ void VulkanContext::create_instance () {
             , &app_info);
 
     volkLoadInstance (this->get_instance ());
-}
-
-void VulkanContext::create_device () {
-    std::vector <const char*> validation_layers {};
-    std::vector <const char*> device_extensions {};
-    VkPhysicalDeviceFeatures enabled_device_featurues {};
-
-    device_extensions.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
-
-    this->device = vk_utils::createLogicalDevice (this->get_physical_device ()
-            , validation_layers
-            , device_extensions
-            , enabled_device_featurues
-            , this->queue_ids
-            , VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT
-            , nullptr);
-
-    volkLoadDevice (this->get_device ());                                            
 }
 
 void VulkanContext::setup_debug_utils_messenger () {
@@ -102,6 +99,39 @@ void VulkanContext::setup_debug_utils_messenger () {
     }
 }
 
+void VulkanContext::create_device () {
+    std::vector <const char*> validation_layers {};
+    std::vector <const char*> device_extensions {};
+    VkPhysicalDeviceFeatures enabled_device_featurues {};
+
+    device_extensions.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
+
+    this->device = vk_utils::createLogicalDevice (this->get_physical_device ()
+            , validation_layers
+            , device_extensions
+            , enabled_device_featurues
+            , this->device_queue_ids
+            , VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT
+            , nullptr);
+
+    volkLoadDevice (this->get_device ());                                            
+}
+
+void VulkanContext::create_command_pools () {
+    this->compute_command_pool_reset = vk_utils::createCommandPool (this->get_device (), this->device_queue_ids.compute, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    this->graphics_command_pool_reset = vk_utils::createCommandPool (this->get_device (), this->device_queue_ids.graphics, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    this->transfer_command_pool_reset = vk_utils::createCommandPool (this->get_device (), this->device_queue_ids.transfer, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    this->compute_command_pool_transistent = vk_utils::createCommandPool (this->get_device (), this->device_queue_ids.compute, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
+    this->graphics_command_pool_transistent = vk_utils::createCommandPool (this->get_device (), this->device_queue_ids.graphics, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
+    this->transfer_command_pool_transistent = vk_utils::createCommandPool (this->get_device (), this->device_queue_ids.transfer, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
+}
+
+void VulkanContext::get_device_queues () {
+    vkGetDeviceQueue (this->get_device (), this->device_queue_ids.compute, 0, &compute_queue);
+    vkGetDeviceQueue (this->get_device (), this->device_queue_ids.graphics, 0, &graphics_queue);
+    vkGetDeviceQueue (this->get_device (), this->device_queue_ids.transfer, 0, &transfer_queue);
+}
+
 struct SwapChainSupportDetails {
     VkSurfaceCapabilitiesKHR capabilities;
     std::vector<VkSurfaceFormatKHR> formats;
@@ -110,20 +140,20 @@ struct SwapChainSupportDetails {
 
 SwapChainSupportDetails query_swap_chain_support(VkPhysicalDevice device, VkSurfaceKHR surface) {
     SwapChainSupportDetails details;
-    MY_VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities));
+    VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities));
 
     uint32_t format_count;
-    MY_VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count, nullptr));
+    VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count, nullptr));
     if (format_count != 0) {
         details.formats.resize(format_count);
-        MY_VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count, details.formats.data()));
+        VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count, details.formats.data()));
     }
 
     uint32_t present_mode_count;
-    MY_VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &present_mode_count, nullptr));
+    VK_CHECK_RESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &present_mode_count, nullptr));
     if (present_mode_count != 0) {
         details.present_modes.resize(present_mode_count);
-        MY_VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &present_mode_count, details.present_modes.data()));
+        VK_CHECK_RESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &present_mode_count, details.present_modes.data()));
     }
     return details;
 }
@@ -158,13 +188,6 @@ VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR& capabilities, int 
         actual_extent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actual_extent.height));
         return actual_extent;
     }
-}
-
-VulkanContext::VulkanContext () {
-}
-
-VulkanContext::~VulkanContext() {
-    shutdown ();
 }
 
 void VulkanContext::shutdown() {
@@ -262,11 +285,11 @@ void VulkanContext::create_swap_chain(int width, int height) {
     create_info.clipped = VK_TRUE;
     create_info.oldSwapchain = VK_NULL_HANDLE;
 
-    MY_VK_CHECK(vkCreateSwapchainKHR(this->get_device (), &create_info, nullptr, &this->swap_chain));
+    VK_CHECK_RESULT(vkCreateSwapchainKHR(this->get_device (), &create_info, nullptr, &this->swap_chain));
 
-    MY_VK_CHECK(vkGetSwapchainImagesKHR(this->get_device (), this->swap_chain, &image_count, nullptr));
+    VK_CHECK_RESULT(vkGetSwapchainImagesKHR(this->get_device (), this->swap_chain, &image_count, nullptr));
     this->swap_chain_images.resize(image_count);
-    MY_VK_CHECK(vkGetSwapchainImagesKHR(this->get_device (), this->swap_chain, &image_count, this->swap_chain_images.data()));
+    VK_CHECK_RESULT(vkGetSwapchainImagesKHR(this->get_device (), this->swap_chain, &image_count, this->swap_chain_images.data()));
 
     this->swap_chain_image_format = surface_format.format;
     this->swap_chain_extent = extent;
@@ -290,7 +313,7 @@ void VulkanContext::create_image_views() {
         create_info.subresourceRange.baseArrayLayer = 0;
         create_info.subresourceRange.layerCount = 1;
 
-        MY_VK_CHECK(vkCreateImageView(this->get_device (), &create_info, nullptr, &this->swap_chain_image_views[i]));
+        VK_CHECK_RESULT(vkCreateImageView(this->get_device (), &create_info, nullptr, &this->swap_chain_image_views[i]));
     }
 }
 
@@ -331,7 +354,7 @@ void VulkanContext::create_render_pass() {
     render_pass_info.dependencyCount = 1;
     render_pass_info.pDependencies = &dependency;
 
-    MY_VK_CHECK(vkCreateRenderPass(this->get_device (), &render_pass_info, nullptr, &this->render_pass));
+    VK_CHECK_RESULT(vkCreateRenderPass(this->get_device (), &render_pass_info, nullptr, &this->render_pass));
 }
 
 void VulkanContext::create_framebuffers() {
@@ -350,7 +373,7 @@ void VulkanContext::create_framebuffers() {
         framebuffer_info.height = this->swap_chain_extent.height;
         framebuffer_info.layers = 1;
 
-        MY_VK_CHECK(vkCreateFramebuffer(this->get_device (), &framebuffer_info, nullptr, &this->swap_chain_framebuffers[i]));
+        VK_CHECK_RESULT(vkCreateFramebuffer(this->get_device (), &framebuffer_info, nullptr, &this->swap_chain_framebuffers[i]));
     }
 }
 
@@ -363,7 +386,7 @@ void VulkanContext::create_command_buffers() {
     alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     alloc_info.commandBufferCount = (uint32_t)this->command_buffers.size();
 
-    MY_VK_CHECK(vkAllocateCommandBuffers(this->get_device (), &alloc_info, this->command_buffers.data()));
+    VK_CHECK_RESULT(vkAllocateCommandBuffers(this->get_device (), &alloc_info, this->command_buffers.data()));
 }
 
 void VulkanContext::create_sync_objects() {
@@ -379,9 +402,9 @@ void VulkanContext::create_sync_objects() {
     fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        MY_VK_CHECK(vkCreateSemaphore(this->get_device (), &semaphore_info, nullptr, &this->image_available_semaphores[i]));
-        MY_VK_CHECK(vkCreateSemaphore(this->get_device (), &semaphore_info, nullptr, &this->render_finished_semaphores[i]));
-        MY_VK_CHECK(vkCreateFence(this->get_device (), &fence_info, nullptr, &this->in_flight_fences[i]));
+        VK_CHECK_RESULT(vkCreateSemaphore(this->get_device (), &semaphore_info, nullptr, &this->image_available_semaphores[i]));
+        VK_CHECK_RESULT(vkCreateSemaphore(this->get_device (), &semaphore_info, nullptr, &this->render_finished_semaphores[i]));
+        VK_CHECK_RESULT(vkCreateFence(this->get_device (), &fence_info, nullptr, &this->in_flight_fences[i]));
     }
 }
 
@@ -408,7 +431,7 @@ VkCommandBuffer VulkanContext::begin_frame() {
     begin_info.flags = 0;
     begin_info.pInheritanceInfo = nullptr;
 
-    MY_VK_CHECK(vkBeginCommandBuffer(this->command_buffers[image_index], &begin_info));
+    VK_CHECK_RESULT(vkBeginCommandBuffer(this->command_buffers[image_index], &begin_info));
 
     VkRenderPassBeginInfo render_pass_info{};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -432,7 +455,7 @@ void VulkanContext::end_frame(VkCommandBuffer command_buffer) {
     }
 
     vkCmdEndRenderPass(command_buffer);
-    MY_VK_CHECK(vkEndCommandBuffer(command_buffer));
+    VK_CHECK_RESULT(vkEndCommandBuffer(command_buffer));
 
     uint32_t image_index = 0;
     for (uint32_t i = 0; i < this->command_buffers.size(); ++i) {
@@ -458,7 +481,7 @@ void VulkanContext::end_frame(VkCommandBuffer command_buffer) {
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = signal_semaphores;
 
-    MY_VK_CHECK(vkQueueSubmit(this->get_graphics_queue (), 1, &submit_info, this->in_flight_fences[this->current_frame]));
+    VK_CHECK_RESULT(vkQueueSubmit(this->get_graphics_queue (), 1, &submit_info, this->in_flight_fences[this->current_frame]));
 
     VkPresentInfoKHR present_info{};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -503,7 +526,7 @@ void VulkanContext::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, V
     buffer_info.usage = usage;
     buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    MY_VK_CHECK(vkCreateBuffer(this->get_device (), &buffer_info, nullptr, &buffer));
+    VK_CHECK_RESULT(vkCreateBuffer(this->get_device (), &buffer_info, nullptr, &buffer));
 
     VkMemoryRequirements mem_requirements;
     vkGetBufferMemoryRequirements(this->get_device (), buffer, &mem_requirements);
@@ -513,8 +536,8 @@ void VulkanContext::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, V
     alloc_info.allocationSize = mem_requirements.size;
     alloc_info.memoryTypeIndex = find_memory_type(mem_requirements.memoryTypeBits, properties);
 
-    MY_VK_CHECK(vkAllocateMemory(this->get_device (), &alloc_info, nullptr, &buffer_memory));
-    MY_VK_CHECK(vkBindBufferMemory(this->get_device (), buffer, buffer_memory, 0));
+    VK_CHECK_RESULT(vkAllocateMemory(this->get_device (), &alloc_info, nullptr, &buffer_memory));
+    VK_CHECK_RESULT(vkBindBufferMemory(this->get_device (), buffer, buffer_memory, 0));
 }
 
 void VulkanContext::create_image_and_view(uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
@@ -534,7 +557,7 @@ void VulkanContext::create_image_and_view(uint32_t width, uint32_t height, VkFor
     image_info.samples = VK_SAMPLE_COUNT_1_BIT;
     image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    MY_VK_CHECK(vkCreateImage(this->get_device (), &image_info, nullptr, &image));
+    VK_CHECK_RESULT(vkCreateImage(this->get_device (), &image_info, nullptr, &image));
 
     VkMemoryRequirements mem_requirements;
     vkGetImageMemoryRequirements(this->get_device (), image, &mem_requirements);
@@ -544,8 +567,8 @@ void VulkanContext::create_image_and_view(uint32_t width, uint32_t height, VkFor
     alloc_info.allocationSize = mem_requirements.size;
     alloc_info.memoryTypeIndex = find_memory_type(mem_requirements.memoryTypeBits, properties);
 
-    MY_VK_CHECK(vkAllocateMemory(this->get_device (), &alloc_info, nullptr, &image_memory));
-    MY_VK_CHECK(vkBindImageMemory(this->get_device (), image, image_memory, 0));
+    VK_CHECK_RESULT(vkAllocateMemory(this->get_device (), &alloc_info, nullptr, &image_memory));
+    VK_CHECK_RESULT(vkBindImageMemory(this->get_device (), image, image_memory, 0));
 
     VkImageViewCreateInfo view_info{};
     view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -558,7 +581,7 @@ void VulkanContext::create_image_and_view(uint32_t width, uint32_t height, VkFor
     view_info.subresourceRange.baseArrayLayer = 0;
     view_info.subresourceRange.layerCount = 1;
 
-    MY_VK_CHECK(vkCreateImageView(this->get_device (), &view_info, nullptr, &image_view));
+    VK_CHECK_RESULT(vkCreateImageView(this->get_device (), &view_info, nullptr, &image_view));
 }
 
 void VulkanContext::transition_image_layout(VkCommandBuffer cmd_buf, VkImage image, VkImageLayout old_layout, VkImageLayout new_layout) {

@@ -13,27 +13,27 @@ namespace sdf_raster {
 
 class VulkanContext {
 public:
-    VulkanContext();
-    ~VulkanContext();
-
-    // init, shutdown, resize
-    void init(GLFWwindow* window, int width, int height);
-    void shutdown();
-    void resize(int width, int height);
+    void init (int a_width, int a_height);
+    void init (GLFWwindow* window, int width, int height);
+    void shutdown ();
+    void resize (int width, int height);
 
     // getters
+    inline VkInstance get_instance () const { return this->instance; }
+    inline VkPhysicalDevice get_physical_device () const { return this->physical_device; }
+    inline VkDevice get_device () const { return this->device; }
     inline VkCommandPool get_compute_command_pool_reset () const { return this->compute_command_pool_reset; }
     inline VkCommandPool get_compute_command_pool_transistent () const { return this->compute_command_pool_transistent; }
     inline VkCommandPool get_graphics_command_pool_reset () const { return this->graphics_command_pool_reset; }
     inline VkCommandPool get_graphics_command_pool_transistent () const { return this->graphics_command_pool_transistent; }
     inline VkCommandPool get_transfer_command_pool_reset () const { return this->transfer_command_pool_reset; }
     inline VkCommandPool get_transfer_command_pool_transistent () const { return this->transfer_command_pool_transistent; }
-    inline VkDevice get_device () const { return this->device; }
+    inline VkQueue get_compute_queue () const { return this->compute_queue; }
+    inline VkQueue get_graphics_queue () const { return this->graphics_queue; }
+    inline VkQueue get_transfer_queue () const { return this->transfer_queue; }
+
     inline VkExtent2D get_swapchain_extent () const { return this->swap_chain_extent; }
     inline VkFormat get_swapchain_image_format () const { return this->swap_chain_image_format; }
-    inline VkInstance get_instance () const { return this->instance; }
-    inline VkPhysicalDevice get_physical_device () const { return this->physical_device; }
-    inline VkQueue get_graphics_queue () const { return this->compute_queue; }
     inline VkRenderPass get_render_pass () const { return this->render_pass; }
 
     // command buffer management
@@ -50,8 +50,10 @@ public:
 
 private:
     void create_instance ();
-    void create_device ();
     void setup_debug_utils_messenger ();
+    void create_device ();
+    void create_command_pools ();
+    void get_device_queues ();
 
     void create_command_buffers();
     void create_framebuffers();
@@ -62,24 +64,20 @@ private:
 
 private:
     VkInstance instance = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT debug_utils_messenger = VK_NULL_HANDLE;
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
-    vk_utils::QueueFID_T queue_ids {};
+    vk_utils::QueueFID_T device_queue_ids {};
     VkCommandPool compute_command_pool_reset = VK_NULL_HANDLE;
     VkCommandPool compute_command_pool_transistent = VK_NULL_HANDLE;
     VkCommandPool graphics_command_pool_reset = VK_NULL_HANDLE;
     VkCommandPool graphics_command_pool_transistent = VK_NULL_HANDLE;
     VkCommandPool transfer_command_pool_reset = VK_NULL_HANDLE;
     VkCommandPool transfer_command_pool_transistent = VK_NULL_HANDLE;
-    VkDebugUtilsMessengerEXT debug_utils_messenger = VK_NULL_HANDLE;
     VkQueue compute_queue = VK_NULL_HANDLE;
     VkQueue transfer_queue = VK_NULL_HANDLE;
-
-    std::shared_ptr <vk_utils::ICopyEngine>  pCopyHelper       = nullptr;
-    std::shared_ptr <vk_utils::IMemoryAlloc> pAllocatorCommon  = nullptr;
-    std::shared_ptr <vk_utils::IMemoryAlloc> pAllocatorSpecial = nullptr;
-
-    VkPhysicalDeviceSubgroupProperties subgroupProps;
+    VkQueue graphics_queue = VK_NULL_HANDLE;
+    std::shared_ptr <vk_utils::ICopyEngine> copy_helper = nullptr;
 
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     GLFWwindow* window = nullptr;

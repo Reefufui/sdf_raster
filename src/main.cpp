@@ -24,11 +24,11 @@ int main(int argc, char* argv[]) {
         }
 
         if (headless_mode) {
-            sdf_raster::Application app(width, height);
-            app.run(filename);
+            sdf_raster::Application app (width, height);
+            app.run (filename);
         } else {
-            sdf_raster::Application app(width, height, "CPU Triangle Rasterizer (Vulkan Display)");
-            app.run();
+            sdf_raster::Application app (width, height, "sdf_raster");
+            app.run ();
         }
     } catch (const std::exception& e) {
         std::cerr << "Application error: " << e.what() << std::endl;

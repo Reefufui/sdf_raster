@@ -132,11 +132,7 @@ LiteMath::float3 estimate_normal (const SdfOctree& scene, const LiteMath::float3
     return LiteMath::normalize (n);
 }
 
-void process_leaf_node (const VoxelInfo& voxel_info
-                        , Mesh& mesh
-                        , const float iso_level
-                        , const SdfOctree& scene
-                        ) {
+void process_leaf_node (const VoxelInfo& voxel_info , Mesh& mesh , const float iso_level , const SdfOctree& scene) {
     float corner_values [8];
     for (int i = 0; i < 8; ++i) {
         corner_values [i] = (*voxel_info.sdf_values) [i];
@@ -152,7 +148,6 @@ void process_leaf_node (const VoxelInfo& voxel_info
         if ((i >> 1) & 1) corner_offset.y = voxel_info.voxel_size;
         if ((i >> 2) & 1) corner_offset.z = voxel_info.voxel_size;
         corners [i] = voxel_info.min_corner + corner_offset;
-        // corner_values [i] = sample_sdf (scene, corners [i]);
 
         if (corner_values [i] < iso_level) {
             cube_index |= (1 << i);

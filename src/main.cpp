@@ -4,7 +4,7 @@
 
 #include "application.hpp"
 
-int main(int argc, char* argv[]) {
+int main (int argc, char* argv[]) {
     try {
         int width = 800;
         int height = 600;
@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
 
         if (headless_mode) {
             sdf_raster::Application app (width, height);
-            app.run (filename);
+            app.marching_cubes_cpu ("./assets/sdf/example_octree_large.octree", filename);
         } else {
             sdf_raster::Application app (width, height, "sdf_raster");
             app.run ();

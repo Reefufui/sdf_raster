@@ -13,12 +13,15 @@ namespace sdf_raster {
 
 class VulkanContext {
 public:
+    static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+
     void init (int a_width, int a_height);
     void init (GLFWwindow* window, int width, int height);
     void shutdown ();
     void resize (int width, int height);
 
     // getters
+    inline bool is_initialized () const { return this->initialized; };
     inline VkInstance get_instance () const { return this->instance; }
     inline VkPhysicalDevice get_physical_device () const { return this->physical_device; }
     inline VkDevice get_device () const { return this->device; }
@@ -36,17 +39,8 @@ public:
     inline VkFormat get_swapchain_image_format () const { return this->swap_chain_image_format; }
     inline VkRenderPass get_render_pass () const { return this->render_pass; }
 
-    // command buffer management
-    VkCommandBuffer begin_frame();
-    void end_frame(VkCommandBuffer command_buffer);
-
-    // resource management
-    void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& buffer_memory);
-    void create_image_and_view(uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
-                               VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& image_memory, VkImageView& image_view);
-    void transition_image_layout(VkCommandBuffer cmd_buf, VkImage image, VkImageLayout old_layout, VkImageLayout new_layout);
-    void copy_buffer_to_image(VkCommandBuffer cmd_buf, VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
-    uint32_t find_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
+    VkCommandBuffer begin_frame ();
+    void end_frame (VkCommandBuffer command_buffer);
 
 private:
     void create_instance ();
@@ -55,12 +49,12 @@ private:
     void create_command_pools ();
     void get_device_queues ();
 
-    void create_command_buffers();
-    void create_framebuffers();
-    void create_image_views();
-    void create_render_pass();
-    void create_swap_chain(int width, int height);
-    void create_sync_objects();
+    void create_main_command_buffers ();
+    void create_framebuffers ();
+    void create_image_views ();
+    void create_render_pass ();
+    void create_swap_chain (int width, int height);
+    void create_sync_objects ();
 
 private:
     VkInstance instance = VK_NULL_HANDLE;
@@ -92,13 +86,12 @@ private:
     std::vector<VkFramebuffer> swap_chain_framebuffers;
     std::vector<VkCommandBuffer> command_buffers;
 
-    // Объекты синхронизации
-    std::vector<VkSemaphore> image_available_semaphores;
     std::vector<VkSemaphore> render_finished_semaphores;
+    std::vector<VkSemaphore> image_available_semaphores_acquire;
     std::vector<VkFence> in_flight_fences;
     uint32_t current_frame = 0;
 
-    static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+    bool initialized = false;
 };
 
 }

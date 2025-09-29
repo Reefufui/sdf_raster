@@ -7,7 +7,6 @@
 #include "GLFW/glfw3.h"
 
 #include "camera.hpp"
-#include "mesh.hpp"
 #include "renderer.hpp"
 #include "sdf_grid.hpp"
 #include "vulkan_context.hpp"
@@ -21,14 +20,13 @@ public:
     ~Application();
 
     void run();
-    void run(const std::string& a_filename);
+    void marching_cubes_cpu (const std::string& a_octree_filename, const std::string& a_mesh_filename);
 
 private:
     void cleanup();
     void init_renderer();
     void init_vulkan();
     void init_window();
-    void main_loop();
 
     static Application* get_app_ptr(GLFWwindow* window);
     static void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos);
@@ -39,15 +37,14 @@ private:
     int width;
     int height;
     std::string window_title;
+    Camera camera;
 
     struct UserData {
         Application* app;
     } user_data;
 
-    Camera camera;
-    Mesh triangle_mesh;
-    std::shared_ptr<VulkanContext> vulkan_context;
-    std::unique_ptr<IRenderer> renderer;
+    std::shared_ptr <VulkanContext> vulkan_context;
+    std::unique_ptr <IRenderer> renderer;
 };
 
 }

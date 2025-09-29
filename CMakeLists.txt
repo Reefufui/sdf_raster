@@ -94,6 +94,7 @@ add_executable(${PROJECT_NAME}
     src/main.cpp
     src/marching_cubes.cpp
     src/mesh.cpp
+    src/mesh_shader_renderer.cpp
     src/sdf_grid.cpp
     src/sdf_octree.cpp
     src/vulkan_context.cpp
@@ -122,23 +123,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     volk
     Vulkan::Vulkan
 )
-
-add_custom_command(
-    TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders"
-    COMMENT "Creating assets/shaders directory"
-)
-file(GLOB_RECURSE SHADER_SPV_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/*.spv")
-foreach(SHADER_FILE ${SHADER_SPV_FILES})
-    get_filename_component(SHADER_NAME ${SHADER_FILE} NAME)
-    add_custom_command(
-        TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-                "${SHADER_FILE}"
-                "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/${SHADER_NAME}"
-        COMMENT "Copying shader: ${SHADER_NAME}"
-    )
-endforeach()
 
 # Линкуем всё
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -169,4 +153,39 @@ elseif(CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
     target_compile_options(${PROJECT_NAME} PRIVATE -O2 -g -DNDEBUG -Wall -Wextra)
     target_link_options(${PROJECT_NAME} PRIVATE -O2 -g)
 endif()
+
+find_program(SLANGC slangc
+    HINTS /usr/local/bin /usr/bin /opt/homebrew/bin
+)
+if(NOT SLANGC)
+    message(FATAL_ERROR "slangc not found. Ensure Slang compiler is installed and in your PATH.")
+endif()
+
+set(SLANG_SHADERS_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders)
+set(SPIRV_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/assets/shaders)
+
+file(GLOB_RECURSE SLANG_SOURCE_FILES
+    "${SLANG_SHADERS_SOURCE_DIR}/*.slang"
+    )
+
+list(APPEND BUILT_SPIRV_FILES)
+
+foreach(SLANG_FILE ${SLANG_SOURCE_FILES})
+    get_filename_component(FILE_NAME ${SLANG_FILE} NAME)
+    set(OUTPUT_SPV_FILE "${SPIRV_OUTPUT_DIR}/${FILE_NAME}.spv")
+
+    add_custom_command(
+        OUTPUT ${OUTPUT_SPV_FILE}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SPIRV_OUTPUT_DIR}/"
+        COMMAND ${SLANGC} ${SLANG_FILE} -o ${OUTPUT_SPV_FILE} -target spirv
+        DEPENDS ${SLANG_FILE}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        VERBATIM
+    )
+    list(APPEND BUILT_SPIRV_FILES ${OUTPUT_SPV_FILE})
+endforeach()
+
+add_custom_target(CompileSlangShaders ALL DEPENDS ${BUILT_SPIRV_FILES})
+
+add_dependencies(${PROJECT_NAME} CompileSlangShaders)
 

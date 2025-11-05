@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "sdf_octree.hpp"
+#include "vk_buffers.h"
 
 namespace sdf_raster {
 
@@ -91,6 +92,62 @@ float sample_sdf (const SdfOctree& scene, const LiteMath::float3& p) {
     float c1 = lerp (c01, c11, local.y);
 
     return lerp (c0, c1, local.z);
+}
+
+SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
+        VkDevice device
+        , VkPhysicalDevice physical_device
+        , const sdf_raster::SdfOctree& octree
+        , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
+        , vk_utils::DescriptorMaker& ds_maker
+        , VkShaderStageFlags shader_stage_flags) {
+    SdfOctreeDescriptorSetInfo info = {};
+
+    if (!copy_helper) {
+        throw std::runtime_error("ICopyEngine shared_ptr cannot be null.");
+    }
+
+    VkDeviceSize octreeNodesSize = octree.nodes.size () * sizeof (SdfOctreeNode);
+
+    if (octreeNodesSize == 0) {
+        throw std::runtime_error ("SdfOctree is empty, cannot create descriptor set.");
+    }
+
+    VkBuffer octreeBuffer;
+    VkMemoryRequirements memReq;
+    octreeBuffer = vk_utils::createBuffer (
+            device
+            , octreeNodesSize
+            , VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+            , &memReq
+            );
+    info.nodes_buffer = octreeBuffer;
+
+    info.memory = vk_utils::allocateAndBindWithPadding (
+            device, physical_device, {octreeBuffer}
+            );
+
+    copy_helper->UpdateBuffer (info.nodes_buffer, 0, octree.nodes.data (), octreeNodesSize);
+
+    ds_maker.BindBegin (shader_stage_flags);
+    ds_maker.BindBuffer (0, info.nodes_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    ds_maker.BindEnd (&info.descriptor_set, &info.descriptor_set_layout);
+
+    return info;
+}
+
+void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetInfo& info) {
+    if (info.nodes_buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer (device, info.nodes_buffer, nullptr);
+        info.nodes_buffer = VK_NULL_HANDLE;
+    }
+
+    if (info.memory != VK_NULL_HANDLE) {
+        vkFreeMemory (device, info.memory, nullptr);
+        info.memory = VK_NULL_HANDLE;
+    }
+
+    info = {};
 }
 
 }

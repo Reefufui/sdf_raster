@@ -12,9 +12,29 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_utils_message_callback (
     VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT             messageType,
     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-    void                                       *pUserData) {
-    std::cout << pCallbackData->pMessage << "\n";
-	return VK_FALSE;
+    void *) {
+    std::cerr << "Validation Layer ";
+    if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        std::cerr << "ERROR: ";
+    } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+        std::cerr << "WARNING: ";
+    } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+        std::cerr << "INFO: ";
+    } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
+        std::cerr << "VERBOSE: ";
+    }
+
+    if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) {
+        std::cerr << "GENERAL ";
+    }
+    if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) {
+        std::cerr << "VALIDATION ";
+    }
+    if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
+        std::cerr << "PERFORMANCE ";
+    }
+    std::cerr << ": " << pCallbackData->pMessage << std::endl;
+    return VK_FALSE;
 }
 
 void VulkanContext::init (int a_width, int a_height) {
@@ -90,7 +110,8 @@ void VulkanContext::setup_debug_utils_messenger () {
                     this->get_instance (), "vkCreateDebugUtilsMessengerEXT"));
     }
     if (vkCreateDebugUtilsMessengerEXT != nullptr) { 
-        VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
+        VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info {};
+	    debug_utils_messenger_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
 	    debug_utils_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
 	    debug_utils_messenger_create_info.messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
 	    debug_utils_messenger_create_info.pfnUserCallback = debug_utils_message_callback;
@@ -111,15 +132,13 @@ void VulkanContext::create_device () {
     device_extensions.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
     device_extensions.push_back (VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
-    VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT,
-        .pNext = nullptr
-    };
+    VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures {};
+    meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+    meshShaderFeatures.pNext = nullptr;
 
-    VkPhysicalDeviceFeatures2 features2 = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-        .pNext = &meshShaderFeatures
-    };
+    VkPhysicalDeviceFeatures2 features2 {};
+    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features2.pNext = &meshShaderFeatures;
 
     vkGetPhysicalDeviceFeatures2 (this->get_physical_device (), &features2);
 
@@ -127,12 +146,11 @@ void VulkanContext::create_device () {
         std::runtime_error ("Mesh Shaders are NOT supported.");
     }
 
-    VkPhysicalDeviceMeshShaderFeaturesEXT requestedMeshShaderFeatures = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT,
-        .pNext = nullptr,
-        .taskShader = VK_TRUE,
-        .meshShader = VK_TRUE
-    };
+    VkPhysicalDeviceMeshShaderFeaturesEXT requestedMeshShaderFeatures {};
+    requestedMeshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+    requestedMeshShaderFeatures.pNext = nullptr;
+    requestedMeshShaderFeatures.taskShader = VK_TRUE;
+    requestedMeshShaderFeatures.meshShader = VK_TRUE;
 
     this->device = vk_utils::createLogicalDevice (this->get_physical_device ()
             , validation_layers
@@ -256,81 +274,156 @@ void VulkanContext::create_swap_chain (int width, int height) {
 
     this->swap_chain_image_format = surface_format.format;
     this->swap_chain_extent = extent;
-
-    this->copy_helper.reset ();
 }
 
 void VulkanContext::shutdown () {
-    if (this->get_device () == VK_NULL_HANDLE) return;
-
-    vkDeviceWaitIdle (this->get_device ());
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        if (this->render_finished_semaphores.size () && this->render_finished_semaphores [i] != VK_NULL_HANDLE) {
-            vkDestroySemaphore (this->get_device (), this->render_finished_semaphores [i], nullptr);
-        }
-        if (this->image_available_semaphores_acquire.size () && this->image_available_semaphores_acquire[i] != VK_NULL_HANDLE) {
-            vkDestroySemaphore (this->get_device (), this->image_available_semaphores_acquire [i], nullptr);
-        }
-        if (this->in_flight_fences.size () && this->in_flight_fences [i] != VK_NULL_HANDLE) {
-            vkDestroyFence (this->get_device (), this->in_flight_fences [i], nullptr);
-        }
+    if (!this->initialized) {
+        std::cerr << "[VulkanContext::shutdown] Warning: Attempted to shut down an uninitialized or already shut down VulkanContext." << std::endl;
+        return;
     }
-    this->render_finished_semaphores.clear ();
-    this->image_available_semaphores_acquire.clear ();
-    this->in_flight_fences.clear ();
+
+    if (this->get_device() == VK_NULL_HANDLE) {
+        std::cerr << "[VulkanContext::shutdown] Warning: Vulkan device was VK_NULL_HANDLE during shutdown. Resources might not have been created." << std::endl;
+    } else {
+        vkDeviceWaitIdle (this->get_device ());
+    }
+
+    destroy_sync_objects ();
 
     for (auto framebuffer : this->swap_chain_framebuffers) {
-        if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer (this->get_device (), framebuffer, nullptr);
+        if (framebuffer != VK_NULL_HANDLE) {
+            vkDestroyFramebuffer (this->get_device (), framebuffer, nullptr);
+        }
     }
-    this->swap_chain_framebuffers. clear();
+    this->swap_chain_framebuffers.clear ();
 
-    if (this->render_pass != VK_NULL_HANDLE) vkDestroyRenderPass (this->get_device (), this->render_pass, nullptr);
-    this->render_pass = VK_NULL_HANDLE;
+    if (this->render_pass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass (this->get_device (), this->render_pass, nullptr);
+        this->render_pass = VK_NULL_HANDLE;
+    }
 
     for (auto imageView : this->swap_chain_image_views) {
-        if (imageView != VK_NULL_HANDLE) vkDestroyImageView(this->get_device (), imageView, nullptr);
+        if (imageView != VK_NULL_HANDLE) {
+            vkDestroyImageView (this->get_device (), imageView, nullptr);
+        }
     }
     this->swap_chain_image_views.clear ();
 
-    if (this->swap_chain != VK_NULL_HANDLE) vkDestroySwapchainKHR (this->get_device (), this->swap_chain, nullptr);
-    this->swap_chain = VK_NULL_HANDLE;
+    if (this->swap_chain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR (this->get_device (), this->swap_chain, nullptr);
+        this->swap_chain = VK_NULL_HANDLE;
+    }
 
-    if (this->surface != VK_NULL_HANDLE) vkDestroySurfaceKHR (this->get_instance (), this->surface, nullptr);
-    this->surface = VK_NULL_HANDLE;
+    if (this->compute_command_pool_reset != VK_NULL_HANDLE) {
+        vkDestroyCommandPool (this->get_device (), this->compute_command_pool_reset, nullptr);
+        this->compute_command_pool_reset = VK_NULL_HANDLE;
+    }
+    if (this->graphics_command_pool_reset != VK_NULL_HANDLE) {
+        vkDestroyCommandPool (this->get_device (), this->graphics_command_pool_reset, nullptr);
+        this->graphics_command_pool_reset = VK_NULL_HANDLE;
+    }
+    if (this->transfer_command_pool_reset != VK_NULL_HANDLE) {
+        vkDestroyCommandPool (this->get_device (), this->transfer_command_pool_reset, nullptr);
+        this->transfer_command_pool_reset = VK_NULL_HANDLE;
+    }
+    if (this->compute_command_pool_transistent != VK_NULL_HANDLE) {
+        vkDestroyCommandPool (this->get_device (), this->compute_command_pool_transistent, nullptr);
+        this->compute_command_pool_transistent = VK_NULL_HANDLE;
+    }
+    if (this->graphics_command_pool_transistent != VK_NULL_HANDLE) {
+        vkDestroyCommandPool (this->get_device (), this->graphics_command_pool_transistent, nullptr);
+        this->graphics_command_pool_transistent = VK_NULL_HANDLE;
+    }
+    if (this->transfer_command_pool_transistent != VK_NULL_HANDLE) {
+        vkDestroyCommandPool (this->get_device (), this->transfer_command_pool_transistent, nullptr);
+        this->transfer_command_pool_transistent = VK_NULL_HANDLE;
+    }
+
+    this->copy_helper.reset ();
+
+    if (this->device != VK_NULL_HANDLE) {
+        vkDestroyDevice (this->device, nullptr);
+        this->device = VK_NULL_HANDLE;
+    }
+
+    if (this->surface != VK_NULL_HANDLE) {
+        if (this->get_instance () != VK_NULL_HANDLE) {
+            vkDestroySurfaceKHR (this->get_instance(), this->surface, nullptr);
+        } else {
+            std::cerr << "[VulkanContext::shutdown] Warning: VkInstance was VK_NULL_HANDLE while destroying VkSurfaceKHR." << std::endl;
+        }
+        this->surface = VK_NULL_HANDLE;
+    }
+
+    if (this->debug_utils_messenger != VK_NULL_HANDLE) {
+        if (vkDestroyDebugUtilsMessengerEXT != nullptr && this->get_instance () != VK_NULL_HANDLE) {
+            vkDestroyDebugUtilsMessengerEXT (this->get_instance (), this->debug_utils_messenger, nullptr);
+        } else {
+            std::cerr << "[VulkanContext::shutdown] Warning: Could not destroy debug messenger (PFN or Instance was NULL)." << std::endl;
+        }
+        this->debug_utils_messenger = VK_NULL_HANDLE;
+    }
+
+    if (this->instance != VK_NULL_HANDLE) {
+        vkDestroyInstance (this->instance, nullptr);
+        this->instance = VK_NULL_HANDLE;
+    }
+
+    this->initialized = false;
+    std::cout << "[VulkanContext::shutdown] VulkanContext shut down successfully." << std::endl;
+}
+
+void VulkanContext::destroy_sync_objects () {
+    for (auto semaphore : this->render_finished_semaphores) {
+        if (semaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore (this->get_device (), semaphore, nullptr);
+        }
+    }
+    this->render_finished_semaphores.clear ();
+
+    for (auto semaphore : this->image_available_semaphores_acquire) {
+        if (semaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore (this->get_device (), semaphore, nullptr);
+        }
+    }
+    this->image_available_semaphores_acquire.clear ();
+
+    for (auto fence : this->in_flight_fences) {
+        if (fence != VK_NULL_HANDLE) {
+            vkDestroyFence (this->get_device (), fence, nullptr);
+        }
+    }
+    this->in_flight_fences.clear ();
 }
 
 void VulkanContext::resize(int a_width, int a_height) {
     if (a_width == 0 || a_height == 0) {
         return;
     }
-    vkDeviceWaitIdle(this->get_device ());
+    vkDeviceWaitIdle (this->get_device ());
+
+    this->destroy_sync_objects ();
 
     for (auto framebuffer : this->swap_chain_framebuffers) {
-        vkDestroyFramebuffer(this->get_device (), framebuffer, nullptr);
+        if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(this->get_device (), framebuffer, nullptr);
     }
     this->swap_chain_framebuffers.clear();
     for (auto imageView : this->swap_chain_image_views) {
-        vkDestroyImageView(this->get_device (), imageView, nullptr);
+        if (imageView != VK_NULL_HANDLE) vkDestroyImageView(this->get_device (), imageView, nullptr);
     }
-    this->swap_chain_image_views.clear();
+    this->swap_chain_image_views.clear ();
 
-    vkDestroySwapchainKHR(this->get_device (), this->swap_chain, nullptr);
+    if (this->swap_chain != VK_NULL_HANDLE) vkDestroySwapchainKHR(this->get_device (), this->swap_chain, nullptr);
     this->swap_chain = VK_NULL_HANDLE;
 
     create_swap_chain (a_width, a_height);
     create_image_views ();
     create_framebuffers ();
 
-    uint32_t swapchain_image_count = this->swap_chain_images.size();
-    this->render_finished_semaphores.resize(swapchain_image_count);
-    VkSemaphoreCreateInfo semaphore_info{};
-    semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    for (uint32_t i = 0; i < swapchain_image_count; ++i) {
-        VK_CHECK_RESULT (vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->render_finished_semaphores [i]));
-    }
+    create_sync_objects ();
 
     this->create_main_command_buffers ();
+    this->current_frame = 0;
 }
 
 void VulkanContext::create_image_views () {
@@ -485,7 +578,7 @@ VkCommandBuffer VulkanContext::begin_frame () {
     render_pass_info.renderArea.offset = {0, 0};
     render_pass_info.renderArea.extent = this->swap_chain_extent;
 
-    VkClearValue clear_color = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    VkClearValue clear_color = {{{0.2f, 0.3f, 0.3f, 1.0f}}};
     render_pass_info.clearValueCount = 1;
     render_pass_info.pClearValues = &clear_color;
 

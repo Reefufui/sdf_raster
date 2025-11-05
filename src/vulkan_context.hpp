@@ -34,6 +34,7 @@ public:
     inline VkQueue get_compute_queue () const { return this->compute_queue; }
     inline VkQueue get_graphics_queue () const { return this->graphics_queue; }
     inline VkQueue get_transfer_queue () const { return this->transfer_queue; }
+    inline std::shared_ptr <vk_utils::ICopyEngine> get_copy_helper () const { return this->copy_helper; }
 
     inline VkExtent2D get_swapchain_extent () const { return this->swap_chain_extent; }
     inline VkFormat get_swapchain_image_format () const { return this->swap_chain_image_format; }
@@ -55,6 +56,8 @@ private:
     void create_render_pass ();
     void create_swap_chain (int width, int height);
     void create_sync_objects ();
+
+    void destroy_sync_objects ();
 
 private:
     VkInstance instance = VK_NULL_HANDLE;

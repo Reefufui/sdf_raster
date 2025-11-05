@@ -18,11 +18,10 @@ MeshShaderRenderer::MeshShaderRenderer (std::shared_ptr <VulkanContext> vulkan_c
 }
 
 MeshShaderRenderer::~MeshShaderRenderer () {
-    shutdown ();
     std::cout << "MeshShaderRenderer destroyed." << std::endl;
 }
 
-void MeshShaderRenderer::init (int a_width, int a_height) {
+void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree) {
     std::cout << "MeshShaderRenderer initializing..." << std::endl;
 
     if (!this->context || !this->context->is_initialized ()) {
@@ -31,6 +30,7 @@ void MeshShaderRenderer::init (int a_width, int a_height) {
 
     this->width = a_width;
     this->height = a_height;
+    this->sdf_octree = std::move (a_sdf_octree);
 
     this->init_mesh_shading_pipeline ();
     this->initialized = true;
@@ -60,18 +60,42 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
             , shader_modules);
 
     VkPushConstantRange pushConstantRange {};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.size = sizeof (PushConstantsData);
     pushConstantRange.offset = 0;
 
+    vk_utils::DescriptorTypesVec ds_type_vec {};
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
+    this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (
+            this->context->get_device ()
+            , ds_type_vec
+            , 3
+            );
+	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
+			, this->context->get_physical_device ()
+			, this->sdf_octree
+			, this->context->get_copy_helper ()
+			, *descriptor_maker
+			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT);
+
+	this->marching_cubes_lookup_table_ds = create_lookup_table_descriptor_set (this->context->get_device ()
+			, this->context->get_physical_device ()
+			, this->context->get_copy_helper ()
+			, *descriptor_maker
+			, VK_SHADER_STAGE_MESH_BIT_EXT);
+
+    std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
+    descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);
+    descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds.descriptor_set_layout);
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pSetLayouts = VK_NULL_HANDLE;
+    pipelineLayoutInfo.setLayoutCount = descriptor_set_layouts.size ();
+    pipelineLayoutInfo.pSetLayouts = descriptor_set_layouts.data ();
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &pipeline_layout));
+    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &this->pipeline_layout));
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -170,7 +194,12 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
                 , nullptr
                 , &this->pipeline));
 
-    // TODO: destroy shader modules
+    for (VkShaderModule module : shader_modules) {
+        if (module != VK_NULL_HANDLE) {
+            vkDestroyShaderModule (this->context->get_device (), module, nullptr);
+        }
+    }
+    shader_modules.clear ();
 }
 
 void MeshShaderRenderer::render (const Camera& a_camera) {
@@ -178,9 +207,48 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
         std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
         return;
     }
+
+    this->update_push_constants (a_camera);
+
     auto cmd_buff = this->context->begin_frame ();
+    if (cmd_buff == VK_NULL_HANDLE) {
+        return;
+    }
+
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->pipeline);
+
+    vkCmdBindDescriptorSets (
+            cmd_buff,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            this->pipeline_layout,
+            0,
+            1,
+            &this->sdf_octree_ds.descriptor_set,
+            0,
+            nullptr
+            );
+
+    vkCmdBindDescriptorSets (
+            cmd_buff,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            this->pipeline_layout,
+            1,
+            1,
+            &this->marching_cubes_lookup_table_ds.descriptor_set,
+            0,
+            nullptr
+            );
+
+    vkCmdPushConstants (cmd_buff
+            , pipeline_layout
+            , VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT
+            , 0
+            , sizeof (PushConstantsData)
+            , &this->push_constants
+            );
+
     vkCmdDrawMeshTasksEXT (cmd_buff, 1, 1, 1);
+
     this->context->end_frame (cmd_buff);
 }
 
@@ -199,18 +267,44 @@ void MeshShaderRenderer::resize (int a_width, int a_height) {
 }
 
 void MeshShaderRenderer::shutdown () {
+    vkDeviceWaitIdle (this->context->get_device ());
+
     if (!this->context || !this->context->is_initialized ()) {
+        std::cerr << "[MeshShaderRenderer::shutdown] Warning: Vulkan context is already missing." << std::endl;
         return;
     }
 
     std::cout << "MeshShaderRenderer shutting down..." << std::endl;
 
-    this->pipeline = VK_NULL_HANDLE;
-    this->pipeline_layout = VK_NULL_HANDLE;
+    this->descriptor_maker.reset ();
+
+    if (this->pipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline (this->context->get_device (), this->pipeline, nullptr);
+        this->pipeline = VK_NULL_HANDLE;
+    }
+    if (this->pipeline_layout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout (this->context->get_device (), this->pipeline_layout, nullptr);
+        this->pipeline_layout = VK_NULL_HANDLE;
+    }
+
     this->render_pass = VK_NULL_HANDLE;
 
     this->initialized = false;
 }
+
+void MeshShaderRenderer::update_push_constants (const Camera& a_camera) {
+    float aspect_ratio = static_cast <float> (this->width) / static_cast <float> (this->height);
+    this->push_constants.view_proj = a_camera.get_view_projection_matrix (aspect_ratio);
+    this->push_constants.camera_pos = a_camera.camera_position;
+    this->push_constants.padding = 1.0f;
+    this->push_constants.color = LiteMath::float4 (0.f, 1.f, 0.f, 1.f);
+
+    std::vector <LiteMath::float4> planes = Camera::extract_frustum_planes (push_constants.view_proj);
+    for (int i = 0; i < 6; ++i) {
+        this->push_constants.frustum_planes [i] = planes [i];
+    }
+}
+
 
 } // namespace sdf_raster
 

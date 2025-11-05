@@ -89,13 +89,13 @@ add_executable(${PROJECT_NAME}
     ${vk_utils_project_SOURCE_DIR}/vk_copy.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_images.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_utils.cpp
+    ${vk_utils_project_SOURCE_DIR}/vk_descriptor_sets.cpp
     src/application.cpp
-    src/camera.cpp
     src/main.cpp
     src/marching_cubes.cpp
+    src/marching_cubes_lookup_table.cpp
     src/mesh.cpp
     src/mesh_shader_renderer.cpp
-    src/sdf_grid.cpp
     src/sdf_octree.cpp
     src/vulkan_context.cpp
 )
@@ -188,4 +188,5 @@ endforeach()
 add_custom_target(CompileSlangShaders ALL DEPENDS ${BUILT_SPIRV_FILES})
 
 add_dependencies(${PROJECT_NAME} CompileSlangShaders)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/assets/)
 

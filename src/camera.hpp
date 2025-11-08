@@ -12,8 +12,8 @@ enum Camera_Movement {
 };
 
 struct Camera {
-    Camera (LiteMath::float3 initial_position = LiteMath::float3 (0.0f, 0.0f, 1.0f)
-            , LiteMath::float3 initial_up = LiteMath::float3 (0.0f, 1.0f, 0.0f)
+    Camera (LiteMath::float3 initial_position = LiteMath::float3 (0.0f, 0.0f, 0.0f)
+            , LiteMath::float3 initial_up = LiteMath::float3 (0.0f, -1.0f, 0.0f)
             , float initial_yaw = 0.0f
             , float initial_pitch = 0.0f)
         : camera_position (initial_position)
@@ -22,10 +22,10 @@ struct Camera {
           , yaw_angle (initial_yaw)
           , pitch_angle (initial_pitch)
           , movement_speed (2.5f)
-          , mouse_sensitivity (0.01f)
+          , mouse_sensitivity (0.1f)
           , fov_y (60.0f)
           , near_plane (0.001f)
-          , far_plane (10.0f) {
+          , far_plane (100.0f) {
         update_camera_vectors ();
     }
 
@@ -61,7 +61,7 @@ struct Camera {
         x_offset *= mouse_sensitivity;
         y_offset *= mouse_sensitivity;
 
-        yaw_angle += x_offset;
+        yaw_angle -= x_offset;
         pitch_angle += y_offset;
 
         if (constrain_pitch) {
@@ -81,7 +81,7 @@ struct Camera {
         new_front.z = std::sin (LiteMath::DEG_TO_RAD * yaw_angle) * std::cos (LiteMath::DEG_TO_RAD * pitch_angle);
 
         camera_front = LiteMath::normalize (new_front);
-        camera_right = LiteMath::normalize (LiteMath::cross (camera_front, LiteMath::float3 (0.0f, 1.0f, 0.0f)));
+        camera_right = LiteMath::normalize (LiteMath::cross (camera_front, LiteMath::float3 (0.0f, -1.0f, 0.0f)));
         camera_up    = LiteMath::normalize (LiteMath::cross (camera_right, camera_front));
     }
 

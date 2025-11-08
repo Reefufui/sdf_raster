@@ -1,7 +1,8 @@
 #pragma once
 
-#include "vk_utils.h"
 #include "vk_context.h"
+#include "vk_swapchain.h"
+#include "vk_utils.h"
 #include "GLFW/glfw3.h"
 
 #include <memory>
@@ -13,8 +14,6 @@ namespace sdf_raster {
 
 class VulkanContext {
 public:
-    static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
-
     void init (int a_width, int a_height);
     void init (GLFWwindow* window, int width, int height);
     void shutdown ();
@@ -36,8 +35,8 @@ public:
     inline VkQueue get_transfer_queue () const { return this->transfer_queue; }
     inline std::shared_ptr <vk_utils::ICopyEngine> get_copy_helper () const { return this->copy_helper; }
 
-    inline VkExtent2D get_swapchain_extent () const { return this->swap_chain_extent; }
-    inline VkFormat get_swapchain_image_format () const { return this->swap_chain_image_format; }
+    inline VkExtent2D get_swapchain_extent () const { return this->swapchain.GetExtent (); }
+    inline VkFormat get_swapchain_image_format () const { return this->swapchain.GetFormat (); }
     inline VkRenderPass get_render_pass () const { return this->render_pass; }
 
     VkCommandBuffer begin_frame ();
@@ -49,15 +48,8 @@ private:
     void create_device ();
     void create_command_pools ();
     void get_device_queues ();
-
-    void create_main_command_buffers ();
-    void create_framebuffers ();
-    void create_image_views ();
     void create_render_pass ();
-    void create_swap_chain (int width, int height);
-    void create_sync_objects ();
-
-    void destroy_sync_objects ();
+    void create_frame_resources ();
 
 private:
     VkInstance instance = VK_NULL_HANDLE;
@@ -74,25 +66,26 @@ private:
     VkQueue compute_queue = VK_NULL_HANDLE;
     VkQueue transfer_queue = VK_NULL_HANDLE;
     VkQueue graphics_queue = VK_NULL_HANDLE;
+    VkQueue present_queue = VK_NULL_HANDLE;
     std::shared_ptr <vk_utils::ICopyEngine> copy_helper = nullptr;
 
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     GLFWwindow* window = nullptr;
 
-    VkSwapchainKHR swap_chain = VK_NULL_HANDLE;
-    std::vector<VkImage> swap_chain_images;
-    std::vector<VkImageView> swap_chain_image_views;
-    VkFormat swap_chain_image_format;
-    VkExtent2D swap_chain_extent;
-
+    VulkanSwapChain swapchain;
+    std::vector <VkFramebuffer> swapchain_framebuffers;
     VkRenderPass render_pass = VK_NULL_HANDLE;
-    std::vector<VkFramebuffer> swap_chain_framebuffers;
-    std::vector<VkCommandBuffer> command_buffers;
 
-    std::vector<VkSemaphore> render_finished_semaphores;
-    std::vector<VkSemaphore> image_available_semaphores_acquire;
-    std::vector<VkFence> in_flight_fences;
+    const int max_frames_in_flight = 3;
     uint32_t current_frame = 0;
+    uint32_t current_image_index;
+    struct FrameResources {
+        VkSemaphore ready_to_present;
+        VkSemaphore ready_to_render;
+        VkFence ready_to_record;
+        VkCommandBuffer command_buffer;
+    };
+    std::vector <FrameResources> frame_resources;
 
     bool initialized = false;
 };

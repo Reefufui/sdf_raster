@@ -87,9 +87,10 @@ add_executable(${PROJECT_NAME}
     ${vk_utils_project_SOURCE_DIR}/vk_buffers.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_context.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_copy.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_images.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_utils.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_descriptor_sets.cpp
+    ${vk_utils_project_SOURCE_DIR}/vk_images.cpp
+    ${vk_utils_project_SOURCE_DIR}/vk_swapchain.cpp
+    ${vk_utils_project_SOURCE_DIR}/vk_utils.cpp
     src/application.cpp
     src/main.cpp
     src/marching_cubes.cpp
@@ -133,7 +134,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 set_target_properties(${PROJECT_NAME} PROPERTIES
     # Устанавливаем RPATH на директорию, содержащую libvulkan.dylib
     # (Это та же директория, что и для libMoltenVK.dylib в твоем случае)
-    INSTALL_RPATH "${VULKAN_SDK}/lib" # <-- Указываем директорию
+    INSTALL_RPATH "$ENV{VULKAN_SDK}/lib" # <-- Указываем директорию
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE -fopenmp)
@@ -154,9 +155,11 @@ elseif(CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
     target_link_options(${PROJECT_NAME} PRIVATE -O2 -g)
 endif()
 
-find_program(SLANGC slangc
-    HINTS /usr/local/bin /usr/bin /opt/homebrew/bin
-)
+set(SLANGC "$ENV{VULKAN_SDK}/bin/slangc")
+message(STATUS "Found slang: ${SLANGC}.")
+if (NOT EXISTS "${SLANGC}")
+    message(FATAL_ERROR "Slang compiler not found at expected location: ${SLANGC}. Please check your VULKAN_SDK installation.")
+endif()
 if(NOT SLANGC)
     message(FATAL_ERROR "slangc not found. Ensure Slang compiler is installed and in your PATH.")
 endif()

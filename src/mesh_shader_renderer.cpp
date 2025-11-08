@@ -111,7 +111,7 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
     viewport.width = (float) this->width;
     viewport.height = (float) this->height;
     viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
+    viewport.maxDepth = 10000.0f;
 
     VkRect2D scissor {};
     scissor.offset = {0, 0};
@@ -130,7 +130,7 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 

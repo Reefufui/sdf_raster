@@ -57,12 +57,19 @@ void VulkanContext::init (int a_width, int a_height) {
         std::cout << "[init] launched in headless mode." << std::endl;
     }
 
-    this->create_swap_chain (a_width, a_height);
-    this->create_image_views ();
+    uint32_t width = a_width;
+    uint32_t height = a_height;
+    this->present_queue = this->swapchain.CreateSwapChain (this->get_physical_device ()
+            , this->get_device ()
+            , this->surface
+            , width
+            , height
+            , this->max_frames_in_flight
+            , true);
+
     this->create_render_pass ();
-    this->create_framebuffers ();
-    this->create_main_command_buffers ();
-    this->create_sync_objects ();
+    this->swapchain_framebuffers = vk_utils::createFrameBuffers (this->get_device (), this->swapchain, this->render_pass);
+    this->create_frame_resources ();
 
     this->initialized = true;
 }
@@ -236,46 +243,6 @@ VkExtent2D choose_swap_extent (const VkSurfaceCapabilitiesKHR& capabilities, int
     }
 }
 
-void VulkanContext::create_swap_chain (int width, int height) {
-    SwapChainSupportDetails swap_chain_support = query_swap_chain_support (this->get_physical_device (), this->surface);
-
-    VkSurfaceFormatKHR surface_format = choose_swap_surface_format (swap_chain_support.formats);
-    VkPresentModeKHR present_mode = choose_swap_present_mode (swap_chain_support.present_modes);
-    VkExtent2D extent = choose_swap_extent (swap_chain_support.capabilities, width, height);
-
-    uint32_t image_count = swap_chain_support.capabilities.minImageCount + 1;
-    if (swap_chain_support.capabilities.maxImageCount > 0 && image_count > swap_chain_support.capabilities.maxImageCount) {
-        image_count = swap_chain_support.capabilities.maxImageCount;
-    }
-
-    VkSwapchainCreateInfoKHR create_info {};
-    create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    create_info.surface = this->surface;
-    create_info.minImageCount = image_count;
-    create_info.imageFormat = surface_format.format;
-    create_info.imageColorSpace = surface_format.colorSpace;
-    create_info.imageExtent = extent;
-    create_info.imageArrayLayers = 1;
-    create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    create_info.queueFamilyIndexCount = 0;
-    create_info.pQueueFamilyIndices = nullptr;
-    create_info.preTransform = swap_chain_support.capabilities.currentTransform;
-    create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    create_info.presentMode = present_mode;
-    create_info.clipped = VK_TRUE;
-    create_info.oldSwapchain = VK_NULL_HANDLE;
-
-    VK_CHECK_RESULT (vkCreateSwapchainKHR (this->get_device (), &create_info, nullptr, &this->swap_chain));
-
-    VK_CHECK_RESULT (vkGetSwapchainImagesKHR (this->get_device (), this->swap_chain, &image_count, nullptr));
-    this->swap_chain_images.resize (image_count);
-    VK_CHECK_RESULT (vkGetSwapchainImagesKHR (this->get_device (), this->swap_chain, &image_count, this->swap_chain_images.data ()));
-
-    this->swap_chain_image_format = surface_format.format;
-    this->swap_chain_extent = extent;
-}
-
 void VulkanContext::shutdown () {
     if (!this->initialized) {
         std::cerr << "[VulkanContext::shutdown] Warning: Attempted to shut down an uninitialized or already shut down VulkanContext." << std::endl;
@@ -288,30 +255,23 @@ void VulkanContext::shutdown () {
         vkDeviceWaitIdle (this->get_device ());
     }
 
-    destroy_sync_objects ();
-
-    for (auto framebuffer : this->swap_chain_framebuffers) {
+    this->swapchain.Cleanup ();
+    for (auto framebuffer : this->swapchain_framebuffers) {
         if (framebuffer != VK_NULL_HANDLE) {
             vkDestroyFramebuffer (this->get_device (), framebuffer, nullptr);
         }
     }
-    this->swap_chain_framebuffers.clear ();
+    this->swapchain_framebuffers.clear ();
+
+    for (size_t i = 0; i < this->max_frames_in_flight; i++) {
+        vkDestroySemaphore (this->get_device (), this->frame_resources [i].ready_to_present, nullptr);
+        vkDestroySemaphore (this->get_device (), this->frame_resources [i].ready_to_render, nullptr);
+        vkDestroyFence (this->get_device (), this->frame_resources [i].ready_to_record, nullptr);
+    }
 
     if (this->render_pass != VK_NULL_HANDLE) {
         vkDestroyRenderPass (this->get_device (), this->render_pass, nullptr);
         this->render_pass = VK_NULL_HANDLE;
-    }
-
-    for (auto imageView : this->swap_chain_image_views) {
-        if (imageView != VK_NULL_HANDLE) {
-            vkDestroyImageView (this->get_device (), imageView, nullptr);
-        }
-    }
-    this->swap_chain_image_views.clear ();
-
-    if (this->swap_chain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR (this->get_device (), this->swap_chain, nullptr);
-        this->swap_chain = VK_NULL_HANDLE;
     }
 
     if (this->compute_command_pool_reset != VK_NULL_HANDLE) {
@@ -373,84 +333,37 @@ void VulkanContext::shutdown () {
     std::cout << "[VulkanContext::shutdown] VulkanContext shut down successfully." << std::endl;
 }
 
-void VulkanContext::destroy_sync_objects () {
-    for (auto semaphore : this->render_finished_semaphores) {
-        if (semaphore != VK_NULL_HANDLE) {
-            vkDestroySemaphore (this->get_device (), semaphore, nullptr);
-        }
-    }
-    this->render_finished_semaphores.clear ();
-
-    for (auto semaphore : this->image_available_semaphores_acquire) {
-        if (semaphore != VK_NULL_HANDLE) {
-            vkDestroySemaphore (this->get_device (), semaphore, nullptr);
-        }
-    }
-    this->image_available_semaphores_acquire.clear ();
-
-    for (auto fence : this->in_flight_fences) {
-        if (fence != VK_NULL_HANDLE) {
-            vkDestroyFence (this->get_device (), fence, nullptr);
-        }
-    }
-    this->in_flight_fences.clear ();
-}
-
 void VulkanContext::resize(int a_width, int a_height) {
     if (a_width == 0 || a_height == 0) {
         return;
     }
     vkDeviceWaitIdle (this->get_device ());
 
-    this->destroy_sync_objects ();
-
-    for (auto framebuffer : this->swap_chain_framebuffers) {
-        if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(this->get_device (), framebuffer, nullptr);
+    for (auto framebuffer : this->swapchain_framebuffers) {
+        if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer (this->get_device (), framebuffer, nullptr);
     }
-    this->swap_chain_framebuffers.clear();
-    for (auto imageView : this->swap_chain_image_views) {
-        if (imageView != VK_NULL_HANDLE) vkDestroyImageView(this->get_device (), imageView, nullptr);
-    }
-    this->swap_chain_image_views.clear ();
+    this->swapchain_framebuffers.clear ();
+    this->swapchain.Cleanup ();
 
-    if (this->swap_chain != VK_NULL_HANDLE) vkDestroySwapchainKHR(this->get_device (), this->swap_chain, nullptr);
-    this->swap_chain = VK_NULL_HANDLE;
+    uint32_t width = a_width;
+    uint32_t height = a_height;
+    this->swapchain.CreateSwapChain (this->get_physical_device ()
+                                     , this->get_device ()
+                                     , this->surface
+                                     , width
+                                     , height
+                                     , this->max_frames_in_flight
+                                     , true);
+    this->swapchain_framebuffers = vk_utils::createFrameBuffers (this->get_device (), this->swapchain, this->render_pass);
 
-    create_swap_chain (a_width, a_height);
-    create_image_views ();
-    create_framebuffers ();
+    this->create_frame_resources ();
 
-    create_sync_objects ();
-
-    this->create_main_command_buffers ();
     this->current_frame = 0;
-}
-
-void VulkanContext::create_image_views () {
-    this->swap_chain_image_views.resize (this->swap_chain_images.size ());
-    for (size_t i = 0; i < this->swap_chain_images.size (); i++) {
-        VkImageViewCreateInfo create_info {};
-        create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        create_info.image = this->swap_chain_images [i];
-        create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        create_info.format = this->swap_chain_image_format;
-        create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        create_info.subresourceRange.baseMipLevel = 0;
-        create_info.subresourceRange.levelCount = 1;
-        create_info.subresourceRange.baseArrayLayer = 0;
-        create_info.subresourceRange.layerCount = 1;
-
-        VK_CHECK_RESULT (vkCreateImageView (this->get_device (), &create_info, nullptr, &this->swap_chain_image_views [i]));
-    }
 }
 
 void VulkanContext::create_render_pass () {
     VkAttachmentDescription color_attachment {};
-    color_attachment.format = this->swap_chain_image_format;
+    color_attachment.format = this->swapchain.GetFormat ();
     color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
     color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -488,69 +401,39 @@ void VulkanContext::create_render_pass () {
     VK_CHECK_RESULT (vkCreateRenderPass (this->get_device (), &render_pass_info, nullptr, &this->render_pass));
 }
 
-void VulkanContext::create_framebuffers () {
-    this->swap_chain_framebuffers.resize (this->swap_chain_image_views.size ());
-    for (size_t i = 0; i < this->swap_chain_image_views.size (); i++) {
-        VkImageView attachments [] = {
-            this->swap_chain_image_views [i]
-        };
+void VulkanContext::create_frame_resources () {
+    this->frame_resources.resize (this->max_frames_in_flight);
 
-        VkFramebufferCreateInfo framebuffer_info {};
-        framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebuffer_info.renderPass = this->render_pass;
-        framebuffer_info.attachmentCount = 1;
-        framebuffer_info.pAttachments = attachments;
-        framebuffer_info.width = this->swap_chain_extent.width;
-        framebuffer_info.height = this->swap_chain_extent.height;
-        framebuffer_info.layers = 1;
+    VkSemaphoreCreateInfo semaphore_info {};
+    semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-        VK_CHECK_RESULT (vkCreateFramebuffer (this->get_device (), &framebuffer_info, nullptr, &this->swap_chain_framebuffers [i]));
-    }
-}
-
-void VulkanContext::create_main_command_buffers () {
-    this->command_buffers.resize (this->swap_chain_framebuffers.size ());
+    VkFenceCreateInfo fence_info {};
+    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     VkCommandBufferAllocateInfo alloc_info {};
     alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    alloc_info.commandPool = this->graphics_command_pool_reset;
+    alloc_info.commandPool = this->get_graphics_command_pool_reset ();
     alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    alloc_info.commandBufferCount = (uint32_t) this->command_buffers.size ();
+    alloc_info.commandBufferCount = 1;
 
-    VK_CHECK_RESULT (vkAllocateCommandBuffers (this->get_device (), &alloc_info, this->command_buffers.data ()));
-}
+    for (size_t i = 0; i < max_frames_in_flight; i++) {
+        if (vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->frame_resources[i].ready_to_render) != VK_SUCCESS ||
+            vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->frame_resources[i].ready_to_present) != VK_SUCCESS ||
+            vkCreateFence (this->get_device (), &fence_info, nullptr, &this->frame_resources[i].ready_to_record) != VK_SUCCESS) {
+            throw std::runtime_error ("Failed to create semaphores or fences for a frame!");
+        }
 
-void VulkanContext::create_sync_objects () {
-    in_flight_fences.resize (MAX_FRAMES_IN_FLIGHT);
-    VkFenceCreateInfo fence_info{};
-    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        VK_CHECK_RESULT (vkCreateFence (this->get_device (), &fence_info, nullptr, &this->in_flight_fences [i]));
-    }
-
-    uint32_t swapchain_image_count = this->swap_chain_images.size ();
-    if (!swapchain_image_count) {
-        std::logic_error {"[VulkanContext::create_sync_objects] missing swap chain images"};
-    }
-    render_finished_semaphores.resize (swapchain_image_count);
-    VkSemaphoreCreateInfo semaphore_info {};
-    semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    for (uint32_t i = 0; i < swapchain_image_count; ++i) {
-        VK_CHECK_RESULT (vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->render_finished_semaphores [i]));
-    }
-
-    image_available_semaphores_acquire.resize (MAX_FRAMES_IN_FLIGHT); 
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        VK_CHECK_RESULT (vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->image_available_semaphores_acquire [i]));
+        VK_CHECK_RESULT (vkAllocateCommandBuffers (this->get_device (), &alloc_info, &this->frame_resources[i].command_buffer));
     }
 }
 
 VkCommandBuffer VulkanContext::begin_frame () {
-    vkWaitForFences (this->get_device (), 1, &this->in_flight_fences [this->current_frame], VK_TRUE, UINT64_MAX);
+    std::cout << "current frame: " << this->current_frame << std::endl;
+    vkWaitForFences (this->get_device (), 1, &this->frame_resources [this->current_frame].ready_to_record, VK_TRUE, UINT64_MAX);
 
-    uint32_t image_index;
-    VkResult result = vkAcquireNextImageKHR (this->get_device (), this->swap_chain, UINT64_MAX, this->image_available_semaphores_acquire [this->current_frame], VK_NULL_HANDLE, &image_index);
+    VkResult result = this->swapchain.AcquireNextImage (this->frame_resources [this->current_frame].ready_to_render, &this->current_image_index);
+    std::cout << "current image index: " << this->current_image_index << std::endl;
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         int width, height;
@@ -561,44 +444,45 @@ VkCommandBuffer VulkanContext::begin_frame () {
         throw std::runtime_error ("failed to acquire swap chain image!");
     }
 
-    vkResetFences (this->get_device (), 1, &this->in_flight_fences [this->current_frame]);
-    vkResetCommandBuffer (this->command_buffers [image_index], 0);
+    vkResetFences (this->get_device (), 1, &this->frame_resources [this->current_frame].ready_to_record);
+
+    vkResetCommandBuffer (this->frame_resources [this->current_frame].command_buffer, 0);
 
     VkCommandBufferBeginInfo begin_info {};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags = 0;
     begin_info.pInheritanceInfo = nullptr;
 
-    VK_CHECK_RESULT (vkBeginCommandBuffer (this->command_buffers [image_index], &begin_info));
+    VK_CHECK_RESULT (vkBeginCommandBuffer (this->frame_resources [this->current_frame].command_buffer, &begin_info));
 
     VkRenderPassBeginInfo render_pass_info {};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     render_pass_info.renderPass = this->render_pass;
-    render_pass_info.framebuffer = this->swap_chain_framebuffers [image_index];
+    render_pass_info.framebuffer = this->swapchain_framebuffers [this->current_image_index];
     render_pass_info.renderArea.offset = {0, 0};
-    render_pass_info.renderArea.extent = this->swap_chain_extent;
+    render_pass_info.renderArea.extent = this->swapchain.GetExtent ();
 
     VkClearValue clear_color = {{{0.2f, 0.3f, 0.3f, 1.0f}}};
     render_pass_info.clearValueCount = 1;
     render_pass_info.pClearValues = &clear_color;
 
-    vkCmdBeginRenderPass (this->command_buffers [image_index], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass (this->frame_resources [this->current_frame].command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
-    VkViewport viewport{};
+    VkViewport viewport {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast <float> (this->swap_chain_extent.width);
-    viewport.height = static_cast <float> (this->swap_chain_extent.height);
+    viewport.width = static_cast <float> (this->swapchain.GetExtent ().width);
+    viewport.height = static_cast <float> (this->swapchain.GetExtent ().height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
-    vkCmdSetViewport (this->command_buffers [image_index], 0, 1, &viewport);
+    vkCmdSetViewport (this->frame_resources [this->current_frame].command_buffer, 0, 1, &viewport);
 
     VkRect2D scissor{};
     scissor.offset = {0, 0};
-    scissor.extent = this->swap_chain_extent;
-    vkCmdSetScissor (this->command_buffers [image_index], 0, 1, &scissor);
+    scissor.extent = this->swapchain.GetExtent ();
+    vkCmdSetScissor (this->frame_resources [this->current_frame].command_buffer, 0, 1, &scissor);
 
-    return this->command_buffers [image_index];
+    return this->frame_resources [this->current_frame].command_buffer;
 }
 
 void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
@@ -609,18 +493,10 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
     vkCmdEndRenderPass (command_buffer);
     VK_CHECK_RESULT (vkEndCommandBuffer (command_buffer));
 
-    uint32_t image_index = 0;
-    for (uint32_t i = 0; i < this->command_buffers.size (); ++i) {
-        if (this->command_buffers [i] == command_buffer) {
-            image_index = i;
-            break;
-        }
-    }
-
     VkSubmitInfo submit_info {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore wait_semaphores [] = {this->image_available_semaphores_acquire [this->current_frame]};
+    VkSemaphore wait_semaphores [] = {this->frame_resources [this->current_frame].ready_to_render};
     VkPipelineStageFlags wait_stages [] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     submit_info.waitSemaphoreCount = 1;
     submit_info.pWaitSemaphores = wait_semaphores;
@@ -629,24 +505,13 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffer;
 
-    VkSemaphore signal_semaphores_for_present [] = {this->render_finished_semaphores [image_index]};
+    VkSemaphore signal_semaphores[] = {this->frame_resources [this->current_frame].ready_to_present};
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = signal_semaphores_for_present;
+    submit_info.pSignalSemaphores = signal_semaphores;
 
-    VK_CHECK_RESULT (vkQueueSubmit (this->get_graphics_queue (), 1, &submit_info, this->in_flight_fences [this->current_frame]));
+    VK_CHECK_RESULT (vkQueueSubmit (graphics_queue, 1, &submit_info, this->frame_resources [this->current_frame].ready_to_record));
 
-    VkPresentInfoKHR present_info {};
-    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = signal_semaphores_for_present;
-
-    VkSwapchainKHR swap_chains [] = {this->swap_chain};
-    present_info.swapchainCount = 1;
-    present_info.pSwapchains = swap_chains;
-    present_info.pImageIndices = &image_index;
-    present_info.pResults = nullptr;
-
-    VkResult result = vkQueuePresentKHR (this->get_graphics_queue (), &present_info);
+    VkResult result = this->swapchain.QueuePresent (this->present_queue, this->current_image_index, this->frame_resources [this->current_frame].ready_to_present);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         int width, height;
@@ -656,7 +521,7 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
         throw std::runtime_error ("failed to present swap chain image!");
     }
 
-    this->current_frame = (this->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+    this->current_frame = (this->current_frame + 1) % this->max_frames_in_flight;
 }
 
 }

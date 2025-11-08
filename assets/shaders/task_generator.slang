@@ -43,6 +43,7 @@ void main () {
     root.min_corner = float3 (-1.f, -1.f, -1.f);
     root.voxel_size = 2.f;
     root.node_index = 0;
-    dfs_octree (root);
+    // dfs_octree (root);
+        DispatchMesh (1, 1, 1, root);
 }
 

@@ -38,6 +38,14 @@ void main(
     OutputVertices <Vertex, MAX_VERTS> verts,
     OutputIndices <uint3, MAX_PRIMS> triangles)
 {
+    if (nodes [0].offset == 1) {
+        SetMeshOutputCounts (3, 1);
+        verts [0].position = mul (pc.view_proj, float4 (-0.1f, -0.1f, 0.0f, 1.0f));
+        verts [1].position = mul (pc.view_proj, float4 (0.0f, 0.1f, 0.0f, 1.0f));
+        verts [2].position = mul (pc.view_proj, float4 (0.1f, -0.1f, 0.0f, 1.0f));
+        triangles [0] = uint3 (0, 1, 2);
+    }
+    return;
     SdfOctreeNode node = nodes [payload.node_index];
     const float3 voxel_size_modifier = {payload.voxel_size};
     int cube_index = 0;

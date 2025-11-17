@@ -26,6 +26,7 @@ struct SdfOctreeDescriptorSetInfo {
   VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
   VkBuffer nodes_buffer = VK_NULL_HANDLE;
+  VkBuffer subtree_buffer = VK_NULL_HANDLE;
   VkDeviceMemory memory = VK_NULL_HANDLE;
 };
 
@@ -33,11 +34,15 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
     VkDevice device
     , VkPhysicalDevice physical_device
     , const sdf_raster::SdfOctree& octree
+    , const std::vector <Payload>& subtrees
     , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
     , vk_utils::DescriptorMaker& ds_maker
     , VkShaderStageFlags shader_stage_flags);
 
 void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetInfo& info);
+
+std::vector <Payload> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend);
+void dump_octree_subtree_pretty (const SdfOctree& scene, uint32_t subtree_root_node_idx, int max_display_depth, const std::string& prefix, int current_display_depth);
 
 }
 

@@ -1,8 +1,10 @@
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <stack>
 
 #include "sdf_octree.hpp"
+#include "shaders/common.h" // Payload
 #include "vk_buffers.h"
 
 namespace sdf_raster {
@@ -98,6 +100,7 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
         VkDevice device
         , VkPhysicalDevice physical_device
         , const sdf_raster::SdfOctree& octree
+        , const std::vector <Payload>& subtrees
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
         , vk_utils::DescriptorMaker& ds_maker
         , VkShaderStageFlags shader_stage_flags) {
@@ -107,30 +110,30 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
         throw std::runtime_error("ICopyEngine shared_ptr cannot be null.");
     }
 
-    VkDeviceSize octreeNodesSize = octree.nodes.size () * sizeof (SdfOctreeNode);
+    VkDeviceSize octree_nodes_size = octree.nodes.size () * sizeof (SdfOctreeNode);
+    VkDeviceSize subtree_size = subtrees.size () * sizeof (Payload);
 
-    if (octreeNodesSize == 0) {
+    if (octree_nodes_size == 0) {
         throw std::runtime_error ("SdfOctree is empty, cannot create descriptor set.");
     }
 
-    VkBuffer octreeBuffer;
-    VkMemoryRequirements memReq;
-    octreeBuffer = vk_utils::createBuffer (
-            device
-            , octreeNodesSize
-            , VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
-            , &memReq
-            );
-    info.nodes_buffer = octreeBuffer;
+    std::vector <VkBuffer> buffers (2);
+    std::vector <VkMemoryRequirements> mem_reqs (2);
 
-    info.memory = vk_utils::allocateAndBindWithPadding (
-            device, physical_device, {octreeBuffer}
-            );
+    buffers [0] = vk_utils::createBuffer (device, octree_nodes_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [0]);
+    buffers [1] = vk_utils::createBuffer (device, subtree_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [1]);
 
-    copy_helper->UpdateBuffer (info.nodes_buffer, 0, octree.nodes.data (), octreeNodesSize);
+    info.nodes_buffer = buffers [0];
+    info.subtree_buffer = buffers [1];
+
+    info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
+
+    copy_helper->UpdateBuffer (info.nodes_buffer, 0, octree.nodes.data (), octree_nodes_size);
+    copy_helper->UpdateBuffer (info.subtree_buffer, 0, subtrees.data (), subtree_size);
 
     ds_maker.BindBegin (shader_stage_flags);
     ds_maker.BindBuffer (0, info.nodes_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    ds_maker.BindBuffer (1, info.subtree_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     ds_maker.BindEnd (&info.descriptor_set, &info.descriptor_set_layout);
 
     return info;
@@ -148,6 +151,109 @@ void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetI
     }
 
     info = {};
+}
+
+std::vector <Payload> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend) {
+    std::vector <Payload> payloads;
+
+    if (scene.nodes.empty ()) {
+        return payloads;
+    }
+
+    struct StackFrame {
+        uint32_t node_idx;
+        LiteMath::float3 min_corner;
+        float voxel_size;
+        int level;
+    };
+
+    std::stack <StackFrame> s;
+
+    LiteMath::float3 root_min_corner = {-1.0f, -1.0f, -1.0f};
+    float root_voxel_size = 2.0f;
+    uint32_t root_node_idx = 0;
+
+    s.push ({root_node_idx, root_min_corner, root_voxel_size, 0});
+
+    while (!s.empty ()) {
+        StackFrame current = s.top ();
+        s.pop ();
+
+        const SdfOctreeNode& node = scene.nodes [current.node_idx];
+
+        if (current.level >= max_level_to_descend || node.offset == 0) {
+            payloads.push_back ({
+                current.min_corner,
+                current.voxel_size,
+                static_cast <int> (current.node_idx)
+            });
+            continue;
+        }
+
+        float half = current.voxel_size * 0.5f;
+        for (int i = 7; i >= 0; --i) {
+            LiteMath::float3 child_min_corner = current.min_corner;
+
+            if ((i & 1) != 0) child_min_corner.x += half;
+            if ((i & 2) != 0) child_min_corner.y += half;
+            if ((i & 4) != 0) child_min_corner.z += half;
+
+            uint32_t child_node_idx = node.offset + i;
+
+            s.push ({
+                child_node_idx,
+                child_min_corner,
+                half,
+                current.level + 1
+            });
+        }
+    }
+
+    return payloads;
+}
+
+
+void dump_octree_subtree_pretty(const SdfOctree& scene, uint32_t subtree_root_node_idx, int max_display_depth, const std::string& prefix, int current_display_depth) {
+    if (subtree_root_node_idx >= scene.nodes.size()) {
+        std::cerr << prefix << "Error: Node index " << subtree_root_node_idx << " is out of bounds." << std::endl;
+        return;
+    }
+
+    if (max_display_depth != -1 && current_display_depth > max_display_depth) {
+        return;
+    }
+
+    const SdfOctreeNode& node = scene.nodes [subtree_root_node_idx];
+
+    std::cout << prefix << (current_display_depth == 0 ? "" : "|-- ")
+              << "Node [" << subtree_root_node_idx << "], Display Depth: " << current_display_depth;
+    if (node.offset == 0) {
+        std::cout << ", Type: Leaf";
+        for (int i = 0; i < 8; ++i) {
+            std::cout << "value [" << i << "] = " << node.values [i] << std::endl;
+        }
+    } else {
+        std::cout << ", Type: Internal (children offset: " << node.offset << ")";
+    }
+    std::cout << std::endl;
+
+    if (node.offset != 0 && (max_display_depth == -1 || current_display_depth < max_display_depth)) {
+        std::string child_prefix = prefix + (current_display_depth == 0 ? "" : "|   ");
+
+        for (int i = 0; i < 8; ++i) {
+            uint32_t child_node_idx = node.offset + i;
+            
+            std::string branch_prefix = child_prefix + (i == 7 ? "    " : "|   ");
+
+            dump_octree_subtree_pretty(
+                scene,
+                child_node_idx,
+                max_display_depth,
+                branch_prefix,
+                current_display_depth + 1
+            );
+        }
+    }
 }
 
 }

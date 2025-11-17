@@ -429,11 +429,9 @@ void VulkanContext::create_frame_resources () {
 }
 
 VkCommandBuffer VulkanContext::begin_frame () {
-    std::cout << "current frame: " << this->current_frame << std::endl;
     vkWaitForFences (this->get_device (), 1, &this->frame_resources [this->current_frame].ready_to_record, VK_TRUE, UINT64_MAX);
 
     VkResult result = this->swapchain.AcquireNextImage (this->frame_resources [this->current_frame].ready_to_render, &this->current_image_index);
-    std::cout << "current image index: " << this->current_image_index << std::endl;
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         int width, height;

@@ -3,6 +3,7 @@
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 
 [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> nodes;
+[[vk::binding (1, 0)]] StructuredBuffer <Payload> subtrees;
 
 void dfs_octree (Payload root) {
     Payload stack [20];
@@ -38,12 +39,7 @@ void dfs_octree (Payload root) {
 
 [shader ("amplification")]
 [numthreads (1,1,1)]
-void main () {
-    Payload root;
-    root.min_corner = float3 (-1.f, -1.f, -1.f);
-    root.voxel_size = 2.f;
-    root.node_index = 0;
-    // dfs_octree (root);
-        DispatchMesh (1, 1, 1, root);
+void main (uint3 dispatch_thread_id : SV_DispatchThreadID) {
+    dfs_octree (subtrees [dispatch_thread_id.x]);
 }
 

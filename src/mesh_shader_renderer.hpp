@@ -45,6 +45,7 @@ private:
     int width {};
     int height {};
     SdfOctree sdf_octree {};
+    std::vector <Payload> subtrees {};
 
     PushConstantsData push_constants;
 

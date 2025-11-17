@@ -31,6 +31,9 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     this->width = a_width;
     this->height = a_height;
     this->sdf_octree = std::move (a_sdf_octree);
+    this->subtrees =  get_octree_subtrees_payloads (this->sdf_octree, 3);
+
+    // dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
 
     this->init_mesh_shading_pipeline ();
     this->initialized = true;
@@ -74,6 +77,7 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
 	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
 			, this->context->get_physical_device ()
 			, this->sdf_octree
+			, this->subtrees
 			, this->context->get_copy_helper ()
 			, *descriptor_maker
 			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT);
@@ -247,7 +251,7 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
             , &this->push_constants
             );
 
-    vkCmdDrawMeshTasksEXT (cmd_buff, 1, 1, 1);
+    vkCmdDrawMeshTasksEXT (cmd_buff, this->subtrees.size (), 1, 1);
 
     this->context->end_frame (cmd_buff);
 }

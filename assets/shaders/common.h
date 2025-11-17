@@ -13,18 +13,18 @@ using float4x4 = LiteMath::float4x4;
 
 #else
 
-struct Payload {
-    float3 min_corner;
-    float voxel_size;
-    int node_index;
-};
-
 struct Vertex {
     float4 position : SV_Position;
     float4 color : Color;
 };
 
 #endif // __cplusplus
+
+struct Payload {
+    float3 min_corner;
+    float voxel_size;
+    int node_index;
+};
 
 struct PushConstantsData {
     column_major float4x4 view_proj;

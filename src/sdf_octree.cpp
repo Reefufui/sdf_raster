@@ -175,6 +175,26 @@ std::vector <Payload> get_octree_subtrees_payloads (const SdfOctree& scene, int 
 
     s.push ({root_node_idx, root_min_corner, root_voxel_size, 0});
 
+    
+    const auto contains_mixed_signs = [] (const float (&arr) [8]) -> bool {
+        bool found_positive = false;
+        bool found_negative = false;
+
+        for (int i = 0; i < 8; ++i) {
+            if (arr[i] > 0.0f) {
+                found_positive = true;
+            } else if (arr[i] < 0.0f) {
+                found_negative = true;
+            }
+
+            if (found_positive && found_negative) {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
     while (!s.empty ()) {
         StackFrame current = s.top ();
         s.pop ();
@@ -182,6 +202,10 @@ std::vector <Payload> get_octree_subtrees_payloads (const SdfOctree& scene, int 
         const SdfOctreeNode& node = scene.nodes [current.node_idx];
 
         if (current.level >= max_level_to_descend || node.offset == 0) {
+            if (node.offset == 0 && contains_mixed_signs (node.values)) {
+                continue;
+            }
+
             payloads.push_back ({
                 current.min_corner,
                 current.voxel_size,

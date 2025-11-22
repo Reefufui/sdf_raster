@@ -5,7 +5,7 @@
 [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> nodes;
 [[vk::binding (1, 0)]] StructuredBuffer <Payload> subtrees;
 
-void dfs_octree (Payload root) {
+void dfs_octree (const Payload root) {
     Payload stack [20];
     int ptr = 0;
     stack [ptr++] = root;
@@ -25,9 +25,9 @@ void dfs_octree (Payload root) {
             Payload child;
 
             float3 corner_offset = {0.0f, 0.0f, 0.0f};
-            if ((i >> 0) & 1 == 1) corner_offset.x = child_size;
-            if ((i >> 1) & 1 == 1) corner_offset.y = child_size;
-            if ((i >> 2) & 1 == 1) corner_offset.z = child_size;
+            if (((i >> 0) & 1) == 1) corner_offset.x = child_size;
+            if (((i >> 1) & 1) == 1) corner_offset.y = child_size;
+            if (((i >> 2) & 1) == 1) corner_offset.z = child_size;
 
             child.min_corner = current_voxel.min_corner + corner_offset;
             child.node_index = current_node.offset + i;

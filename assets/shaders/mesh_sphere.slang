@@ -7,7 +7,7 @@
 [[vk::binding (0, 1)]] StructuredBuffer <uint2> edge_corners; // [12]
 [[vk::binding (1, 1)]] StructuredBuffer <int> cube_index_2_edge_mask; // [256]
 [[vk::binding (2, 1)]] StructuredBuffer <int> cube_index_2_triangle_indices; // [256][16]
-[[vk::binding (3, 1)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
+[[vk::binding (3, 1)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256] DEPRECATED!!!
 
 const static uint MAX_VERTS = 12;
 const static uint MAX_PRIMS = 4;
@@ -38,14 +38,6 @@ void main(
     OutputVertices <Vertex, MAX_VERTS> verts,
     OutputIndices <uint3, MAX_PRIMS> triangles)
 {
-    if (nodes [0].offset == 1) {
-        SetMeshOutputCounts (3, 1);
-        verts [0].position = mul (pc.view_proj, float4 (-0.1f, -0.1f, 0.0f, 1.0f));
-        verts [1].position = mul (pc.view_proj, float4 (0.0f, 0.1f, 0.0f, 1.0f));
-        verts [2].position = mul (pc.view_proj, float4 (0.1f, -0.1f, 0.0f, 1.0f));
-        triangles [0] = uint3 (0, 1, 2);
-    }
-    return;
     SdfOctreeNode node = nodes [payload.node_index];
     const float3 voxel_size_modifier = {payload.voxel_size};
     int cube_index = 0;
@@ -63,36 +55,39 @@ void main(
         }
     }
 
+    uint triangles_count = 0;
+
+    for (; triangles_count < 4; ++triangles_count) {
+        int base = cube_index * 16 + triangles_count * 3;
+        if (cube_index_2_triangle_indices [base] == -1) break;
+        triangles [triangles_count] = uint3 (cube_index_2_triangle_indices [base + 0]
+                , cube_index_2_triangle_indices [base + 1]
+                , cube_index_2_triangle_indices [base + 2]);
+    }
+
+    SetMeshOutputCounts (12, triangles_count);
+
     int edge_mask = cube_index_2_edge_mask [cube_index];
     if (edge_mask == 0) {
         return;
     }
 
-    uint vertex_count = cube_index_2_mesh_output_counts [cube_index].x;
-    uint triangles_count = cube_index_2_mesh_output_counts [cube_index].y;
-    SetMeshOutputCounts (vertex_count, triangles_count);
-
     int edge_bit = 1;
-    for (int i = 0; i < triangles_count; ++i) {
+    for (int i = 0; i < 12; ++i) {
         if ((edge_mask & edge_bit) == 0) {
+            edge_bit <<= 1;
             continue;
         }
 
         const uint2 corner_indices = edge_corners [i];
-        verts [i].position = float4 (interpolate_vertex (corners [corner_indices.x]
+        verts [i].position = mul (pc.view_proj, float4 (interpolate_vertex (corners [corner_indices.x]
                                                 , corners [corner_indices.y]
                                                 , node.values [corner_indices.x]
                                                 , node.values [corner_indices.y]
-                                                ), 1.0f);
+                                                ), 1.0f));
         verts [i].color = float4 (1.0f, 1.0f, 0.0f, 1.0f);
         edge_bit <<= 1;
     }
 
-    for (int i = 0; i < 16; i += 3) {
-        if (cube_index_2_triangle_indices [cube_index * 16 + i] == -1) break;
-        triangles [i / 3] = uint3 (cube_index_2_triangle_indices [cube_index * 16 + i + 0]
-                , cube_index_2_triangle_indices [cube_index * 16 + i + 1]
-                , cube_index_2_triangle_indices [cube_index * 16 + i + 2]);
-    }
 }
 

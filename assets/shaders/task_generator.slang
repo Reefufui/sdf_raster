@@ -15,7 +15,15 @@ void dfs_octree (const Payload root) {
         SdfOctreeNode current_node = nodes [current_voxel.node_index];
 
         if (current_node.offset == 0) { // leaf
-            DispatchMesh (1, 1, 1, current_voxel);
+            int cube_index = 0;
+            for (int i = 0; i < 8; ++i) {
+                if (current_node.values [i] < 0.0f) {
+                    cube_index |= (1 << i);
+                }
+            }
+            if (cube_index > 0 && cube_index < 255) {
+                DispatchMesh (1, 1, 1, current_voxel);
+            }
             continue;
         }
 

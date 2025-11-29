@@ -202,7 +202,7 @@ std::vector <Payload> get_octree_subtrees_payloads (const SdfOctree& scene, int 
         const SdfOctreeNode& node = scene.nodes [current.node_idx];
 
         if (current.level >= max_level_to_descend || node.offset == 0) {
-            if (node.offset == 0 && contains_mixed_signs (node.values)) {
+            if (node.offset == 0 && !contains_mixed_signs (node.values)) {
                 continue;
             }
 
@@ -252,9 +252,10 @@ void dump_octree_subtree_pretty(const SdfOctree& scene, uint32_t subtree_root_no
     std::cout << prefix << (current_display_depth == 0 ? "" : "|-- ")
               << "Node [" << subtree_root_node_idx << "], Display Depth: " << current_display_depth;
     if (node.offset == 0) {
-        std::cout << ", Type: Leaf";
+        std::cout << ", Type: Leaf\n";
         for (int i = 0; i < 8; ++i) {
-            std::cout << "value [" << i << "] = " << node.values [i] << std::endl;
+            std::cout << prefix << "|-- |-- "
+                << "value [" << i << "] = " << node.values [i] << std::endl;
         }
     } else {
         std::cout << ", Type: Internal (children offset: " << node.offset << ")";

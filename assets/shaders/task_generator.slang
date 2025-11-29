@@ -5,42 +5,69 @@
 [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> nodes;
 [[vk::binding (1, 0)]] StructuredBuffer <Payload> subtrees;
 
-void dfs_octree (const Payload root) {
-    Payload stack [20];
-    int ptr = 0;
-    stack [ptr++] = root;
+#define MAX_OCTREE_DEPTH 6
 
-    while (ptr > 0) {
-        Payload current_voxel = stack [--ptr];
-        SdfOctreeNode current_node = nodes [current_voxel.node_index];
+void dfs_octree (Payload root) {
+    if (nodes [root.node_index].offset == 0) {
+        Payload voxel = root;
+        DispatchMesh (1, 1, 1, voxel); // root is leaf
+    }
 
-        if (current_node.offset == 0) { // leaf
+    int node_index_stack [MAX_OCTREE_DEPTH];
+    float3 coord_stack [MAX_OCTREE_DEPTH];
+    int path_stack [MAX_OCTREE_DEPTH]; // stack of values 0..7 - child num on current level
+
+    node_index_stack [0] = root.node_index;
+    coord_stack [0] = root.min_corner;
+    path_stack [1] = 0;
+
+    int level = 1; // starting with level 1
+    while (level > 0) {
+        int child_index = path_stack [level];
+        if (child_index == 8 || level >= MAX_OCTREE_DEPTH) { // no more children
+            level -= 1;
+            continue;
+        }
+        path_stack [level] += 1;
+
+        SdfOctreeNode parent_node = nodes [node_index_stack [level - 1]];
+        int child_node_index = parent_node.offset + child_index;
+        SdfOctreeNode child_node = nodes [child_node_index];
+
+        float child_voxel_size = root.voxel_size / (1 << level);
+
+        float3 child_corner_offset = {0.0f, 0.0f, 0.0f};
+        if (((child_index >> 0) & 1) == 1) child_corner_offset.x = child_voxel_size;
+        if (((child_index >> 1) & 1) == 1) child_corner_offset.y = child_voxel_size;
+        if (((child_index >> 2) & 1) == 1) child_corner_offset.z = child_voxel_size;
+
+        float3 child_coord = coord_stack [level - 1] + child_corner_offset;
+
+        if (child_node.offset == 0) { // leaf
             int cube_index = 0;
+
             for (int i = 0; i < 8; ++i) {
-                if (current_node.values [i] < 0.0f) {
+                if (child_node.values [i] < 0.0f) {
                     cube_index |= (1 << i);
                 }
             }
-            if (cube_index > 0 && cube_index < 255) {
-                DispatchMesh (1, 1, 1, current_voxel);
+
+            if (cube_index == 0 || cube_index == 255) {
+                continue;
             }
-            continue;
-        }
 
-        float child_size = current_voxel.voxel_size / 2.f;
+            Payload voxel;
+            voxel.voxel_size = child_voxel_size;
+            voxel.min_corner = child_coord;
+            voxel.node_index = child_node_index;
+            voxel.cube_index = cube_index;
+            DispatchMesh (1, 1, 1, voxel);
+        } else { // internal node
+            node_index_stack [level] = child_node_index;
+            coord_stack [level] = child_coord;
 
-        for (int i = 7; i >= 0; --i) {
-            Payload child;
-
-            float3 corner_offset = {0.0f, 0.0f, 0.0f};
-            if (((i >> 0) & 1) == 1) corner_offset.x = child_size;
-            if (((i >> 1) & 1) == 1) corner_offset.y = child_size;
-            if (((i >> 2) & 1) == 1) corner_offset.z = child_size;
-
-            child.min_corner = current_voxel.min_corner + corner_offset;
-            child.node_index = current_node.offset + i;
-            child.voxel_size = child_size;
-            stack [ptr++] = child;
+            level += 1;
+            path_stack [level] = 0;
         }
     }
 }

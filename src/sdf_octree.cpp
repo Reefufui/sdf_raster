@@ -174,25 +174,17 @@ std::vector <Payload> get_octree_subtrees_payloads (const SdfOctree& scene, int 
     uint32_t root_node_idx = 0;
 
     s.push ({root_node_idx, root_min_corner, root_voxel_size, 0});
-
     
-    const auto contains_mixed_signs = [] (const float (&arr) [8]) -> bool {
-        bool found_positive = false;
-        bool found_negative = false;
+    const auto calc_cube_index = [] (const float (&arr) [8]) -> int {
+        int cube_index = 0;
 
         for (int i = 0; i < 8; ++i) {
-            if (arr[i] > 0.0f) {
-                found_positive = true;
-            } else if (arr[i] < 0.0f) {
-                found_negative = true;
-            }
-
-            if (found_positive && found_negative) {
-                return true;
+            if (arr [i] < 0.0f) {
+                cube_index |= (1 << i);
             }
         }
 
-        return false;
+        return cube_index;
     };
 
     while (!s.empty ()) {
@@ -202,15 +194,18 @@ std::vector <Payload> get_octree_subtrees_payloads (const SdfOctree& scene, int 
         const SdfOctreeNode& node = scene.nodes [current.node_idx];
 
         if (current.level >= max_level_to_descend || node.offset == 0) {
-            if (node.offset == 0 && !contains_mixed_signs (node.values)) {
-                continue;
+            int cube_index = calc_cube_index (node.values);
+            if (node.offset == 0 && (cube_index == 0 || cube_index == 255)) {
+                continue; // no triangles
             }
 
             payloads.push_back ({
                 current.min_corner,
                 current.voxel_size,
-                static_cast <int> (current.node_idx)
+                static_cast <int> (current.node_idx),
+                cube_index
             });
+            break;
             continue;
         }
 

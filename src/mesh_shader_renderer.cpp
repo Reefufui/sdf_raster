@@ -31,15 +31,16 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     this->width = a_width;
     this->height = a_height;
     this->sdf_octree = std::move (a_sdf_octree);
-    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
+    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 8);
 
-    dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
+    // dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
     std::cout << "[MeshShaderRenderer::init] subtrees count: " << subtrees.size () << std::endl;
     std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.x=" << this->subtrees [0].min_corner.x << std::endl;
     std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.y=" << this->subtrees [0].min_corner.y << std::endl;
     std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.z=" << this->subtrees [0].min_corner.z << std::endl;
     std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.voxel_size=" << this->subtrees [0].voxel_size << std::endl;
     std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.node_index=" << this->subtrees [0].node_index << std::endl;
+    std::cout << "[MeshShaderRenderer::init] Subtree [0].cube_index=" << this->subtrees [0].cube_index << std::endl;
 
     this->init_mesh_shading_pipeline ();
     this->initialized = true;

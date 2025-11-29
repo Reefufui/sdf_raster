@@ -40,7 +40,6 @@ void main(
 {
     SdfOctreeNode node = nodes [payload.node_index];
     const float3 voxel_size_modifier = {payload.voxel_size};
-    int cube_index = 0;
     float3 corners [8];
 
     for (int i = 0; i < 8; ++i) {
@@ -49,16 +48,12 @@ void main(
         if (((i >> 1) & 1) == 1) corner_offset.y = payload.voxel_size;
         if (((i >> 2) & 1) == 1) corner_offset.z = payload.voxel_size;
         corners [i] = payload.min_corner + corner_offset;
-
-        if (node.values [i] < 0.0f) {
-            cube_index |= (1 << i);
-        }
     }
 
     uint triangles_count = 0;
 
     for (; triangles_count < 4; ++triangles_count) {
-        int base = cube_index * 16 + triangles_count * 3;
+        int base = payload.cube_index * 16 + triangles_count * 3;
         if (cube_index_2_triangle_indices [base] == -1) break;
         triangles [triangles_count] = uint3 (cube_index_2_triangle_indices [base + 0]
                 , cube_index_2_triangle_indices [base + 1]
@@ -67,7 +62,7 @@ void main(
 
     SetMeshOutputCounts (12, triangles_count);
 
-    int edge_mask = cube_index_2_edge_mask [cube_index];
+    int edge_mask = cube_index_2_edge_mask [payload.cube_index];
     if (edge_mask == 0) {
         return;
     }

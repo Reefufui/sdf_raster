@@ -24,6 +24,7 @@ struct Payload {
     float3 min_corner;
     float voxel_size;
     int node_index;
+    int cube_index;
 };
 
 struct PushConstantsData {

@@ -205,7 +205,6 @@ std::vector <Payload> get_octree_subtrees_payloads (const SdfOctree& scene, int 
                 static_cast <int> (current.node_idx),
                 cube_index
             });
-            break;
             continue;
         }
 

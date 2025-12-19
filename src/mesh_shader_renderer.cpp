@@ -3,6 +3,7 @@
 
 #include "mesh_shader_renderer.hpp"
 #include "application.hpp"
+#include "cpu_sandbox/cpu_sandbox.h"
 
 namespace sdf_raster {
 
@@ -31,10 +32,17 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     this->width = a_width;
     this->height = a_height;
     this->sdf_octree = std::move (a_sdf_octree);
-    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 8);
+    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
+
+    std::cout << "[MeshShaderRenderer::init] subtrees count: " << subtrees.size () << std::endl;
+    Payload root_payload;
+    root_payload.node_index = 0;
+    root_payload.voxel_size = 2.f;
+    root_payload.min_corner = {-1.0f, -1.0f, -1.0f};
+    task_generator (root_payload, this->sdf_octree.nodes);
+    dump_obj ("result.obj");
 
     // dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
-    std::cout << "[MeshShaderRenderer::init] subtrees count: " << subtrees.size () << std::endl;
     std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.x=" << this->subtrees [0].min_corner.x << std::endl;
     std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.y=" << this->subtrees [0].min_corner.y << std::endl;
     std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.z=" << this->subtrees [0].min_corner.z << std::endl;

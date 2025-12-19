@@ -99,6 +99,9 @@ add_executable(${PROJECT_NAME}
     src/mesh_shader_renderer.cpp
     src/sdf_octree.cpp
     src/vulkan_context.cpp
+
+    src/cpu_sandbox/task_generator.cpp
+    src/cpu_sandbox/mesh_sphere.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE "${VULKAN_SDK_ROOT}/include")

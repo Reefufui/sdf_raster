@@ -2,7 +2,7 @@
 
 #include "cpu_sandbox.h"
 
-#define MAX_OCTREE_DEPTH 6
+namespace cpu_sandbox {
 
 void dfs_octree (Payload root, std::vector <SdfOctreeNode>& nodes) {
     if (nodes [root.node_index].offset == 0) {
@@ -71,5 +71,7 @@ void dfs_octree (Payload root, std::vector <SdfOctreeNode>& nodes) {
 
 void task_generator (Payload subtree, std::vector <SdfOctreeNode>& nodes) {
     dfs_octree (subtree, nodes);
+}
+
 }
 

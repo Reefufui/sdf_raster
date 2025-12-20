@@ -4,6 +4,7 @@
 
 #include "marching_cubes_lookup_table.hpp"
 #include "marching_cubes.hpp"
+#include "cpu_sandbox/cpu_sandbox.h"
 
 namespace sdf_raster {
 
@@ -121,6 +122,13 @@ LiteMath::float3 interpolate_vertex (float isolevel, LiteMath::float3 p1, LiteMa
     p.x = p1.x + mu * (p2.x - p1.x);
     p.y = p1.y + mu * (p2.y - p1.y);
     p.z = p1.z + mu * (p2.z - p1.z);
+    std::cout << "LOG:interpolate_vertex"
+        << " P1=[" << p1.x << "," << p1.y << "," << p1.z << "]"
+        << " P2=[" << p2.x << "," << p2.y << "," << p2.z << "]"
+        << " ValP1=" << valp1
+        << " ValP2=" << valp2
+        << " Result=[" << p.x << "," << p.y << "," << p.z << "]"
+        << std::endl;
     return (p);
 }
 
@@ -182,6 +190,12 @@ void process_leaf_node (const VoxelInfo& voxel_info , Mesh& mesh , const float i
         vertex.position = edge_vertices [triangle_indices [i]];
         vertex.normal = estimate_normal (scene, vertex.position);
         mesh.add_vertex_fast (vertex);
+        cpu_sandbox::add_vertex (LiteMath::to_float4 (vertex.position, 1.f));
+
+        if ((i + 1) % 3 == 0) {
+            size_t offset = cpu_sandbox::get_vertex_count ();
+            cpu_sandbox::add_triangle (LiteMath::uint3 (0 + offset, 1 + offset, 2 + offset));
+        }
     }
 }
 
@@ -211,6 +225,7 @@ std::vector <Mesh> create_mesh_marching_cubes (const MarchingCubesSettings setti
     }
 
     omp_set_num_threads (previous_num_threads);
+    cpu_sandbox::dump_obj ("result.obj");
     return thread_meshes;
 }
 

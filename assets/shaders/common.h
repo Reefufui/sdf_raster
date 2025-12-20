@@ -10,6 +10,7 @@
 using float3 = LiteMath::float3;
 using float4 = LiteMath::float4;
 using float4x4 = LiteMath::float4x4;
+using uint = unsigned int;
 
 #else
 

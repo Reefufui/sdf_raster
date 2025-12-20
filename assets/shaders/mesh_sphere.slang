@@ -13,11 +13,11 @@ const static uint MAX_VERTS = 12;
 const static uint MAX_PRIMS = 4;
 
 float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
-    if (abs (0.f - valp1) < 0.00001)
+    if (Abs (0.f - valp1) < 0.00001)
         return (p1);
-    if (abs (0.f - valp2) < 0.00001)
+    if (Abs (0.f - valp2) < 0.00001)
         return (p2);
-    if (abs (valp1 - valp2) < 0.00001)
+    if (Abs (valp1 - valp2) < 0.00001)
         return (p1);
 
     float mu = (0.f - valp1) / (valp2 - valp1);
@@ -83,6 +83,5 @@ void main(
         verts [i].color = float4 (1.0f, 1.0f, 0.0f, 1.0f);
         edge_bit <<= 1;
     }
-
 }
 

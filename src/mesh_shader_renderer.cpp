@@ -39,8 +39,8 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     root_payload.node_index = 0;
     root_payload.voxel_size = 2.f;
     root_payload.min_corner = {-1.0f, -1.0f, -1.0f};
-    task_generator (root_payload, this->sdf_octree.nodes);
-    dump_obj ("result.obj");
+    cpu_sandbox::task_generator (root_payload, this->sdf_octree.nodes);
+    cpu_sandbox::dump_obj ("result.obj");
 
     // dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
     std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.x=" << this->subtrees [0].min_corner.x << std::endl;

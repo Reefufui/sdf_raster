@@ -7,6 +7,7 @@
 #include "marching_cubes.hpp"
 #include "sdf_octree.hpp"
 #include "mesh_shader_renderer.hpp"
+#include "cpu_sandbox/cpu_sandbox.h"
 
 namespace sdf_raster {
 
@@ -38,11 +39,21 @@ Application::~Application() {
 void Application::marching_cubes_cpu (const std::string& a_octree_filename, const std::string& a_mesh_filename) {
     SdfOctree scene {};
     load_sdf_octree (scene, a_octree_filename);
-    MarchingCubesSettings settings;
-    settings.iso_level = 0.0f;
-    settings.max_threads = 1;
-    const std::vector <Mesh> meshes = create_mesh_marching_cubes (settings, scene);
-    save_mesh_as_obj (meshes [0], a_mesh_filename); // TODO: mesh concatenation
+
+    ///
+    // MarchingCubesSettings settings;
+    // settings.iso_level = 0.0f;
+    // settings.max_threads = 1;
+    // const std::vector <Mesh> meshes = create_mesh_marching_cubes (settings, scene);
+    // save_mesh_as_obj (meshes [0], a_mesh_filename); // TODO: mesh concatenation
+
+    ///
+    Payload root_payload;
+    root_payload.node_index = 0;
+    root_payload.voxel_size = 2.f;
+    root_payload.min_corner = {-1.0f, -1.0f, -1.0f};
+    cpu_sandbox::task_generator (root_payload, scene.nodes);
+    cpu_sandbox::dump_obj ("my_algo.obj");
 }
 
 void Application::run () {

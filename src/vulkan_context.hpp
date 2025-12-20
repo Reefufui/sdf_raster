@@ -41,6 +41,8 @@ public:
 
     VkCommandBuffer begin_frame ();
     void end_frame (VkCommandBuffer command_buffer);
+    uint32_t get_current_frame () { return this->current_frame; }
+    uint32_t get_total_frames () { return this->max_frames_in_flight; }
 
 private:
     void create_instance ();
@@ -76,7 +78,7 @@ private:
     std::vector <VkFramebuffer> swapchain_framebuffers;
     VkRenderPass render_pass = VK_NULL_HANDLE;
 
-    const int max_frames_in_flight = 3;
+    const int max_frames_in_flight = 1;
     uint32_t current_frame = 0;
     uint32_t current_image_index;
     struct FrameResources {

@@ -13,7 +13,7 @@
 namespace sdf_raster {
 
 struct SdfOctree {
-  std::vector <SdfOctreeNode> nodes;
+    std::vector <SdfOctreeNode> nodes;
 };
 
 void load_sdf_octree (SdfOctree &scene, const std::string &path);
@@ -22,12 +22,15 @@ void dump_sdf_octree_text (const SdfOctree &scene, const std::string &path_to_du
 float sample_sdf (const SdfOctree& scene, const LiteMath::float3& p);
 
 struct SdfOctreeDescriptorSetInfo {
-  VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
-  VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
+    VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
+    VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
-  VkBuffer nodes_buffer = VK_NULL_HANDLE;
-  VkBuffer subtree_buffer = VK_NULL_HANDLE;
-  VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkBuffer nodes_buffer = VK_NULL_HANDLE;
+    VkBuffer subtree_buffer = VK_NULL_HANDLE;
+    VkBuffer node_index_stack_buffer = VK_NULL_HANDLE;
+    VkBuffer coord_stack_buffer = VK_NULL_HANDLE;
+    VkBuffer path_stack_buffer = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
 };
 
 SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
@@ -37,7 +40,8 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
     , const std::vector <Payload>& subtrees
     , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
     , vk_utils::DescriptorMaker& ds_maker
-    , VkShaderStageFlags shader_stage_flags);
+    , VkShaderStageFlags shader_stage_flags
+    , const uint32_t frames_count);
 
 void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetInfo& info);
 

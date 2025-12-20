@@ -2,6 +2,8 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <chrono>
+#include <thread>
 
 #include "application.hpp"
 #include "marching_cubes.hpp"
@@ -76,6 +78,8 @@ void Application::run () {
         this->last_frame = current_time;
 
         this->renderer->render (this->camera);
+
+        // std::this_thread::sleep_for (std::chrono::seconds (1));
     }
 }
 

@@ -3,6 +3,10 @@
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 
 [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> nodes;
+[[vk::binding (1, 0)]] StructuredBuffer <Payload> subtrees;
+[[vk::binding (2, 0)]] RWStructuredBuffer <int> node_index_stack;
+[[vk::binding (3, 0)]] RWStructuredBuffer <float3> coord_stack;
+[[vk::binding (4, 0)]] RWStructuredBuffer <int> path_stack;
 
 [[vk::binding (0, 1)]] StructuredBuffer <uint2> edge_corners; // [12]
 [[vk::binding (1, 1)]] StructuredBuffer <int> cube_index_2_edge_mask; // [256]
@@ -29,43 +33,69 @@ float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
     return (p);
 }
 
+// static const float4 colors [12] = {
+//     float4 (1.0, 0.0, 0.0, 1.0),
+//     float4 (0.0, 1.0, 0.0, 1.0),
+//     float4 (0.0, 0.0, 1.0, 1.0),
+//     float4 (1.0, 1.0, 0.0, 1.0),
+//     float4 (0.0, 1.0, 1.0, 1.0),
+//     float4 (1.0, 0.0, 1.0, 1.0),
+//     float4 (1.0, 1.0, 1.0, 1.0),
+//     float4 (0.2, 0.2, 0.2, 1.0),
+//     float4 (0.8, 0.8, 0.8, 1.0),
+//     float4 (1.0, 0.5, 0.0, 1.0),
+//     float4 (0.5, 0.0, 0.5, 1.0),
+//     float4 (0.25, 0.75, 0.75, 1.0)
+// };
+//
 [shader ("mesh")]
 [outputtopology ("triangle")]
 [numthreads (1,1,1)]
 void main(
-    in uint tig : SV_GroupIndex,
-    in payload Payload payload,
+    in payload Payload data,
     OutputVertices <Vertex, MAX_VERTS> verts,
     OutputIndices <uint3, MAX_PRIMS> triangles)
 {
-    SdfOctreeNode node = nodes [payload.node_index];
-    const float3 voxel_size_modifier = {payload.voxel_size};
+    // SetMeshOutputCounts (3, 1);
+    //
+    // verts [0].position = float4 (-0.5, 0.5, 0, 1);
+    // verts [1].position = float4 (0.5,  0.5, 0, 1);
+    // verts [2].position = float4 (0, -0.5, 0, 1);
+    // verts [0].color = colors [0];
+    // verts [1].color = colors [1];
+    // verts [2].color = colors [2];
+    //
+    // triangles [0] = uint3 (0, 1, 2);
+    // return;
+
+    SdfOctreeNode node = nodes [data.node_index];
+    const float3 voxel_size_modifier = {data.voxel_size};
     float3 corners [8];
 
     for (int i = 0; i < 8; ++i) {
         float3 corner_offset = {0.0f, 0.0f, 0.0f};
-        if (((i >> 0) & 1) == 1) corner_offset.x = payload.voxel_size;
-        if (((i >> 1) & 1) == 1) corner_offset.y = payload.voxel_size;
-        if (((i >> 2) & 1) == 1) corner_offset.z = payload.voxel_size;
-        corners [i] = payload.min_corner + corner_offset;
+        if (((i >> 0) & 1) == 1) corner_offset.x = data.voxel_size;
+        if (((i >> 1) & 1) == 1) corner_offset.y = data.voxel_size;
+        if (((i >> 2) & 1) == 1) corner_offset.z = data.voxel_size;
+        corners [i] = data.min_corner + corner_offset;
     }
 
     uint triangles_count = 0;
 
     for (; triangles_count < 4; ++triangles_count) {
-        int base = payload.cube_index * 16 + triangles_count * 3;
+        int base = data.cube_index * 16 + triangles_count * 3;
         if (cube_index_2_triangle_indices [base] == -1) break;
         triangles [triangles_count] = uint3 (cube_index_2_triangle_indices [base + 0]
                 , cube_index_2_triangle_indices [base + 1]
                 , cube_index_2_triangle_indices [base + 2]);
     }
 
-    SetMeshOutputCounts (12, triangles_count);
-
-    int edge_mask = cube_index_2_edge_mask [payload.cube_index];
+    int edge_mask = cube_index_2_edge_mask [data.cube_index];
     if (edge_mask == 0) {
         return;
     }
+
+    SetMeshOutputCounts (12, triangles_count);
 
     int edge_bit = 1;
     for (int i = 0; i < 12; ++i) {
@@ -80,6 +110,7 @@ void main(
                                                 , node.values [corner_indices.x]
                                                 , node.values [corner_indices.y]
                                                 ), 1.0f));
+        // verts [i].color = colors [i];
         verts [i].color = float4 (1.0f, 1.0f, 0.0f, 1.0f);
         edge_bit <<= 1;
     }

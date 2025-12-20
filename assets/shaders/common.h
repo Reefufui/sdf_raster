@@ -1,6 +1,8 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#define MAX_OCTREE_DEPTH 20
+
 #ifdef __cplusplus
 
 #include <LiteMath.h>
@@ -34,6 +36,7 @@ struct PushConstantsData {
     float padding;
     float4 color;
     float4 frustum_planes [6];
+    int frame_stack_offset;
 };
 
 struct SdfOctreeNode {

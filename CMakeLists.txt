@@ -102,6 +102,7 @@ add_executable(${PROJECT_NAME}
 
     src/cpu_sandbox/task_generator.cpp
     src/cpu_sandbox/mesh_sphere.cpp
+    src/cpu_sandbox/mesh_constructor.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE "${VULKAN_SDK_ROOT}/include")

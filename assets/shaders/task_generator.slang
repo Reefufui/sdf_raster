@@ -4,44 +4,43 @@
 
 [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> nodes;
 [[vk::binding (1, 0)]] StructuredBuffer <Payload> subtrees;
+[[vk::binding (2, 0)]] RWStructuredBuffer <int> node_index_stack;
+[[vk::binding (3, 0)]] RWStructuredBuffer <float3> coord_stack;
+[[vk::binding (4, 0)]] RWStructuredBuffer <int> path_stack;
 
-#define MAX_OCTREE_DEPTH 6
+void dfs_octree (Payload root, int stack_offset) {
+    payload Payload voxel;
 
-void dfs_octree (Payload root) {
     if (nodes [root.node_index].offset == 0) {
-        Payload voxel = root;
+        voxel = root;
         DispatchMesh (1, 1, 1, voxel); // root is leaf
     }
 
-    int node_index_stack [MAX_OCTREE_DEPTH];
-    float3 coord_stack [MAX_OCTREE_DEPTH];
-    int path_stack [MAX_OCTREE_DEPTH]; // stack of values 0..7 - child num on current level
-
-    node_index_stack [0] = root.node_index;
-    coord_stack [0] = root.min_corner;
-    path_stack [1] = 0;
+    node_index_stack [stack_offset + 0] = root.node_index;
+    coord_stack [stack_offset + 0] = root.min_corner;
+    path_stack [stack_offset + 1] = 0;
 
     int level = 1; // starting with level 1
     while (level > 0) {
-        int child_index = path_stack [level];
+        int child_index = path_stack [stack_offset + level];
         if (child_index == 8 || level >= MAX_OCTREE_DEPTH) { // no more children
             level -= 1;
             continue;
         }
-        path_stack [level] += 1;
+        path_stack [stack_offset + level] += 1;
 
-        SdfOctreeNode parent_node = nodes [node_index_stack [level - 1]];
+        SdfOctreeNode parent_node = nodes [node_index_stack [stack_offset + level - 1]];
         int child_node_index = parent_node.offset + child_index;
         SdfOctreeNode child_node = nodes [child_node_index];
 
         float child_voxel_size = root.voxel_size / (1 << level);
 
         float3 child_corner_offset = {0.0f, 0.0f, 0.0f};
-        if (((child_index >> 0) & 1) == 1) child_corner_offset.x = child_voxel_size;
-        if (((child_index >> 1) & 1) == 1) child_corner_offset.y = child_voxel_size;
-        if (((child_index >> 2) & 1) == 1) child_corner_offset.z = child_voxel_size;
+        if (((child_index >> 0) & 1) > 0) child_corner_offset.x = child_voxel_size;
+        if (((child_index >> 1) & 1) > 0) child_corner_offset.y = child_voxel_size;
+        if (((child_index >> 2) & 1) > 0) child_corner_offset.z = child_voxel_size;
 
-        float3 child_coord = coord_stack [level - 1] + child_corner_offset;
+        float3 child_coord = coord_stack [stack_offset + level - 1] + child_corner_offset;
 
         if (child_node.offset == 0) { // leaf
             int cube_index = 0;
@@ -56,25 +55,27 @@ void dfs_octree (Payload root) {
                 continue;
             }
 
-            Payload voxel;
             voxel.voxel_size = child_voxel_size;
             voxel.min_corner = child_coord;
             voxel.node_index = child_node_index;
             voxel.cube_index = cube_index;
             DispatchMesh (1, 1, 1, voxel);
         } else { // internal node
-            node_index_stack [level] = child_node_index;
-            coord_stack [level] = child_coord;
+            node_index_stack [stack_offset + level] = child_node_index;
+            coord_stack [stack_offset + level] = child_coord;
 
             level += 1;
-            path_stack [level] = 0;
+            path_stack [stack_offset + level] = 0;
         }
     }
 }
 
 [shader ("amplification")]
 [numthreads (1,1,1)]
-void main (uint3 dispatch_thread_id : SV_DispatchThreadID) {
-    dfs_octree (subtrees [dispatch_thread_id.x]);
+void main (in uint id : SV_GroupIndex) {
+    if (pc.frame_stack_offset != 0) return;
+    // dfs_octree (subtrees [id.x], pc.frame_stack_offset + id.x * MAX_OCTREE_DEPTH);
+    // dfs_octree (subtrees [0], pc.frame_stack_offset + 0 * MAX_OCTREE_DEPTH);
+    dfs_octree (subtrees [0], 0);
 }
 

@@ -32,15 +32,16 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     this->width = a_width;
     this->height = a_height;
     this->sdf_octree = std::move (a_sdf_octree);
-    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
+    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 4);
 
     std::cout << "[MeshShaderRenderer::init] subtrees count: " << subtrees.size () << std::endl;
-    Payload root_payload;
-    root_payload.node_index = 0;
-    root_payload.voxel_size = 2.f;
-    root_payload.min_corner = {-1.0f, -1.0f, -1.0f};
-    cpu_sandbox::task_generator (root_payload, this->sdf_octree.nodes);
-    cpu_sandbox::dump_obj ("result.obj");
+    // Payload root_payload;
+    // root_payload.node_index = 0;
+    // root_payload.voxel_size = 2.f;
+    // root_payload.min_corner = {-1.0f, -1.0f, -1.0f};
+    cpu_sandbox::task_generator (this->subtrees [0], this->sdf_octree.nodes);
+    cpu_sandbox::dump_obj ("new.obj");
+    // exit (0);
 
     // dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
     std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.x=" << this->subtrees [0].min_corner.x << std::endl;
@@ -95,7 +96,8 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
 			, this->subtrees
 			, this->context->get_copy_helper ()
 			, *descriptor_maker
-			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT);
+			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT
+			, this->context->get_total_frames ());
 
 	this->marching_cubes_lookup_table_ds = create_lookup_table_descriptor_set (this->context->get_device ()
 			, this->context->get_physical_device ()
@@ -227,8 +229,6 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
         return;
     }
 
-    this->update_push_constants (a_camera);
-
     auto cmd_buff = this->context->begin_frame ();
     if (cmd_buff == VK_NULL_HANDLE) {
         return;
@@ -258,6 +258,7 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
             nullptr
             );
 
+    this->update_push_constants (a_camera);
     vkCmdPushConstants (cmd_buff
             , pipeline_layout
             , VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT
@@ -266,7 +267,8 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
             , &this->push_constants
             );
 
-    vkCmdDrawMeshTasksEXT (cmd_buff, this->subtrees.size (), 1, 1);
+    // vkCmdDrawMeshTasksEXT (cmd_buff, this->subtrees.size (), 1, 1);
+    vkCmdDrawMeshTasksEXT (cmd_buff, 1, 1, 1);
 
     this->context->end_frame (cmd_buff);
 }
@@ -322,6 +324,9 @@ void MeshShaderRenderer::update_push_constants (const Camera& a_camera) {
     for (int i = 0; i < 6; ++i) {
         this->push_constants.frustum_planes [i] = planes [i];
     }
+
+    // this->push_constants.frame_stack_offset = this->context->get_current_frame () * this->subtrees.size () * MAX_OCTREE_DEPTH;
+    this->push_constants.frame_stack_offset = this->context->get_current_frame () * 1 * MAX_OCTREE_DEPTH;
 }
 
 

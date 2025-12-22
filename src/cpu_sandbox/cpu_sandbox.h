@@ -12,7 +12,6 @@ struct Vertex {
     float4 color;
 };
 
-#define MAX_OCTREE_DEPTH 16
 #define MAX_VERTS 12
 #define MAX_PRIMS 4
 

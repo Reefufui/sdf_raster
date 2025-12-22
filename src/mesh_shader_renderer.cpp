@@ -32,7 +32,7 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     this->width = a_width;
     this->height = a_height;
     this->sdf_octree = std::move (a_sdf_octree);
-    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 4);
+    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
 
     std::cout << "[MeshShaderRenderer::init] subtrees count: " << subtrees.size () << std::endl;
     // Payload root_payload;
@@ -267,8 +267,8 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
             , &this->push_constants
             );
 
-    // vkCmdDrawMeshTasksEXT (cmd_buff, this->subtrees.size (), 1, 1);
-    vkCmdDrawMeshTasksEXT (cmd_buff, 1, 1, 1);
+    vkCmdDrawMeshTasksEXT (cmd_buff, this->subtrees.size (), 1, 1);
+    // vkCmdDrawMeshTasksEXT (cmd_buff, 1, 1, 1);
 
     this->context->end_frame (cmd_buff);
 }
@@ -325,8 +325,7 @@ void MeshShaderRenderer::update_push_constants (const Camera& a_camera) {
         this->push_constants.frustum_planes [i] = planes [i];
     }
 
-    // this->push_constants.frame_stack_offset = this->context->get_current_frame () * this->subtrees.size () * MAX_OCTREE_DEPTH;
-    this->push_constants.frame_stack_offset = this->context->get_current_frame () * 1 * MAX_OCTREE_DEPTH;
+    this->push_constants.frame_stack_offset = this->context->get_current_frame () * this->subtrees.size () * MAX_OCTREE_DEPTH;
 }
 
 

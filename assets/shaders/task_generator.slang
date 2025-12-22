@@ -73,9 +73,6 @@ void dfs_octree (Payload root, int stack_offset) {
 [shader ("amplification")]
 [numthreads (1,1,1)]
 void main (in uint id : SV_GroupIndex) {
-    if (pc.frame_stack_offset != 0) return;
-    // dfs_octree (subtrees [id.x], pc.frame_stack_offset + id.x * MAX_OCTREE_DEPTH);
-    // dfs_octree (subtrees [0], pc.frame_stack_offset + 0 * MAX_OCTREE_DEPTH);
-    dfs_octree (subtrees [0], 0);
+    dfs_octree (subtrees [id], pc.frame_stack_offset + id * MAX_OCTREE_DEPTH);
 }
 

@@ -78,7 +78,7 @@ private:
     std::vector <VkFramebuffer> swapchain_framebuffers;
     VkRenderPass render_pass = VK_NULL_HANDLE;
 
-    const int max_frames_in_flight = 1;
+    const int max_frames_in_flight = 3;
     uint32_t current_frame = 0;
     uint32_t current_image_index;
     struct FrameResources {

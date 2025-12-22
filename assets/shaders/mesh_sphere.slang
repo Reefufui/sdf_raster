@@ -47,7 +47,7 @@ float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
 //     float4 (0.5, 0.0, 0.5, 1.0),
 //     float4 (0.25, 0.75, 0.75, 1.0)
 // };
-//
+
 [shader ("mesh")]
 [outputtopology ("triangle")]
 [numthreads (1,1,1)]

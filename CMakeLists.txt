@@ -72,6 +72,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(stb_project) # Загрузит репозиторий и сделает его доступным
 
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.12.0
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
 find_package(Vulkan REQUIRED)
 message(STATUS "Vulkan found: ${Vulkan_FOUND}")
 message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
@@ -92,11 +99,12 @@ add_executable(${PROJECT_NAME}
     ${vk_utils_project_SOURCE_DIR}/vk_swapchain.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_utils.cpp
     src/application.cpp
+    src/camera.cpp
     src/main.cpp
-    src/marching_cubes.cpp
     src/marching_cubes_lookup_table.cpp
-    src/mesh.cpp
+    src/marching_cubes.cpp
     src/mesh_shader_renderer.cpp
+    src/mesh.cpp
     src/sdf_octree.cpp
     src/vulkan_context.cpp
 
@@ -127,6 +135,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw
     volk
     Vulkan::Vulkan
+    nlohmann_json
 )
 
 # Линкуем всё

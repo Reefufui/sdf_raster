@@ -61,6 +61,7 @@ void Application::run () {
         throw std::logic_error ("[Application::run] renderer is not inited");
     }
 
+    this->camera.load ("cached_camera.json");
     this->last_frame = glfwGetTime ();
 
     while (!glfwWindowShouldClose (this->window)) {
@@ -126,8 +127,10 @@ void Application::cleanup () {
 }
 
 void Application::process_input () {
-    if (glfwGetKey (this->window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+    if (glfwGetKey (this->window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+        this->camera.dump ("cached_camera.json");
         glfwSetWindowShouldClose (this->window, true);
+    }
 
     if (glfwGetKey (this->window, GLFW_KEY_W) == GLFW_PRESS)
         this->camera.process_keyboard_input (FORWARD, this->delta_time);

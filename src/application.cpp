@@ -50,15 +50,16 @@ void Application::marching_cubes_cpu (const std::string& a_octree_filename, cons
     // save_mesh_as_obj (meshes [0], a_mesh_filename); // TODO: mesh concatenation
 
     ///
-    Payload root_payload;
-    root_payload.node_index = 0;
-    root_payload.voxel_size = 2.f;
-    root_payload.min_corner = {-1.0f, -1.0f, -1.0f};
-    cpu_sandbox::task_generator (root_payload, scene.nodes);
-    cpu_sandbox::dump_obj ("my_algo.obj");
+    // Payload root_payload;
+    // root_payload.node_index = 0;
+    // root_payload.voxel_size = 2.f;
+    // root_payload.min_corner = {-1.0f, -1.0f, -1.0f};
+    auto subtrees = get_octree_subtrees_payloads (scene, 0);
+    cpu_sandbox::task_generator (subtrees [0], scene.nodes);
+    cpu_sandbox::dump_obj ("result.obj");
 }
 
-void Application::run () {
+void Application::run (bool single_frame) {
     if (!this->renderer) {
         throw std::logic_error ("[Application::run] renderer is not inited");
     }
@@ -66,7 +67,7 @@ void Application::run () {
     this->camera.load ("cached_camera.json");
     this->last_frame = glfwGetTime ();
 
-    while (!glfwWindowShouldClose (this->window)) {
+    do {
         float current_frame = glfwGetTime ();
         this->delta_time = current_frame - last_frame;
         this->last_frame = current_frame;
@@ -79,9 +80,7 @@ void Application::run () {
         this->last_frame = current_time;
 
         this->renderer->render (this->camera);
-
-        // std::this_thread::sleep_for (std::chrono::seconds (1));
-    }
+    } while (!glfwWindowShouldClose (this->window) && !single_frame);
 }
 
 void Application::init_window () {
@@ -111,7 +110,7 @@ void Application::init_vulkan () {
 void Application::init_renderer () {
     this->renderer = std::make_unique <MeshShaderRenderer> (this->vulkan_context);
     SdfOctree scene {};
-    load_sdf_octree (scene, "./assets/sdf/example_octree_large.octree");
+    load_sdf_octree (scene, "./assets/sdf/lowpoly_bunny.octree");
     this->renderer->init (this->width, this->height, std::move (scene));
 }
 

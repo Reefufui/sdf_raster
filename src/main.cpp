@@ -10,6 +10,7 @@ int main (int argc, char* argv[]) {
         int height = 600;
         std::string filename = "";
         bool headless_mode = false;
+        bool single_frame = false;
 
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
@@ -17,18 +18,20 @@ int main (int argc, char* argv[]) {
                 headless_mode = true;
                 filename = argv[++i];
             } else if (arg == "-w" && i + 1 < argc) {
-                width = std::stoi(argv[++i]);
+                width = std::stoi (argv[++i]);
             } else if (arg == "-h" && i + 1 < argc) {
-                height = std::stoi(argv[++i]);
+                height = std::stoi (argv[++i]);
+            } else if (arg == "--single-frame") {
+                single_frame = true;
             }
         }
 
         if (headless_mode) {
             sdf_raster::Application app (width, height);
-            app.marching_cubes_cpu ("./assets/sdf/example_octree_large.octree", filename);
+            app.marching_cubes_cpu ("./assets/sdf/lowpoly_bunny.octree", filename);
         } else {
             sdf_raster::Application app (width, height, "sdf_raster");
-            app.run ();
+            app.run (single_frame);
         }
     } catch (const std::exception& e) {
         std::cerr << "Application error: " << e.what() << std::endl;

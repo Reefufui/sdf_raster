@@ -86,7 +86,7 @@ void VulkanContext::create_instance () {
     app_info.applicationVersion = 0;
     app_info.pEngineName = "vk_utils";
     app_info.engineVersion = 0;
-    app_info.apiVersion = VK_API_VERSION_1_3;
+    app_info.apiVersion = VK_API_VERSION_1_4;
 
     bool enable_validation_layers = true;
     std::vector <const char *> instance_layers {};
@@ -131,6 +131,51 @@ void VulkanContext::setup_debug_utils_messenger () {
     }
 }
 
+void VulkanContext::dump_mesh_shader_properties () const {
+    std::cout << "\n--- VkPhysicalDeviceMeshShaderPropertiesEXT ---" << std::endl;
+    std::cout << "  maxTaskWorkGroupTotalCount: " << mesh_shader_properties.maxTaskWorkGroupTotalCount << std::endl;
+    std::cout << "  maxTaskWorkGroupCount: ["
+              << mesh_shader_properties.maxTaskWorkGroupCount[0] << ", "
+              << mesh_shader_properties.maxTaskWorkGroupCount[1] << ", "
+              << mesh_shader_properties.maxTaskWorkGroupCount[2] << "]" << std::endl;
+    std::cout << "  maxTaskWorkGroupInvocations: " << mesh_shader_properties.maxTaskWorkGroupInvocations << std::endl;
+    std::cout << "  maxTaskWorkGroupSize: ["
+              << mesh_shader_properties.maxTaskWorkGroupSize[0] << ", "
+              << mesh_shader_properties.maxTaskWorkGroupSize[1] << ", "
+              << mesh_shader_properties.maxTaskWorkGroupSize[2] << "]" << std::endl;
+    std::cout << "  maxTaskPayloadSize: " << mesh_shader_properties.maxTaskPayloadSize << std::endl;
+    std::cout << "  maxTaskSharedMemorySize: " << mesh_shader_properties.maxTaskSharedMemorySize << std::endl;
+    std::cout << "  maxTaskPayloadAndSharedMemorySize: " << mesh_shader_properties.maxTaskPayloadAndSharedMemorySize << std::endl;
+    std::cout << "  maxMeshWorkGroupTotalCount: " << mesh_shader_properties.maxMeshWorkGroupTotalCount << std::endl;
+    std::cout << "  maxMeshWorkGroupCount: ["
+              << mesh_shader_properties.maxMeshWorkGroupCount[0] << ", "
+              << mesh_shader_properties.maxMeshWorkGroupCount[1] << ", "
+              << mesh_shader_properties.maxMeshWorkGroupCount[2] << "]" << std::endl;
+    std::cout << "  maxMeshWorkGroupInvocations: " << mesh_shader_properties.maxMeshWorkGroupInvocations << std::endl;
+    std::cout << "  maxMeshWorkGroupSize: ["
+              << mesh_shader_properties.maxMeshWorkGroupSize[0] << ", "
+              << mesh_shader_properties.maxMeshWorkGroupSize[1] << ", "
+              << mesh_shader_properties.maxMeshWorkGroupSize[2] << "]" << std::endl;
+    std::cout << "  maxMeshSharedMemorySize: " << mesh_shader_properties.maxMeshSharedMemorySize << std::endl;
+    std::cout << "  maxMeshPayloadAndSharedMemorySize: " << mesh_shader_properties.maxMeshPayloadAndSharedMemorySize << std::endl;
+    std::cout << "  maxMeshOutputMemorySize: " << mesh_shader_properties.maxMeshOutputMemorySize << std::endl;
+    std::cout << "  maxMeshPayloadAndOutputMemorySize: " << mesh_shader_properties.maxMeshPayloadAndOutputMemorySize << std::endl;
+    std::cout << "  maxMeshOutputComponents: " << mesh_shader_properties.maxMeshOutputComponents << std::endl;
+    std::cout << "  maxMeshOutputVertices: " << mesh_shader_properties.maxMeshOutputVertices << std::endl;
+    std::cout << "  maxMeshOutputPrimitives: " << mesh_shader_properties.maxMeshOutputPrimitives << std::endl;
+    std::cout << "  maxMeshOutputLayers: " << mesh_shader_properties.maxMeshOutputLayers << std::endl;
+    std::cout << "  maxMeshMultiviewViewCount: " << mesh_shader_properties.maxMeshMultiviewViewCount << std::endl;
+    std::cout << "  meshOutputPerVertexGranularity: " << mesh_shader_properties.meshOutputPerVertexGranularity << std::endl;
+    std::cout << "  meshOutputPerPrimitiveGranularity: " << mesh_shader_properties.meshOutputPerPrimitiveGranularity << std::endl;
+    std::cout << "  maxPreferredTaskWorkGroupInvocations: " << mesh_shader_properties.maxPreferredTaskWorkGroupInvocations << std::endl;
+    std::cout << "  maxPreferredMeshWorkGroupInvocations: " << mesh_shader_properties.maxPreferredMeshWorkGroupInvocations << std::endl;
+    std::cout << "  prefersLocalInvocationVertexOutput: " << (mesh_shader_properties.prefersLocalInvocationVertexOutput ? "true" : "false") << std::endl;
+    std::cout << "  prefersLocalInvocationPrimitiveOutput: " << (mesh_shader_properties.prefersLocalInvocationPrimitiveOutput ? "true" : "false") << std::endl;
+    std::cout << "  prefersCompactVertexOutput: " << (mesh_shader_properties.prefersCompactVertexOutput ? "true" : "false") << std::endl;
+    std::cout << "  prefersCompactPrimitiveOutput: " << (mesh_shader_properties.prefersCompactPrimitiveOutput ? "true" : "false") << std::endl;
+    std::cout << "-------------------------------------------\n" << std::endl;
+}
+
 void VulkanContext::create_device () {
     std::vector <const char*> validation_layers {};
     std::vector <const char*> device_extensions {};
@@ -149,9 +194,21 @@ void VulkanContext::create_device () {
 
     vkGetPhysicalDeviceFeatures2 (this->get_physical_device (), &features2);
 
+    VkPhysicalDeviceMeshShaderPropertiesEXT meshShaderProperties {};
+    meshShaderProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
+    meshShaderProperties.pNext = nullptr;
+
+    VkPhysicalDeviceProperties2 properties2 {};
+    properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    properties2.pNext = &meshShaderProperties;
+
+    vkGetPhysicalDeviceProperties2 (this->get_physical_device (), &properties2);
+
     if (!meshShaderFeatures.meshShader) {
-        std::runtime_error ("Mesh Shaders are NOT supported.");
+        throw std::runtime_error ("Mesh Shaders are NOT supported.");
     }
+
+    this->mesh_shader_properties = meshShaderProperties;
 
     VkPhysicalDeviceMeshShaderFeaturesEXT requestedMeshShaderFeatures {};
     requestedMeshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
@@ -168,6 +225,8 @@ void VulkanContext::create_device () {
             , &requestedMeshShaderFeatures);
 
     volkLoadDevice (this->get_device ());                                            
+
+    this->dump_mesh_shader_properties ();
 }
 
 void VulkanContext::create_command_pools () {

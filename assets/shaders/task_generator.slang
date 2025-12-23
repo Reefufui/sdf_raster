@@ -10,9 +10,11 @@
 
 void dfs_octree (Payload root, int stack_offset) {
     payload Payload voxel;
+    int mesh_id = 4;
 
     if (nodes [root.node_index].offset == 0) {
         voxel = root;
+        voxel.mesh_id = 23;
         DispatchMesh (1, 1, 1, voxel); // root is leaf
     }
 
@@ -59,7 +61,11 @@ void dfs_octree (Payload root, int stack_offset) {
             voxel.min_corner = child_coord;
             voxel.node_index = child_node_index;
             voxel.cube_index = cube_index;
+            voxel.mesh_id = mesh_id;
             DispatchMesh (1, 1, 1, voxel);
+
+            mesh_id += 1;
+            path_stack [stack_offset + 0] = 1;
         } else { // internal node
             node_index_stack [stack_offset + level] = child_node_index;
             coord_stack [stack_offset + level] = child_coord;
@@ -73,6 +79,14 @@ void dfs_octree (Payload root, int stack_offset) {
 [shader ("amplification")]
 [numthreads (1,1,1)]
 void main (in uint id : SV_GroupIndex) {
-    dfs_octree (subtrees [id], pc.frame_stack_offset + id * MAX_OCTREE_DEPTH);
+// void main () {
+    // node_index_stack [0] = 1;
+    // path_stack [0] = 3;
+    // path_stack [1] = 3;
+    // path_stack [2] = 3;
+    // path_stack [4] = 3;
+    // payload Payload voxel;
+    // DispatchMesh (1, 1, 1, voxel); // root is leaf
+    dfs_octree (subtrees [0], pc.frame_stack_offset + id * MAX_OCTREE_DEPTH);
 }
 

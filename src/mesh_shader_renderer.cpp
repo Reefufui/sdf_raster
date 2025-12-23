@@ -32,15 +32,15 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     this->width = a_width;
     this->height = a_height;
     this->sdf_octree = std::move (a_sdf_octree);
-    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
+    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 0);
 
     std::cout << "[MeshShaderRenderer::init] subtrees count: " << subtrees.size () << std::endl;
     // Payload root_payload;
     // root_payload.node_index = 0;
     // root_payload.voxel_size = 2.f;
     // root_payload.min_corner = {-1.0f, -1.0f, -1.0f};
-    cpu_sandbox::task_generator (this->subtrees [0], this->sdf_octree.nodes);
-    cpu_sandbox::dump_obj ("new.obj");
+    // cpu_sandbox::task_generator (this->subtrees [0], this->sdf_octree.nodes);
+    // cpu_sandbox::dump_obj ("new.obj");
     // exit (0);
 
     // dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
@@ -267,8 +267,8 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
             , &this->push_constants
             );
 
-    vkCmdDrawMeshTasksEXT (cmd_buff, this->subtrees.size (), 1, 1);
-    // vkCmdDrawMeshTasksEXT (cmd_buff, 1, 1, 1);
+    // vkCmdDrawMeshTasksEXT (cmd_buff, this->subtrees.size (), 1, 1);
+    vkCmdDrawMeshTasksEXT (cmd_buff, 1, 1, 1);
 
     this->context->end_frame (cmd_buff);
 }
@@ -296,6 +296,16 @@ void MeshShaderRenderer::shutdown () {
     }
 
     std::cout << "MeshShaderRenderer shutting down..." << std::endl;
+
+    save_generated_mesh (this->context->get_copy_helper (), this->sdf_octree_ds.vertices_buffer, this->sdf_octree_ds.indices_buffer);
+
+    fetch_info (this->context->get_copy_helper ()
+            , this->subtrees
+            , this->context->get_total_frames ()
+            , this->sdf_octree_ds);
+
+    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
+    cleanup_lookup_table_descriptor_set (this->context->get_device (), this->marching_cubes_lookup_table_ds);
 
     this->descriptor_maker.reset ();
 

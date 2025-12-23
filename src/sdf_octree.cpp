@@ -6,6 +6,7 @@
 #include "sdf_octree.hpp"
 #include "shaders/common.h" // Payload
 #include "vk_buffers.h"
+#include "cpu_sandbox/cpu_sandbox.h"
 
 namespace sdf_raster {
 
@@ -115,30 +116,42 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
     VkDeviceSize subtree_size = subtrees.size () * sizeof (Payload);
     VkDeviceSize int_stack_size = subtrees.size () * sizeof (int) * MAX_OCTREE_DEPTH * frames_count;
     VkDeviceSize float3_stack_size = subtrees.size () * sizeof (LiteMath::float3) * MAX_OCTREE_DEPTH * frames_count;
+    VkDeviceSize vertices_size = MAX_LEAF_VERTS * MAX_MESH_ID * sizeof (LiteMath::float3);
+    VkDeviceSize indices_size = MAX_LEAF_PRIMS * MAX_MESH_ID * sizeof (LiteMath::uint3);
 
     if (octree_nodes_size == 0) {
         throw std::runtime_error ("SdfOctree is empty, cannot create descriptor set.");
     }
 
-    std::vector <VkBuffer> buffers (5);
-    std::vector <VkMemoryRequirements> mem_reqs (5);
+    std::vector <VkBuffer> buffers (7);
+    std::vector <VkMemoryRequirements> mem_reqs (7);
 
     buffers [0] = vk_utils::createBuffer (device, octree_nodes_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [0]);
     buffers [1] = vk_utils::createBuffer (device, subtree_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [1]);
-    buffers [2] = vk_utils::createBuffer (device, int_stack_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [2]);
+    buffers [2] = vk_utils::createBuffer (device, int_stack_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [2]);
     buffers [3] = vk_utils::createBuffer (device, float3_stack_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [3]);
-    buffers [4] = vk_utils::createBuffer (device, int_stack_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [4]);
+    buffers [4] = vk_utils::createBuffer (device, int_stack_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [4]);
+    buffers [5] = vk_utils::createBuffer (device, vertices_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [5]);
+    buffers [6] = vk_utils::createBuffer (device, indices_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [6]);
 
     info.nodes_buffer = buffers [0];
     info.subtree_buffer = buffers [1];
     info.node_index_stack_buffer = buffers [2];
     info.coord_stack_buffer = buffers [3];
     info.path_stack_buffer = buffers [4];
+    info.vertices_buffer = buffers [5];
+    info.indices_buffer = buffers [6];
 
     info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
 
     copy_helper->UpdateBuffer (info.nodes_buffer, 0, octree.nodes.data (), octree_nodes_size);
     copy_helper->UpdateBuffer (info.subtree_buffer, 0, subtrees.data (), subtree_size);
+
+    std::vector <LiteMath::float3> vertices (MAX_LEAF_VERTS * MAX_MESH_ID, LiteMath::float3 {});
+    std::vector <LiteMath::uint3> indices (MAX_LEAF_PRIMS * MAX_MESH_ID, LiteMath::uint3 {});
+
+    copy_helper->UpdateBuffer (info.vertices_buffer, 0, vertices.data (), vertices_size);
+    copy_helper->UpdateBuffer (info.indices_buffer, 0, indices.data (), indices_size);
 
     ds_maker.BindBegin (shader_stage_flags);
     ds_maker.BindBuffer (0, info.nodes_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
@@ -146,6 +159,8 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
     ds_maker.BindBuffer (2, info.node_index_stack_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     ds_maker.BindBuffer (3, info.coord_stack_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     ds_maker.BindBuffer (4, info.path_stack_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    ds_maker.BindBuffer (5, info.vertices_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    ds_maker.BindBuffer (6, info.indices_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     ds_maker.BindEnd (&info.descriptor_set, &info.descriptor_set_layout);
 
     return info;
@@ -175,6 +190,16 @@ void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetI
     if (info.path_stack_buffer != VK_NULL_HANDLE) {
         vkDestroyBuffer (device, info.path_stack_buffer, nullptr);
         info.path_stack_buffer = VK_NULL_HANDLE;
+    }
+
+    if (info.vertices_buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, info.vertices_buffer, nullptr);
+        info.vertices_buffer = VK_NULL_HANDLE;
+    }
+
+    if (info.indices_buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, info.indices_buffer, nullptr);
+        info.indices_buffer = VK_NULL_HANDLE;
     }
 
     if (info.memory != VK_NULL_HANDLE) {
@@ -235,7 +260,8 @@ std::vector <Payload> get_octree_subtrees_payloads (const SdfOctree& scene, int 
                 current.min_corner,
                 current.voxel_size,
                 static_cast <int> (current.node_idx),
-                cube_index
+                cube_index,
+                0
             });
             continue;
         }
@@ -305,6 +331,53 @@ void dump_octree_subtree_pretty(const SdfOctree& scene, uint32_t subtree_root_no
             );
         }
     }
+}
+
+void save_generated_mesh (std::shared_ptr <vk_utils::ICopyEngine> copy_helper
+        , VkBuffer vertices_buffer
+        , VkBuffer indices_buffer) {
+    if (!copy_helper) {
+        throw std::runtime_error("ICopyEngine shared_ptr cannot be null.");
+    }
+
+    std::vector <LiteMath::float3> vertices (MAX_LEAF_VERTS * MAX_MESH_ID, LiteMath::float3 {});
+    std::vector <LiteMath::uint3> indices (MAX_LEAF_PRIMS * MAX_MESH_ID, LiteMath::uint3 {});
+
+    VkDeviceSize vertices_size = MAX_LEAF_VERTS * MAX_MESH_ID * sizeof (LiteMath::float3);
+    VkDeviceSize indices_size = MAX_LEAF_PRIMS * MAX_MESH_ID * sizeof (LiteMath::uint3);
+
+    copy_helper->ReadBuffer (vertices_buffer, 0, vertices.data (), vertices_size);
+    copy_helper->ReadBuffer (indices_buffer, 0, indices.data (), indices_size);
+
+    for (int mesh_id = 0; mesh_id < MAX_MESH_ID; ++mesh_id) {
+        size_t offset = cpu_sandbox::get_vertex_count ();
+
+        for (size_t i = 0; i < MAX_LEAF_VERTS; ++i) {
+            cpu_sandbox::add_vertex (LiteMath::to_float4 (vertices [mesh_id * MAX_LEAF_VERTS + i], 1.0f));
+        }
+
+        for (size_t i = 0; i < MAX_LEAF_PRIMS; ++i) {
+            cpu_sandbox::add_triangle (indices [mesh_id * MAX_LEAF_PRIMS + i]);
+        }
+    }
+
+    cpu_sandbox::dump_obj ("generated.obj");
+}
+
+void fetch_info (std::shared_ptr <vk_utils::ICopyEngine> copy_helper
+        , const std::vector <Payload>& subtrees
+        , const uint32_t frames_count
+        , SdfOctreeDescriptorSetInfo info) {
+    // 0 int in path stack - signal
+    // VkDeviceSize int_stack_size = subtrees.size () * sizeof (int) * MAX_OCTREE_DEPTH * frames_count;
+    // std::vector <int> path_stack (subtrees.size () * MAX_OCTREE_DEPTH * frames_count, 0);
+    int data;
+    copy_helper->ReadBuffer (info.path_stack_buffer, 0, &data, sizeof (int));
+    std::cout << "path_stack [0]=" << data << std::endl;
+
+    int node_index_stack_marker;
+    copy_helper->ReadBuffer (info.node_index_stack_buffer, 0, &node_index_stack_marker, sizeof (int));
+    std::cout << "node_index_stack [0]=" << node_index_stack_marker << std::endl;
 }
 
 }

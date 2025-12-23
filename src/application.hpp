@@ -14,11 +14,11 @@ namespace sdf_raster {
 
 class Application {
 public:
-    Application(int a_width, int a_height);
-    Application(int width, int height, const std::string& title);
-    ~Application();
+    Application (int a_width, int a_height);
+    Application (int width, int height, const std::string& title);
+    ~Application ();
 
-    void run();
+    void run (bool single_frame);
     void marching_cubes_cpu (const std::string& a_octree_filename, const std::string& a_mesh_filename);
 
 private:

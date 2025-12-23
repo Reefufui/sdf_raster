@@ -2,6 +2,9 @@
 #define COMMON_H
 
 #define MAX_OCTREE_DEPTH 20
+#define MAX_LEAF_VERTS 12
+#define MAX_LEAF_PRIMS 4
+#define MAX_MESH_ID 1024
 
 #ifdef __cplusplus
 
@@ -28,6 +31,7 @@ struct Payload {
     float voxel_size;
     int node_index;
     int cube_index;
+    int mesh_id;
 };
 
 struct PushConstantsData {

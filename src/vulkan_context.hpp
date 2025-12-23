@@ -47,6 +47,7 @@ public:
 private:
     void create_instance ();
     void setup_debug_utils_messenger ();
+    void dump_mesh_shader_properties () const;
     void create_device ();
     void create_command_pools ();
     void get_device_queues ();
@@ -88,6 +89,8 @@ private:
         VkCommandBuffer command_buffer;
     };
     std::vector <FrameResources> frame_resources;
+
+    VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties;
 
     bool initialized = false;
 };

@@ -21,7 +21,7 @@ Application::Application (int a_width, int a_height)
     // init_renderer ();
 }
 
-Application::Application(int a_width, int a_height, const std::string& a_window_title)
+Application::Application (int a_width, int a_height, const std::string& a_window_title, size_t a_leaf_memory_limit)
     : width (a_width)
     , height (a_height)
     , window_title (a_window_title)
@@ -29,7 +29,7 @@ Application::Application(int a_width, int a_height, const std::string& a_window_
     , user_data ({this}) {
     init_window ();
     init_vulkan ();
-    init_renderer ();
+    init_renderer (a_leaf_memory_limit);
     last_x = static_cast <float> (width) / 2.0f;
     last_y = static_cast <float> (height) / 2.0f;
 }
@@ -107,11 +107,11 @@ void Application::init_vulkan () {
     this->vulkan_context->init (this->window, this->width, this->height);
 }
 
-void Application::init_renderer () {
+void Application::init_renderer (size_t leaf_memory_limit) {
     this->renderer = std::make_unique <MeshShaderRenderer> (this->vulkan_context);
     SdfOctree scene {};
     load_sdf_octree (scene, "./assets/sdf/lowpoly_bunny.octree");
-    this->renderer->init (this->width, this->height, std::move (scene));
+    this->renderer->init (this->width, this->height, std::move (scene), leaf_memory_limit);
 }
 
 void Application::cleanup () {

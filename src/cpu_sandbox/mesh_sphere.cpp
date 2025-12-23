@@ -26,9 +26,9 @@ float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
     return (p);
 }
 
-void dispatch_mesh (Payload payload, std::vector <SdfOctreeNode>& nodes) {
-    std::vector <Vertex> verts (MAX_VERTS);
-    std::vector <uint3> triangles (MAX_PRIMS);
+void dispatch_mesh (NodeContext payload, std::vector <SdfOctreeNode>& nodes) {
+    std::vector <Vertex> verts (MAX_LEAF_VERTS);
+    std::vector <uint3> triangles (MAX_LEAF_PRIMS);
 
     SdfOctreeNode node = nodes [payload.node_index];
     const float3 voxel_size_modifier {payload.voxel_size};
@@ -75,7 +75,7 @@ void dispatch_mesh (Payload payload, std::vector <SdfOctreeNode>& nodes) {
 
     size_t offset = get_vertex_count ();
 
-    for (size_t i = 0; i < MAX_VERTS; ++i) {
+    for (size_t i = 0; i < MAX_LEAF_VERTS; ++i) {
         add_vertex (verts [i].position);
     }
 

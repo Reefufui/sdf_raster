@@ -1,19 +1,17 @@
+// mesh_sphere.slang
+
 #include "common.h"
 
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 
-[[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> nodes;
-[[vk::binding (1, 0)]] StructuredBuffer <Payload> subtrees;
-[[vk::binding (2, 0)]] RWStructuredBuffer <int> node_index_stack;
-[[vk::binding (3, 0)]] RWStructuredBuffer <float3> coord_stack;
-[[vk::binding (4, 0)]] RWStructuredBuffer <int> path_stack;
-[[vk::binding (5, 0)]] RWStructuredBuffer <float3> vertices;
-[[vk::binding (6, 0)]] RWStructuredBuffer <uint3> indices;
+[[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> g_octree_data;
+[[vk::binding (1, 0)]] StructuredBuffer <NodeContext> g_roots;
+[[vk::binding (2, 0)]] RWStructuredBuffer <NodeContext> g_active_leafs;
+[[vk::binding (3, 0)]] RWStructuredBuffer <uint> g_insufficent_mem_flag;
 
 [[vk::binding (0, 1)]] StructuredBuffer <uint2> edge_corners; // [12]
 [[vk::binding (1, 1)]] StructuredBuffer <int> cube_index_2_edge_mask; // [256]
 [[vk::binding (2, 1)]] StructuredBuffer <int> cube_index_2_triangle_indices; // [256][16]
-[[vk::binding (3, 1)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256] DEPRECATED!!!
 
 float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
     if (abs (0.f - valp1) < 0.00001)
@@ -32,75 +30,54 @@ float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
     return (p);
 }
 
-static const float4 colors [12] = {
-    float4 (1.0, 0.0, 0.0, 1.0),
-    float4 (0.0, 1.0, 0.0, 1.0),
-    float4 (0.0, 0.0, 1.0, 1.0),
-    float4 (1.0, 1.0, 0.0, 1.0),
-    float4 (0.0, 1.0, 1.0, 1.0),
-    float4 (1.0, 0.0, 1.0, 1.0),
-    float4 (1.0, 1.0, 1.0, 1.0),
-    float4 (0.2, 0.2, 0.2, 1.0),
-    float4 (0.8, 0.8, 0.8, 1.0),
-    float4 (1.0, 0.5, 0.0, 1.0),
-    float4 (0.5, 0.0, 0.5, 1.0),
-    float4 (0.25, 0.75, 0.75, 1.0)
-};
-
 [shader ("mesh")]
 [outputtopology ("triangle")]
-[numthreads (1,1,1)]
+[numthreads (MESH_WORKGROUP_SIZE, 1, 1)]
 void main(
-    in payload Payload data,
+    in payload TaskPayload payload,
+    in uint3 group_id : SV_GroupID,
+    in uint3 thread_id : SV_GroupThreadID,
     OutputVertices <Vertex, MAX_LEAF_VERTS> verts,
     OutputIndices <uint3, MAX_LEAF_PRIMS> triangles)
 {
-    if (data.mesh_id == 23) {
-        SetMeshOutputCounts (3, 1);
-
-        verts [0].position = float4 (-0.5, 0.5, 0, 1);
-        verts [1].position = float4 (0.5,  0.5, 0, 1);
-        verts [2].position = float4 (0, -0.5, 0, 1);
-        verts [0].color = colors [0];
-        verts [1].color = colors [1];
-        verts [2].color = colors [2];
-
-        vertices [0] = float3 (-0.5, 0.5, 0);
-
-        triangles [0] = uint3 (0, 1, 2);
+    const uint local_leaf_index = group_id.x * MESH_WORKGROUP_SIZE + thread_id.x;
+    if (local_leaf_index >= payload.leaf_count) {
+        return;
     }
-    return;
+    const uint global_leaf_index = payload.leaf_buffer_offset + local_leaf_index;
+    const NodeContext leaf = g_active_leafs [global_leaf_index];
 
-    SdfOctreeNode node = nodes [data.node_index];
-    const float3 voxel_size_modifier = {data.voxel_size};
+    const SdfOctreeNode node = g_octree_data [leaf.node_index];
+    const float3 voxel_size_modifier = {leaf.voxel_size};
     float3 corners [8];
 
     for (int i = 0; i < 8; ++i) {
         float3 corner_offset = {0.0f, 0.0f, 0.0f};
-        if (((i >> 0) & 1) == 1) corner_offset.x = data.voxel_size;
-        if (((i >> 1) & 1) == 1) corner_offset.y = data.voxel_size;
-        if (((i >> 2) & 1) == 1) corner_offset.z = data.voxel_size;
-        corners [i] = data.min_corner + corner_offset;
+        if (((i >> 0) & 1) == 1) corner_offset.x = leaf.voxel_size;
+        if (((i >> 1) & 1) == 1) corner_offset.y = leaf.voxel_size;
+        if (((i >> 2) & 1) == 1) corner_offset.z = leaf.voxel_size;
+        corners [i] = leaf.min_corner + corner_offset;
     }
 
     uint triangles_count = 0;
-
     for (; triangles_count < 4; ++triangles_count) {
-        int base = data.cube_index * 16 + triangles_count * 3;
-        if (cube_index_2_triangle_indices [base] == -1) break;
-        uint3 tri = uint3 (cube_index_2_triangle_indices [base + 0]
-                , cube_index_2_triangle_indices [base + 1]
-                , cube_index_2_triangle_indices [base + 2]);
-        triangles [triangles_count] = tri;
-        indices [data.mesh_id * MAX_LEAF_PRIMS + triangles_count] = uint3 (data.mesh_id * MAX_LEAF_VERTS) + tri;
-    }
-
-    int edge_mask = cube_index_2_edge_mask [data.cube_index];
-    if (edge_mask == 0) {
-        return;
+        if (cube_index_2_triangle_indices [leaf.cube_index * 16 + triangles_count * 3] == -1) break;
     }
 
     SetMeshOutputCounts (12, triangles_count);
+
+    for (int i = 0; i < triangles_count; ++i) {
+        const int base = leaf.cube_index * 16 + i * 3;
+        const uint3 tri = uint3 (cube_index_2_triangle_indices [base + 0]
+                , cube_index_2_triangle_indices [base + 1]
+                , cube_index_2_triangle_indices [base + 2]);
+        triangles [i] = tri;
+    }
+
+    const int edge_mask = cube_index_2_edge_mask [leaf.cube_index];
+    if (edge_mask == 0) {
+        return;
+    }
 
     int edge_bit = 1;
     for (int i = 0; i < 12; ++i) {
@@ -115,10 +92,8 @@ void main(
                                                 , node.values [corner_indices.x]
                                                 , node.values [corner_indices.y]
                                                 ), 1.0f));
-        // verts [i].color = colors [i];
         verts [i].color = float4 (1.0f, 1.0f, 0.0f, 1.0f);
 
-        vertices [data.mesh_id * MAX_LEAF_VERTS + i] = verts [i].position.xyz;
         edge_bit <<= 1;
     }
 }

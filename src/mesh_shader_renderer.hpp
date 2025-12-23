@@ -23,7 +23,7 @@ public:
     explicit MeshShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context);
     ~MeshShaderRenderer ();
 
-    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree);
+    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_leaf_memory_limit);
     void render (const Camera& a_camera);
     void resize (int a_width, int a_height);
     void shutdown ();
@@ -45,8 +45,9 @@ private:
     int width {};
     int height {};
     SdfOctree sdf_octree {};
-    std::vector <Payload> subtrees {};
+    std::vector <NodeContext> subtrees {};
 
+	VkDeviceSize active_leafs_size;
     PushConstantsData push_constants;
 
     bool initialized {false};

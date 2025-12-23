@@ -27,30 +27,30 @@ struct SdfOctreeDescriptorSetInfo {
 
     VkBuffer nodes_buffer = VK_NULL_HANDLE;
     VkBuffer subtree_buffer = VK_NULL_HANDLE;
-    VkBuffer node_index_stack_buffer = VK_NULL_HANDLE;
-    VkBuffer coord_stack_buffer = VK_NULL_HANDLE;
-    VkBuffer path_stack_buffer = VK_NULL_HANDLE;
-    VkBuffer vertices_buffer = VK_NULL_HANDLE;
-    VkBuffer indices_buffer = VK_NULL_HANDLE;
+    std::vector <VkBuffer> active_leafs_buffers;
+    VkBuffer insufficent_mem_flag_buffer = VK_NULL_HANDLE;
+
     VkDeviceMemory memory = VK_NULL_HANDLE;
 };
 
 SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
-    VkDevice device
-    , VkPhysicalDevice physical_device
-    , const sdf_raster::SdfOctree& octree
-    , const std::vector <Payload>& subtrees
-    , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-    , vk_utils::DescriptorMaker& ds_maker
-    , VkShaderStageFlags shader_stage_flags
-    , const uint32_t frames_count);
+        VkDevice device
+        , VkPhysicalDevice physical_device
+        , const sdf_raster::SdfOctree& octree
+        , const std::vector <NodeContext>& subtrees
+        , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
+        , vk_utils::DescriptorMaker& ds_maker
+        , VkShaderStageFlags shader_stage_flags
+        , VkDeviceSize active_leafs_size
+        , size_t max_frames_in_flight);
 
+void set_active_leafs_buffer_for_frame (VkDevice device, SdfOctreeDescriptorSetInfo info, size_t current_frame);
 void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetInfo& info);
 
-std::vector <Payload> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend);
+std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend);
+int get_octree_max_depth (const SdfOctree& scene, int max_level_to_descend);
 void dump_octree_subtree_pretty (const SdfOctree& scene, uint32_t subtree_root_node_idx, int max_display_depth, const std::string& prefix, int current_display_depth);
-void save_generated_mesh (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, VkBuffer vertices_buffer, VkBuffer indices_buffer);
-void fetch_info (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, const std::vector <Payload>& subtrees, const uint32_t frames_count, SdfOctreeDescriptorSetInfo info);
+uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, SdfOctreeDescriptorSetInfo info);
 
 }
 

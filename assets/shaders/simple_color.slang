@@ -1,3 +1,5 @@
+// simple_color.slang
+
 #include "common.h"
 
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;

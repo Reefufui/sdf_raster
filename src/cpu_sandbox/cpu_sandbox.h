@@ -12,12 +12,9 @@ struct Vertex {
     float4 color;
 };
 
-#define MAX_VERTS 12
-#define MAX_PRIMS 4
+void dispatch_mesh (NodeContext leaf, std::vector <SdfOctreeNode>& nodes);
 
-void dispatch_mesh (Payload payload, std::vector <SdfOctreeNode>& nodes);
-
-void task_generator (Payload subtree, std::vector <SdfOctreeNode>& nodes);
+void task_generator (NodeContext root, std::vector <SdfOctreeNode>& nodes);
 
 void add_vertex (float4 position);
 

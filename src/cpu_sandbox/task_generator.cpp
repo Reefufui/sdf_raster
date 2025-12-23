@@ -4,9 +4,9 @@
 
 namespace cpu_sandbox {
 
-void dfs_octree (Payload root, std::vector <SdfOctreeNode>& nodes) {
+void dfs_octree (NodeContext root, std::vector <SdfOctreeNode>& nodes) {
     if (nodes [root.node_index].offset == 0) {
-        Payload voxel = root;
+        NodeContext voxel = root;
         dispatch_mesh (voxel, nodes); // root is leaf
     }
 
@@ -53,7 +53,7 @@ void dfs_octree (Payload root, std::vector <SdfOctreeNode>& nodes) {
                 continue;
             }
 
-            Payload voxel;
+            NodeContext voxel;
             voxel.voxel_size = child_voxel_size;
             voxel.min_corner = child_coord;
             voxel.node_index = child_node_index;
@@ -69,7 +69,7 @@ void dfs_octree (Payload root, std::vector <SdfOctreeNode>& nodes) {
     }
 }
 
-void task_generator (Payload subtree, std::vector <SdfOctreeNode>& nodes) {
+void task_generator (NodeContext subtree, std::vector <SdfOctreeNode>& nodes) {
     dfs_octree (subtree, nodes);
 }
 

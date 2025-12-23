@@ -1,10 +1,13 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#define MAX_OCTREE_DEPTH 20
+#define MESH_WORKGROUP_SIZE 16
+#define MAX_VERTS_PER_MESHLET (MESH_WORKGROUP_SIZE * 12)
+#define MAX_PRIMS_PER_MESHLET (MESH_WORKGROUP_SIZE * 5)
+
 #define MAX_LEAF_VERTS 12
 #define MAX_LEAF_PRIMS 4
-#define MAX_MESH_ID 1024
+#define MAX_OCTREE_DEPTH 13 // 16 - 3
 
 #ifdef __cplusplus
 
@@ -26,21 +29,25 @@ struct Vertex {
 
 #endif // __cplusplus
 
-struct Payload {
+struct NodeContext {
     float3 min_corner;
     float voxel_size;
     int node_index;
     int cube_index;
-    int mesh_id;
+};
+
+struct TaskPayload {
+    uint leaf_buffer_offset;
+    uint leaf_count;
 };
 
 struct PushConstantsData {
     column_major float4x4 view_proj;
-    float3 camera_pos;
-    float padding;
+    float4 camera_pos;
     float4 color;
     float4 frustum_planes [6];
-    int frame_stack_offset;
+    int max_octree_depth;
+    uint task_size;
 };
 
 struct SdfOctreeNode {

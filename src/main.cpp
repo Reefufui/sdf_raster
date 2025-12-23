@@ -8,6 +8,7 @@ int main (int argc, char* argv[]) {
     try {
         int width = 800;
         int height = 600;
+        size_t leaf_memory_limit = 208666624; // 199mb
         std::string filename = "";
         bool headless_mode = false;
         bool single_frame = false;
@@ -21,6 +22,8 @@ int main (int argc, char* argv[]) {
                 width = std::stoi (argv[++i]);
             } else if (arg == "-h" && i + 1 < argc) {
                 height = std::stoi (argv[++i]);
+            } else if (arg == "--leaf-memory-limit" && i + 1 < argc) {
+                leaf_memory_limit = std::stoi (argv[++i]);
             } else if (arg == "--single-frame") {
                 single_frame = true;
             }
@@ -30,7 +33,7 @@ int main (int argc, char* argv[]) {
             sdf_raster::Application app (width, height);
             app.marching_cubes_cpu ("./assets/sdf/lowpoly_bunny.octree", filename);
         } else {
-            sdf_raster::Application app (width, height, "sdf_raster");
+            sdf_raster::Application app (width, height, "sdf_raster", leaf_memory_limit);
             app.run (single_frame);
         }
     } catch (const std::exception& e) {

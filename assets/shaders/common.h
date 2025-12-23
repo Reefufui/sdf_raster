@@ -47,7 +47,7 @@ struct PushConstantsData {
     float4 color;
     float4 frustum_planes [6];
     int max_octree_depth;
-    uint task_size;
+    uint max_leaf_count_per_task;
 };
 
 struct SdfOctreeNode {

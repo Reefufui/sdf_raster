@@ -22,7 +22,7 @@ void dump_sdf_octree_text (const SdfOctree &scene, const std::string &path_to_du
 float sample_sdf (const SdfOctree& scene, const LiteMath::float3& p);
 
 struct SdfOctreeDescriptorSetInfo {
-    VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
+    std::vector <VkDescriptorSet> descriptor_sets;
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
     VkBuffer nodes_buffer = VK_NULL_HANDLE;
@@ -44,7 +44,6 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
         , VkDeviceSize active_leafs_size
         , size_t max_frames_in_flight);
 
-void set_active_leafs_buffer_for_frame (VkDevice device, SdfOctreeDescriptorSetInfo info, size_t current_frame);
 void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetInfo& info);
 
 std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend);

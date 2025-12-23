@@ -138,35 +138,17 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
     uint insufficent_mem_flag = 0;
     copy_helper->UpdateBuffer (info.insufficent_mem_flag_buffer, 0, &insufficent_mem_flag, sizeof (uint));
 
-    ds_maker.BindBegin (shader_stage_flags);
-    ds_maker.BindBuffer (0, info.nodes_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    ds_maker.BindBuffer (1, info.subtree_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    ds_maker.BindBuffer (2, info.active_leafs_buffers [0], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    ds_maker.BindBuffer (3, info.insufficent_mem_flag_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    ds_maker.BindEnd (&info.descriptor_set, &info.descriptor_set_layout);
+    info.descriptor_sets.resize (max_frames_in_flight);
+    for (int i = 0; i < max_frames_in_flight; ++i) {
+        ds_maker.BindBegin (shader_stage_flags);
+        ds_maker.BindBuffer (0, info.nodes_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindBuffer (1, info.subtree_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindBuffer (2, info.active_leafs_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindBuffer (3, info.insufficent_mem_flag_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
+    }
 
     return info;
-}
-
-void set_active_leafs_buffer_for_frame (VkDevice device, SdfOctreeDescriptorSetInfo info, size_t current_frame) {
-    VkDescriptorBufferInfo buffer_info = {};
-    buffer_info.buffer = info.active_leafs_buffers [current_frame];
-    buffer_info.offset = 0;
-    buffer_info.range = VK_WHOLE_SIZE;
-
-    VkWriteDescriptorSet write = {};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.pNext = nullptr;
-    write.dstSet = info.descriptor_set;
-    write.dstBinding = 2;
-    write.dstArrayElement = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    write.pImageInfo = nullptr;
-    write.pBufferInfo = &buffer_info;
-    write.pTexelBufferView = nullptr;
-
-    vkUpdateDescriptorSets (device, 1, &write, 0, nullptr);
 }
 
 void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetInfo& info) {

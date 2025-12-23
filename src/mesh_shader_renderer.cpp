@@ -56,7 +56,8 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
 
     this->active_leafs_size = a_leaf_memory_limit / this->subtrees.size ();
     std::cout << "[MeshShaderRenderer::init] active leafs byte size (per subtree task): " << this->active_leafs_size << std::endl;
-    std::cout << "[MeshShaderRenderer::init] active leafs count (per subtree task): " << this->active_leafs_size / sizeof (NodeContext) << std::endl;
+    this->push_constants.max_leaf_count_per_task = this->active_leafs_size / sizeof (NodeContext);
+    std::cout << "[MeshShaderRenderer::init] active leafs count (per subtree task): " << this->push_constants.max_leaf_count_per_task << std::endl;
 
     // NodeContext root;
     // root.node_index = 0;
@@ -113,7 +114,7 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
     this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (
             this->context->get_device ()
             , ds_type_vec
-            , 3
+            , 10
             );
 	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
 			, this->context->get_physical_device ()
@@ -255,6 +256,8 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
         return;
     }
 
+    vkDeviceWaitIdle (this->context->get_device ());
+
     auto cmd_buff = this->context->begin_frame ();
     if (cmd_buff == VK_NULL_HANDLE) {
         return;
@@ -268,7 +271,7 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
             this->pipeline_layout,
             0,
             1,
-            &this->sdf_octree_ds.descriptor_set,
+            &this->sdf_octree_ds.descriptor_sets [this->context->get_current_frame ()],
             0,
             nullptr
             );
@@ -293,8 +296,7 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
             , &this->push_constants
             );
 
-    // vkCmdDrawMeshTasksEXT (cmd_buff, this->subtrees.size (), 1, 1);
-    vkCmdDrawMeshTasksEXT (cmd_buff, 1, 1, 1);
+    vkCmdDrawMeshTasksEXT (cmd_buff, this->subtrees.size (), 1, 1);
 
     this->context->end_frame (cmd_buff);
 }
@@ -357,10 +359,12 @@ void MeshShaderRenderer::update_push_constants (const Camera& a_camera) {
     if (insufficent_mem_flag) {
         vkDeviceWaitIdle (this->context->get_device ());
         this->push_constants.max_octree_depth -= 1;
-        std::cout << "[MeshShaderRenderer::update_push_constants]: insufficent_mem_flag was set. Reducing octree depth from "
+        std::cout << "[MeshShaderRenderer::update_push_constants]: insufficent_mem_flag : " << insufficent_mem_flag << ". Reducing octree depth from "
             << this->push_constants.max_octree_depth + 1 << " to " << this->push_constants.max_octree_depth << std::endl;
+        if (this->push_constants.max_octree_depth == 0) {
+            throw std::runtime_error ("[MeshShaderRenderer::update_push_constants]: bug. octree must not me 0 depth");
+        }
     }
-    this->push_constants.task_size = this->active_leafs_size;
 }
 
 

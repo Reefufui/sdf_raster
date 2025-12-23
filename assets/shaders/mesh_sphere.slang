@@ -35,17 +35,21 @@ float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
 [numthreads (MESH_WORKGROUP_SIZE, 1, 1)]
 void main(
     in payload TaskPayload payload,
-    in uint3 group_id : SV_GroupID,
-    in uint3 thread_id : SV_GroupThreadID,
+    in uint group_id : SV_GroupID,
+    in uint thread_id : SV_GroupThreadID,
     OutputVertices <Vertex, MAX_LEAF_VERTS> verts,
     OutputIndices <uint3, MAX_LEAF_PRIMS> triangles)
 {
-    const uint local_leaf_index = group_id.x * MESH_WORKGROUP_SIZE + thread_id.x;
+    const uint local_leaf_index = group_id * MESH_WORKGROUP_SIZE + thread_id;
     if (local_leaf_index >= payload.leaf_count) {
         return;
     }
-    const uint global_leaf_index = payload.leaf_buffer_offset + local_leaf_index;
-    const NodeContext leaf = g_active_leafs [global_leaf_index];
+    // if (local_leaf_index != 0) {
+    //     return;
+    // }
+    const NodeContext leaf = g_active_leafs [payload.leaf_buffer_offset + local_leaf_index];
+
+    g_insufficent_mem_flag [0] = thread_id;
 
     const SdfOctreeNode node = g_octree_data [leaf.node_index];
     const float3 voxel_size_modifier = {leaf.voxel_size};

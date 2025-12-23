@@ -65,7 +65,7 @@ uint dfs_octree (NodeContext root, uint task_offset) {
             active_leaf.min_corner = child_coord;
             active_leaf.node_index = child_node_index;
             active_leaf.cube_index = cube_index;
-            if (task_offset + leaf_count < pc.task_size) {
+            if (leaf_count < pc.max_leaf_count_per_task) {
                 g_active_leafs [task_offset + leaf_count] = active_leaf;
             } else {
                 g_insufficent_mem_flag [0] = 1;
@@ -88,7 +88,10 @@ uint dfs_octree (NodeContext root, uint task_offset) {
 [shader ("amplification")]
 [numthreads (1, 1, 1)]
 void main (in uint3 group_id : SV_GroupID) {
-    uint task_offset = pc.task_size * group_id.x;
+    // if (group_id.x != 100) {
+    //     return;
+    // }
+    uint task_offset = pc.max_leaf_count_per_task * group_id.x;
     uint leaf_count = dfs_octree (g_roots [group_id.x], task_offset);
 
     if (leaf_count > 0) {

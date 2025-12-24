@@ -130,7 +130,7 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
 			, this->context->get_physical_device ()
 			, this->context->get_copy_helper ()
 			, *descriptor_maker
-			, VK_SHADER_STAGE_MESH_BIT_EXT);
+			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT);
 
     std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
     descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);

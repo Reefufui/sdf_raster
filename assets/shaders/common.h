@@ -39,6 +39,8 @@ struct NodeContext {
 struct TaskPayload {
     uint leaf_buffer_offset;
     uint leaf_count;
+    uint vertices_count;
+    uint triangles_count;
 };
 
 struct PushConstantsData {

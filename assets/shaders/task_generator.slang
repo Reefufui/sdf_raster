@@ -9,15 +9,42 @@
 [[vk::binding (2, 0)]] RWStructuredBuffer <NodeContext> g_active_leafs;
 [[vk::binding (3, 0)]] RWStructuredBuffer <uint> g_insufficent_mem_flag;
 
+[[vk::binding (0, 1)]] StructuredBuffer <uint2> edge_corners; // [12]
+[[vk::binding (1, 1)]] StructuredBuffer <int> cube_index_2_edge_mask; // [256]
+[[vk::binding (2, 1)]] StructuredBuffer <int> cube_index_2_triangle_indices; // [256][16]
+[[vk::binding (3, 1)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
+
 groupshared TaskPayload s_payload;
 
-uint dfs_octree (NodeContext root, uint task_offset) {
-    if (g_octree_data [root.node_index].offset == 0) {
-        g_active_leafs [task_offset] = root;
-        return 1;
+void add_leaf (NodeContext context, SdfOctreeNode leaf_node) {
+    context.cube_index = 0;
+
+    for (int i = 0; i < 8; ++i) {
+        if (leaf_node.values [i] < 0.0f) {
+            context.cube_index |= (1 << i);
+        }
     }
 
-    uint leaf_count = 0;
+    if (context.cube_index == 0 || context.cube_index == 255) {
+        return;
+    }
+
+    if (s_payload.leaf_count < pc.max_leaf_count_per_task) {
+        g_active_leafs [s_payload.leaf_buffer_offset + s_payload.leaf_count] = context;
+    } else {
+        g_insufficent_mem_flag [0] = 1;
+    }
+
+    s_payload.leaf_count += 1;
+    s_payload.vertices_count += cube_index_2_mesh_output_counts [context.cube_index].x;
+    s_payload.triangles_count += cube_index_2_mesh_output_counts [context.cube_index].y;
+}
+
+void dfs_octree (NodeContext root) {
+    if (g_octree_data [root.node_index].offset == 0) {
+        add_leaf (root, g_octree_data [root.node_index]);
+        return;
+    }
 
     int node_index_stack [MAX_OCTREE_DEPTH];
     float3 coord_stack [MAX_OCTREE_DEPTH];
@@ -50,31 +77,11 @@ uint dfs_octree (NodeContext root, uint task_offset) {
         float3 child_coord = coord_stack [level - 1] + child_corner_offset;
 
         if (child_node.offset == 0) { // leaf
-            int cube_index = 0;
-
-            for (int i = 0; i < 8; ++i) {
-                if (child_node.values [i] < 0.0f) {
-                    cube_index |= (1 << i);
-                }
-            }
-
-            if (cube_index == 0 || cube_index == 255) {
-                continue;
-            }
-
-            NodeContext active_leaf;
-            active_leaf.voxel_size = child_voxel_size;
-            active_leaf.min_corner = child_coord;
-            active_leaf.node_index = child_node_index;
-            active_leaf.cube_index = cube_index;
-            if (leaf_count < pc.max_leaf_count_per_task) {
-                g_active_leafs [task_offset + leaf_count] = active_leaf;
-            } else {
-                g_insufficent_mem_flag [0] = 1;
-                return leaf_count;
-            }
-
-            leaf_count += 1;
+            NodeContext context;
+            context.voxel_size = child_voxel_size;
+            context.min_corner = child_coord;
+            context.node_index = child_node_index;
+            add_leaf (context, child_node);
         } else { // internal node
             node_index_stack [level] = child_node_index;
             coord_stack [level] = child_coord;
@@ -83,22 +90,20 @@ uint dfs_octree (NodeContext root, uint task_offset) {
             path_stack [level] = 0;
         }
     }
-
-    return leaf_count;
 }
 
 [shader ("amplification")]
 [numthreads (1, 1, 1)]
 void main (in uint3 group_id : SV_GroupID) {
-    uint task_offset = pc.max_leaf_count_per_task * group_id.x;
-    uint leaf_count = dfs_octree (g_roots [group_id.x], task_offset);
+    s_payload.leaf_buffer_offset = pc.max_leaf_count_per_task * group_id.x;
+    s_payload.leaf_count = 0;
+    s_payload.triangles_count = 0;
+    s_payload.vertices_count = 0;
 
-    if (leaf_count > 0) {
-        s_payload.leaf_buffer_offset = task_offset;
-        s_payload.leaf_count = leaf_count;
+    dfs_octree (g_roots [group_id.x]);
 
-        uint num_mesh_groups = (leaf_count + MESH_WORKGROUP_SIZE - 1) / MESH_WORKGROUP_SIZE;
-        DispatchMesh (num_mesh_groups, 1, 1, s_payload);
+    if (s_payload.leaf_count > 0) {
+        DispatchMesh ((s_payload.leaf_count + MESH_WORKGROUP_SIZE - 1) / MESH_WORKGROUP_SIZE, 1, 1, s_payload);
     }
 }
 

@@ -296,7 +296,7 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
             , &this->push_constants
             );
 
-    vkCmdDrawMeshTasksEXT (cmd_buff, this->subtrees.size (), 1, 1);
+    vkCmdDrawMeshTasksEXT (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
 
     this->context->end_frame (cmd_buff);
 }

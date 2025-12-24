@@ -9,6 +9,8 @@
 [[vk::binding (2, 0)]] RWStructuredBuffer <NodeContext> g_active_leafs;
 [[vk::binding (3, 0)]] RWStructuredBuffer <uint> g_insufficent_mem_flag;
 
+groupshared TaskPayload s_payload;
+
 uint dfs_octree (NodeContext root, uint task_offset) {
     if (g_octree_data [root.node_index].offset == 0) {
         g_active_leafs [task_offset] = root;
@@ -88,19 +90,15 @@ uint dfs_octree (NodeContext root, uint task_offset) {
 [shader ("amplification")]
 [numthreads (1, 1, 1)]
 void main (in uint3 group_id : SV_GroupID) {
-    // if (group_id.x != 100) {
-    //     return;
-    // }
     uint task_offset = pc.max_leaf_count_per_task * group_id.x;
     uint leaf_count = dfs_octree (g_roots [group_id.x], task_offset);
 
     if (leaf_count > 0) {
-        TaskPayload payload;
-        payload.leaf_buffer_offset = task_offset;
-        payload.leaf_count = leaf_count;
+        s_payload.leaf_buffer_offset = task_offset;
+        s_payload.leaf_count = leaf_count;
 
         uint num_mesh_groups = (leaf_count + MESH_WORKGROUP_SIZE - 1) / MESH_WORKGROUP_SIZE;
-        DispatchMesh (num_mesh_groups, 1, 1, payload);
+        DispatchMesh (num_mesh_groups, 1, 1, s_payload);
     }
 }
 

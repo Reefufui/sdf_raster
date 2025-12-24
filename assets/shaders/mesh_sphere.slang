@@ -35,21 +35,17 @@ float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
 [numthreads (MESH_WORKGROUP_SIZE, 1, 1)]
 void main(
     in payload TaskPayload payload,
-    in uint group_id : SV_GroupID,
-    in uint thread_id : SV_GroupThreadID,
-    OutputVertices <Vertex, MAX_LEAF_VERTS> verts,
-    OutputIndices <uint3, MAX_LEAF_PRIMS> triangles)
+    in uint3 group_id : SV_GroupID,
+    in uint3 thread_id : SV_GroupThreadID,
+    out vertices Vertex vertices [MAX_LEAF_VERTS],
+    out indices uint3 triangles [MAX_LEAF_PRIMS])
 {
-    const uint local_leaf_index = group_id * MESH_WORKGROUP_SIZE + thread_id;
+    const uint local_leaf_index = group_id.x * MESH_WORKGROUP_SIZE + thread_id.x;
     if (local_leaf_index >= payload.leaf_count) {
+        SetMeshOutputCounts (0, 0);
         return;
     }
-    // if (local_leaf_index != 0) {
-    //     return;
-    // }
     const NodeContext leaf = g_active_leafs [payload.leaf_buffer_offset + local_leaf_index];
-
-    g_insufficent_mem_flag [0] = thread_id;
 
     const SdfOctreeNode node = g_octree_data [leaf.node_index];
     const float3 voxel_size_modifier = {leaf.voxel_size};
@@ -68,22 +64,17 @@ void main(
         if (cube_index_2_triangle_indices [leaf.cube_index * 16 + triangles_count * 3] == -1) break;
     }
 
-    SetMeshOutputCounts (12, triangles_count);
+    SetMeshOutputCounts (MAX_VERTS_PER_MESHLET, triangles_count);
 
     for (int i = 0; i < triangles_count; ++i) {
         const int base = leaf.cube_index * 16 + i * 3;
-        const uint3 tri = uint3 (cube_index_2_triangle_indices [base + 0]
-                , cube_index_2_triangle_indices [base + 1]
-                , cube_index_2_triangle_indices [base + 2]);
+        const uint3 tri = uint3 (cube_index_2_triangle_indices [base + 0], cube_index_2_triangle_indices [base + 1], cube_index_2_triangle_indices [base + 2]);
         triangles [i] = tri;
     }
 
-    const int edge_mask = cube_index_2_edge_mask [leaf.cube_index];
-    if (edge_mask == 0) {
-        return;
-    }
-
+    const int edge_mask = cube_index_2_edge_mask [leaf.cube_index]; // non-zero because of check in task shader
     int edge_bit = 1;
+
     for (int i = 0; i < 12; ++i) {
         if ((edge_mask & edge_bit) == 0) {
             edge_bit <<= 1;
@@ -91,12 +82,12 @@ void main(
         }
 
         const uint2 corner_indices = edge_corners [i];
-        verts [i].position = mul (pc.view_proj, float4 (interpolate_vertex (corners [corner_indices.x]
+        vertices [i].position = mul (pc.view_proj, float4 (interpolate_vertex (corners [corner_indices.x]
                                                 , corners [corner_indices.y]
                                                 , node.values [corner_indices.x]
                                                 , node.values [corner_indices.y]
                                                 ), 1.0f));
-        verts [i].color = float4 (1.0f, 1.0f, 0.0f, 1.0f);
+        vertices [i].color = float4 (1.0f, 1.0f, 0.5f, 1.0f);
 
         edge_bit <<= 1;
     }

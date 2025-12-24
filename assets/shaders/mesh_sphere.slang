@@ -31,6 +31,25 @@ float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
     return (p);
 }
 
+static const float4 colors [MESH_WORKGROUP_SIZE] = {
+    float4(1.0, 0.0, 0.0, 1.0),   // Красный
+    float4(0.0, 1.0, 0.0, 1.0),   // Зеленый  
+    float4(0.0, 0.0, 1.0, 1.0),   // Синий
+    float4(1.0, 1.0, 0.0, 1.0),   // Желтый
+    float4(1.0, 0.0, 1.0, 1.0),   // Магента
+    float4(0.0, 1.0, 1.0, 1.0),   // Циан
+    float4(1.0, 1.0, 1.0, 1.0),   // Белый
+    float4(0.5, 0.5, 0.5, 1.0),   // Серый
+    float4(1.0, 0.5, 0.0, 1.0),   // Оранжевый
+    float4(1.0, 0.0, 0.5, 1.0),   // Розовый
+    float4(0.5, 1.0, 0.0, 1.0),   // Лайм
+    float4(0.0, 0.5, 1.0, 1.0),   // Голубой
+    float4(1.0, 0.5, 0.5, 1.0),   // Светло-розовый
+    float4(0.5, 1.0, 0.5, 1.0),   // Светло-зеленый
+    float4(0.5, 0.5, 1.0, 1.0),   // Светло-голубой
+    float4(0.0, 0.0, 0.0, 1.0)    // Черный
+};
+
 [shader ("mesh")]
 [outputtopology ("triangle")]
 [numthreads (MESH_WORKGROUP_SIZE, 1, 1)]
@@ -41,23 +60,25 @@ void main(
     out vertices Vertex vertices [MAX_VERTS_PER_MESHLET],
     out indices uint3 triangles [MAX_PRIMS_PER_MESHLET])
 {
-    if (thread_id.x == 0) {
-        SetMeshOutputCounts (MAX_VERTS_PER_MESHLET, MAX_PRIMS_PER_MESHLET);
-
-        // SetMeshOutputCounts (payload.vertices_count, payload.triangles_count);
-        for (int i = 0; i < MAX_VERTS_PER_MESHLET; ++i) {
-            Vertex vertex;
-            vertex.position = float4 (0.0f);
-            vertex.color = float4 (1.0f, 0.0f, 0.0f, 1.0f);
-            vertices [i] = vertex;
-        }
-
-        for (int i = 0; i < MAX_PRIMS_PER_MESHLET; ++i) {
-            triangles [i] = uint (0);
-        }
-    }
-
-    GroupMemoryBarrierWithGroupSync ();
+    SetMeshOutputCounts (MAX_LEAF_VERTS, MAX_LEAF_PRIMS);
+    // SetMeshOutputCounts (MAX_VERTS_PER_MESHLET, MAX_PRIMS_PER_MESHLET);
+    // if (thread_id.x == 0) {
+    //     SetMeshOutputCounts (MAX_VERTS_PER_MESHLET, MAX_PRIMS_PER_MESHLET);
+    //
+    //     // SetMeshOutputCounts (payload.vertices_count, payload.triangles_count);
+    //     for (int i = 0; i < MAX_VERTS_PER_MESHLET; ++i) {
+    //         Vertex vertex;
+    //         vertex.position = float4 (0.0f);
+    //         vertex.color = float4 (1.0f, 0.0f, 0.0f, 1.0f);
+    //         vertices [i] = vertex;
+    //     }
+    //
+    //     for (int i = 0; i < MAX_PRIMS_PER_MESHLET; ++i) {
+    //         triangles [i] = uint (0);
+    //     }
+    // }
+    //
+    // GroupMemoryBarrierWithGroupSync ();
 
     const uint local_leaf_index = group_id.x * MESH_WORKGROUP_SIZE + thread_id.x;
     if (local_leaf_index >= payload.leaf_count) {
@@ -108,7 +129,8 @@ void main(
                                                 , node.values [corner_indices.x]
                                                 , node.values [corner_indices.y]
                                                 ), 1.0f));
-        vertex.color = float4 (1.0f, 1.0f, 0.5f, 1.0f);
+        vertex.color = colors [(payload.leaf_buffer_offset / pc.max_leaf_count_per_task) % 16];
+        // vertex.color = colors [group_id.x];
         vertices [vertices_local_offset + i] = vertex;
 
         edge_bit <<= 1;

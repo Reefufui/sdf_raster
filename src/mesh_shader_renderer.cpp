@@ -32,8 +32,9 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     this->width = a_width;
     this->height = a_height;
     this->sdf_octree = std::move (a_sdf_octree);
-    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
-    this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
+    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 5);
+    // this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
+    this->push_constants.max_octree_depth = 1;
     std::cout << "[MeshShaderRenderer::init] MAX_OCTREE_DEPTH: " << MAX_OCTREE_DEPTH << std::endl;
     std::cout << "[MeshShaderRenderer::init] given sdf's depth: " << this->push_constants.max_octree_depth << std::endl;
     if (this->push_constants.max_octree_depth > MAX_OCTREE_DEPTH) {
@@ -255,8 +256,6 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
         std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
         return;
     }
-
-    vkDeviceWaitIdle (this->context->get_device ());
 
     auto cmd_buff = this->context->begin_frame ();
     if (cmd_buff == VK_NULL_HANDLE) {

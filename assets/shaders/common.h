@@ -36,6 +36,12 @@ struct NodeContext {
     int cube_index;
 };
 
+struct LeafContext {
+    NodeContext node_context;
+    uint vertices_local_offset;
+    uint triangles_local_offset;
+};
+
 struct TaskPayload {
     uint leaf_buffer_offset;
     uint leaf_count;

@@ -8,7 +8,7 @@ int main (int argc, char* argv[]) {
     try {
         int width = 800;
         int height = 600;
-        size_t leaf_memory_limit = 208666624; // 199mb
+        size_t leaf_memory_limit = 208666624000; // 199mb
         std::string filename = "";
         bool headless_mode = false;
         bool single_frame = false;

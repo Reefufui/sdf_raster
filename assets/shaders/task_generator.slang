@@ -6,7 +6,7 @@
 
 [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> g_octree_data;
 [[vk::binding (1, 0)]] StructuredBuffer <NodeContext> g_roots;
-[[vk::binding (2, 0)]] RWStructuredBuffer <NodeContext> g_active_leafs;
+[[vk::binding (2, 0)]] RWStructuredBuffer <LeafContext> g_active_leafs;
 [[vk::binding (3, 0)]] RWStructuredBuffer <uint> g_insufficent_mem_flag;
 
 [[vk::binding (0, 1)]] StructuredBuffer <uint2> edge_corners; // [12]
@@ -15,6 +15,8 @@
 [[vk::binding (3, 1)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
 
 groupshared TaskPayload s_payload;
+groupshared uint s_vertices_current_offset;
+groupshared uint s_triangles_current_offset;
 
 void add_leaf (NodeContext context, SdfOctreeNode leaf_node) {
     context.cube_index = 0;
@@ -29,15 +31,27 @@ void add_leaf (NodeContext context, SdfOctreeNode leaf_node) {
         return;
     }
 
+    const uint leaf_vertices_count = cube_index_2_mesh_output_counts [context.cube_index].x;
+    const uint leaf_triangles_count = cube_index_2_mesh_output_counts [context.cube_index].y;
+
     if (s_payload.leaf_count < pc.max_leaf_count_per_task) {
-        g_active_leafs [s_payload.leaf_buffer_offset + s_payload.leaf_count] = context;
+        g_active_leafs [s_payload.leaf_buffer_offset + s_payload.leaf_count].node_context = context;
+        g_active_leafs [s_payload.leaf_buffer_offset + s_payload.leaf_count].vertices_local_offset = s_vertices_current_offset;
+        g_active_leafs [s_payload.leaf_buffer_offset + s_payload.leaf_count].triangles_local_offset = s_triangles_current_offset;
     } else {
         g_insufficent_mem_flag [0] = 1;
     }
 
     s_payload.leaf_count += 1;
-    s_payload.vertices_count += cube_index_2_mesh_output_counts [context.cube_index].x;
-    s_payload.triangles_count += cube_index_2_mesh_output_counts [context.cube_index].y;
+    s_payload.vertices_count += leaf_vertices_count;
+    s_payload.triangles_count += leaf_triangles_count;
+    s_vertices_current_offset += leaf_vertices_count;
+    s_triangles_current_offset += leaf_triangles_count;
+
+    if (s_payload.leaf_count % MESH_WORKGROUP_SIZE == 0) {
+        s_vertices_current_offset = 0;
+        s_triangles_current_offset = 0;
+    }
 }
 
 void dfs_octree (NodeContext root) {
@@ -99,6 +113,8 @@ void main (in uint3 group_id : SV_GroupID) {
     s_payload.leaf_count = 0;
     s_payload.triangles_count = 0;
     s_payload.vertices_count = 0;
+    s_vertices_current_offset = 0;
+    s_triangles_current_offset = 0;
 
     dfs_octree (g_roots [group_id.x]);
 

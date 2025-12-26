@@ -6,7 +6,7 @@
 
 [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> g_octree_data;
 [[vk::binding (1, 0)]] StructuredBuffer <NodeContext> g_roots;
-[[vk::binding (2, 0)]] RWStructuredBuffer <NodeContext> g_active_leafs;
+[[vk::binding (2, 0)]] RWStructuredBuffer <LeafContext> g_active_leafs;
 [[vk::binding (3, 0)]] RWStructuredBuffer <uint> g_insufficent_mem_flag;
 
 [[vk::binding (0, 1)]] StructuredBuffer <uint2> edge_corners; // [12]
@@ -60,31 +60,14 @@ void main(
     out vertices Vertex vertices [MAX_VERTS_PER_MESHLET],
     out indices uint3 triangles [MAX_PRIMS_PER_MESHLET])
 {
-    SetMeshOutputCounts (MAX_LEAF_VERTS, MAX_LEAF_PRIMS);
-    // SetMeshOutputCounts (MAX_VERTS_PER_MESHLET, MAX_PRIMS_PER_MESHLET);
-    // if (thread_id.x == 0) {
-    //     SetMeshOutputCounts (MAX_VERTS_PER_MESHLET, MAX_PRIMS_PER_MESHLET);
-    //
-    //     // SetMeshOutputCounts (payload.vertices_count, payload.triangles_count);
-    //     for (int i = 0; i < MAX_VERTS_PER_MESHLET; ++i) {
-    //         Vertex vertex;
-    //         vertex.position = float4 (0.0f);
-    //         vertex.color = float4 (1.0f, 0.0f, 0.0f, 1.0f);
-    //         vertices [i] = vertex;
-    //     }
-    //
-    //     for (int i = 0; i < MAX_PRIMS_PER_MESHLET; ++i) {
-    //         triangles [i] = uint (0);
-    //     }
-    // }
-    //
-    // GroupMemoryBarrierWithGroupSync ();
+    SetMeshOutputCounts (payload.vertices_count, payload.triangles_count);
 
     const uint local_leaf_index = group_id.x * MESH_WORKGROUP_SIZE + thread_id.x;
     if (local_leaf_index >= payload.leaf_count) {
         return;
     }
-    const NodeContext leaf = g_active_leafs [payload.leaf_buffer_offset + local_leaf_index];
+    const LeafContext leaf_context = g_active_leafs [payload.leaf_buffer_offset + local_leaf_index];
+    const NodeContext leaf = leaf_context.node_context;
 
     const SdfOctreeNode node = g_octree_data [leaf.node_index];
     const float3 voxel_size_modifier = {leaf.voxel_size};
@@ -103,14 +86,11 @@ void main(
         if (cube_index_2_triangle_indices [leaf.cube_index * 16 + triangles_count * 3] == -1) break;
     }
 
-    const int triangles_local_offset = thread_id.x * MAX_LEAF_PRIMS;
-    const int vertices_local_offset = thread_id.x * MAX_LEAF_VERTS;
-
     for (int i = 0; i < triangles_count; ++i) {
         const int base = leaf.cube_index * 16 + i * 3;
-        const uint3 tri = uint3 (vertices_local_offset)
+        const uint3 tri = uint3 (leaf_context.vertices_local_offset)
             + uint3 (cube_index_2_triangle_indices [base + 0], cube_index_2_triangle_indices [base + 1], cube_index_2_triangle_indices [base + 2]);
-        triangles [triangles_local_offset + i] = tri;
+        triangles [leaf_context.triangles_local_offset + i] = tri;
     }
 
     const int edge_mask = cube_index_2_edge_mask [leaf.cube_index]; // non-zero because of check in task shader
@@ -131,7 +111,7 @@ void main(
                                                 ), 1.0f));
         vertex.color = colors [(payload.leaf_buffer_offset / pc.max_leaf_count_per_task) % 16];
         // vertex.color = colors [group_id.x];
-        vertices [vertices_local_offset + i] = vertex;
+        vertices [leaf_context.vertices_local_offset + i] = vertex;
 
         edge_bit <<= 1;
     }

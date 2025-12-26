@@ -32,9 +32,8 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     this->width = a_width;
     this->height = a_height;
     this->sdf_octree = std::move (a_sdf_octree);
-    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 5);
-    // this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
-    this->push_constants.max_octree_depth = 1;
+    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
+    this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
     std::cout << "[MeshShaderRenderer::init] MAX_OCTREE_DEPTH: " << MAX_OCTREE_DEPTH << std::endl;
     std::cout << "[MeshShaderRenderer::init] given sdf's depth: " << this->push_constants.max_octree_depth << std::endl;
     if (this->push_constants.max_octree_depth > MAX_OCTREE_DEPTH) {
@@ -52,7 +51,7 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     auto make_divisable = [] (size_t value, size_t by) -> size_t {
         return (value / by) * by;
     };
-    a_leaf_memory_limit = make_divisable (a_leaf_memory_limit, sizeof (NodeContext) * this->subtrees.size () * MESH_WORKGROUP_SIZE);
+    a_leaf_memory_limit = make_divisable (a_leaf_memory_limit, sizeof (LeafContext) * this->subtrees.size () * MESH_WORKGROUP_SIZE);
     std::cout << "[MeshShaderRenderer::init] active leafs byte size (actual, total): " << a_leaf_memory_limit << std::endl;
 
     this->active_leafs_size = a_leaf_memory_limit / this->subtrees.size ();

@@ -3,13 +3,13 @@
 #include <iomanip>
 #include <stdexcept>
 
-#include "mesh_shader_renderer.hpp"
+#include "compute_shader_renderer.hpp"
 #include "application.hpp"
 #include "cpu_sandbox/cpu_sandbox.h"
 
 namespace sdf_raster {
 
-MeshShaderRenderer::MeshShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context)
+ComputeShaderRenderer::ComputeShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context)
     : context (vulkan_context)
     , width (0)
     , height (0)
@@ -17,18 +17,18 @@ MeshShaderRenderer::MeshShaderRenderer (std::shared_ptr <VulkanContext> vulkan_c
     if (!this->context) {
         throw std::invalid_argument("VulkanContext cannot be null.");
     }
-    std::cout << "MeshShaderRenderer created." << std::endl;
+    std::cout << "ComputeShaderRenderer created." << std::endl;
 }
 
-MeshShaderRenderer::~MeshShaderRenderer () {
-    std::cout << "MeshShaderRenderer destroyed." << std::endl;
+ComputeShaderRenderer::~ComputeShaderRenderer () {
+    std::cout << "ComputeShaderRenderer destroyed." << std::endl;
 }
 
-void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_leaf_memory_limit) {
-    std::cout << "MeshShaderRenderer initializing..." << std::endl;
+void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_leaf_memory_limit) {
+    std::cout << "ComputeShaderRenderer initializing..." << std::endl;
 
     if (!this->context || !this->context->is_initialized ()) {
-        throw std::runtime_error ("[MeshShaderRenderer::init] VulkanContext is not initialized before renderer init.");
+        throw std::runtime_error ("[ComputeShaderRenderer::init] VulkanContext is not initialized before renderer init.");
     }
 
     this->width = a_width;
@@ -36,30 +36,30 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     this->sdf_octree = std::move (a_sdf_octree);
     this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
     this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
-    std::cout << "[MeshShaderRenderer::init] MAX_OCTREE_DEPTH: " << MAX_OCTREE_DEPTH << std::endl;
-    std::cout << "[MeshShaderRenderer::init] given sdf's depth: " << this->push_constants.max_octree_depth << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] MAX_OCTREE_DEPTH: " << MAX_OCTREE_DEPTH << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] given sdf's depth: " << this->push_constants.max_octree_depth << std::endl;
     if (this->push_constants.max_octree_depth > MAX_OCTREE_DEPTH) {
-        std::cout << "[MeshShaderRenderer::init] given octree is too deep. Reducing it to MAX_OCTREE_DEPTH" << std::endl;
+        std::cout << "[ComputeShaderRenderer::init] given octree is too deep. Reducing it to MAX_OCTREE_DEPTH" << std::endl;
         this->push_constants.max_octree_depth = MAX_OCTREE_DEPTH;
     }
 
-    std::cout << "[MeshShaderRenderer::init] sizeof (PushConstantsData): " << sizeof (PushConstantsData) << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] sizeof (PushConstantsData): " << sizeof (PushConstantsData) << std::endl;
 
     const int tasks_count = this->subtrees.size ();
 
-    std::cout << "[MeshShaderRenderer::init] subtrees (tasks) count: " << tasks_count << std::endl;
-    std::cout << "[MeshShaderRenderer::init] active leafs byte size (MAX, user-input): " << a_leaf_memory_limit << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] subtrees (tasks) count: " << tasks_count << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] active leafs byte size (MAX, user-input): " << a_leaf_memory_limit << std::endl;
 
     auto make_divisable = [] (size_t value, size_t by) -> size_t {
         return (value / by) * by;
     };
-    a_leaf_memory_limit = make_divisable (a_leaf_memory_limit, sizeof (LeafContext) * this->subtrees.size () * MESH_WORKGROUP_SIZE);
-    std::cout << "[MeshShaderRenderer::init] active leafs byte size (actual, total): " << a_leaf_memory_limit << std::endl;
+    a_leaf_memory_limit = make_divisable (a_leaf_memory_limit, sizeof (LeafContext) * this->subtrees.size () * compute_WORKGROUP_SIZE);
+    std::cout << "[ComputeShaderRenderer::init] active leafs byte size (actual, total): " << a_leaf_memory_limit << std::endl;
 
     this->active_leafs_size = a_leaf_memory_limit / this->subtrees.size ();
-    std::cout << "[MeshShaderRenderer::init] active leafs byte size (per subtree task): " << this->active_leafs_size << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] active leafs byte size (per subtree task): " << this->active_leafs_size << std::endl;
     this->push_constants.max_leaf_count_per_task = this->active_leafs_size / sizeof (LeafContext);
-    std::cout << "[MeshShaderRenderer::init] active leafs count (per subtree task): " << this->push_constants.max_leaf_count_per_task << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] active leafs count (per subtree task): " << this->push_constants.max_leaf_count_per_task << std::endl;
 
     // NodeContext root;
     // root.node_index = 0;
@@ -71,21 +71,21 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
 
     // dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
     std::cout << "---" << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.x=" << this->subtrees [0].min_corner.x << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.y=" << this->subtrees [0].min_corner.y << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.z=" << this->subtrees [0].min_corner.z << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.voxel_size=" << this->subtrees [0].voxel_size << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.node_index=" << this->subtrees [0].node_index << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].cube_index=" << this->subtrees [0].cube_index << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] Subtree [0].min_corner.x=" << this->subtrees [0].min_corner.x << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] Subtree [0].min_corner.y=" << this->subtrees [0].min_corner.y << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] Subtree [0].min_corner.z=" << this->subtrees [0].min_corner.z << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] Subtree [0].min_corner.voxel_size=" << this->subtrees [0].voxel_size << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] Subtree [0].min_corner.node_index=" << this->subtrees [0].node_index << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] Subtree [0].cube_index=" << this->subtrees [0].cube_index << std::endl;
     std::cout << "---" << std::endl;
 
-    this->init_mesh_shading_pipeline ();
+    this->init_compute_shading_pipeline ();
     this->initialized = true;
-    std::cout << "MeshShaderRenderer initialized successfully." << std::endl;
+    std::cout << "ComputeShaderRenderer initialized successfully." << std::endl;
 }
 
-void MeshShaderRenderer::init_mesh_shading_pipeline () {
-    std::cout << "MeshShaderRenderer::init_mesh_shading_pipeline called." << std::endl;
+void ComputeShaderRenderer::init_compute_shading_pipeline () {
+    std::cout << "ComputeShaderRenderer::init_compute_shading_pipeline called." << std::endl;
 
     const size_t shaders_count = 3;
     std::vector <VkShaderModule> shader_modules (shaders_count);
@@ -97,8 +97,8 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
             , shader_modules);
 
     shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
-            , "./assets/shaders/mesh_sphere.slang.spv"
-            , VK_SHADER_STAGE_MESH_BIT_EXT
+            , "./assets/shaders/compute_sphere.slang.spv"
+            , VK_SHADER_STAGE_compute_BIT_EXT
             , shader_modules);
 
     shader_stages [2] = vk_utils::loadShader (this->context->get_device ()
@@ -107,7 +107,7 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
             , shader_modules);
 
     VkPushConstantRange pushConstantRange {};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_compute_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.size = sizeof (PushConstantsData);
     pushConstantRange.offset = 0;
 
@@ -124,7 +124,7 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
 			, this->subtrees
 			, this->context->get_copy_helper ()
 			, *descriptor_maker
-			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT
+			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_compute_BIT_EXT
 			, this->active_leafs_size
 			, this->context->get_total_frames ());
 
@@ -132,7 +132,7 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
 			, this->context->get_physical_device ()
 			, this->context->get_copy_helper ()
 			, *descriptor_maker
-			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT);
+			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_compute_BIT_EXT);
 
     std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
     descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);
@@ -252,64 +252,18 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
     shader_modules.clear ();
 }
 
-void MeshShaderRenderer::render (const Camera& a_camera) {
-    if (!this->initialized) {
-        std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
-        return;
-    }
-
-    auto cmd_buff = this->context->begin_frame ();
-    if (cmd_buff == VK_NULL_HANDLE) {
-        return;
-    }
-
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->pipeline);
-
-    vkCmdBindDescriptorSets (
-            cmd_buff,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            this->pipeline_layout,
-            0,
-            1,
-            &this->sdf_octree_ds.descriptor_sets [this->context->get_current_frame ()],
-            0,
-            nullptr
-            );
-
-    vkCmdBindDescriptorSets (
-            cmd_buff,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            this->pipeline_layout,
-            1,
-            1,
-            &this->marching_cubes_lookup_table_ds.descriptor_set,
-            0,
-            nullptr
-            );
-
-    this->update_push_constants (a_camera);
-    vkCmdPushConstants (cmd_buff
-            , pipeline_layout
-            , VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT
-            , 0
-            , sizeof (PushConstantsData)
-            , &this->push_constants
-            );
-
-    vkCmdDrawMeshTasksEXT (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
-
-    this->context->end_frame (cmd_buff);
+void ComputeShaderRenderer::render (const Camera& a_camera) {
 }
 
-void MeshShaderRenderer::resize (int a_width, int a_height) {
+void ComputeShaderRenderer::resize (int a_width, int a_height) {
     if (!this->initialized) {
-        std::cerr << "Warning: MeshShaderRenderer::resize called before init()." << std::endl;
+        std::cerr << "Warning: ComputeShaderRenderer::resize called before init()." << std::endl;
         this->width = a_width;
         this->height = a_height;
         return;
     }
 
-    std::cout << "MeshShaderRenderer resizing to " << a_width << "x" << a_height << "..." << std::endl;
+    std::cout << "ComputeShaderRenderer resizing to " << a_width << "x" << a_height << "..." << std::endl;
 
     this->width = a_width;
     this->height = a_height;
@@ -372,17 +326,17 @@ void dump_active_leafs (const std::vector <LeafContext>& contexts, const std::st
     std::cout << "Всего создано файлов: " << num_chunks << std::endl;
 }
 
-void MeshShaderRenderer::shutdown () {
+void ComputeShaderRenderer::shutdown () {
     vkDeviceWaitIdle (this->context->get_device ());
 
     if (!this->context || !this->context->is_initialized ()) {
-        std::cerr << "[MeshShaderRenderer::shutdown] Warning: Vulkan context is already missing." << std::endl;
+        std::cerr << "[ComputeShaderRenderer::shutdown] Warning: Vulkan context is already missing." << std::endl;
         return;
     }
 
-    std::cout << "[MeshShaderRenderer::shutdown] MeshShaderRenderer shutting down..." << std::endl;
+    std::cout << "[ComputeShaderRenderer::shutdown] ComputeShaderRenderer shutting down..." << std::endl;
 
-    // std::cout << "[MeshShaderRenderer::shutdown] Fetching last frame leaf contexts..." << std::endl;
+    // std::cout << "[ComputeShaderRenderer::shutdown] Fetching last frame leaf contexts..." << std::endl;
     // std::vector <LeafContext> leaf_contexts = fetch_leaf_contexts (this->context->get_copy_helper (), this->sdf_octree_ds, this->active_leafs_size, this->context->get_current_frame ());
     // dump_active_leafs (leaf_contexts, "contexts.txt", this->active_leafs_size / sizeof (LeafContext) / this->subtrees.size ());
 
@@ -405,7 +359,7 @@ void MeshShaderRenderer::shutdown () {
     this->initialized = false;
 }
 
-void MeshShaderRenderer::update_push_constants (const Camera& a_camera) {
+void ComputeShaderRenderer::update_push_constants (const Camera& a_camera) {
     float aspect_ratio = static_cast <float> (this->width) / static_cast <float> (this->height);
     this->push_constants.view_proj = a_camera.get_view_projection_matrix (aspect_ratio);
     this->push_constants.camera_pos = LiteMath::to_float4 (a_camera.camera_position, 1.f);
@@ -420,10 +374,10 @@ void MeshShaderRenderer::update_push_constants (const Camera& a_camera) {
     if (insufficent_mem_flag) {
         vkDeviceWaitIdle (this->context->get_device ());
         this->push_constants.max_octree_depth -= 1;
-        std::cout << "[MeshShaderRenderer::update_push_constants]: insufficent_mem_flag : " << insufficent_mem_flag << ". Reducing octree depth from "
+        std::cout << "[ComputeShaderRenderer::update_push_constants]: insufficent_mem_flag : " << insufficent_mem_flag << ". Reducing octree depth from "
             << this->push_constants.max_octree_depth + 1 << " to " << this->push_constants.max_octree_depth << std::endl;
         if (this->push_constants.max_octree_depth == 0) {
-            throw std::runtime_error ("[MeshShaderRenderer::update_push_constants]: bug. octree must not me 0 depth");
+            throw std::runtime_error ("[ComputeShaderRenderer::update_push_constants]: bug. octree must not me 0 depth");
         }
     }
 }

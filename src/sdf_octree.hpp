@@ -50,6 +50,7 @@ std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, 
 int get_octree_max_depth (const SdfOctree& scene, int max_level_to_descend);
 void dump_octree_subtree_pretty (const SdfOctree& scene, uint32_t subtree_root_node_idx, int max_display_depth, const std::string& prefix, int current_display_depth);
 uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, SdfOctreeDescriptorSetInfo info);
+std::vector <LeafContext> fetch_leaf_contexts (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, SdfOctreeDescriptorSetInfo info, VkDeviceSize active_leafs_size, size_t frame);
 
 }
 

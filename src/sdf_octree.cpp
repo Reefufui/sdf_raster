@@ -126,7 +126,7 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
 
     info.active_leafs_buffers.clear ();
     for (int i = 2; i < 2 + max_frames_in_flight; ++i) {
-        buffers [i] = vk_utils::createBuffer (device, active_leafs_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i]);
+        buffers [i] = vk_utils::createBuffer (device, active_leafs_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i]);
         info.active_leafs_buffers.push_back (buffers [i]);
     }
 
@@ -221,6 +221,11 @@ std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, 
         s.pop ();
 
         const SdfOctreeNode& node = scene.nodes [current.node_idx];
+        std::cout << "values: ";
+        for (int i = 0; i < 8; ++i) {
+            std::cout << " " << node.values [i];
+        }
+        std::cout << " offset: " << node.offset << std::endl;
 
         if (current.level >= max_level_to_descend || node.offset == 0) {
             int cube_index = calc_cube_index (node.values);
@@ -344,6 +349,12 @@ uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_he
     uint data;
     copy_helper->ReadBuffer (info.insufficent_mem_flag_buffer, 0, &data, sizeof (uint));
     return data;
+}
+
+std::vector <LeafContext> fetch_leaf_contexts (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, SdfOctreeDescriptorSetInfo info, VkDeviceSize active_leafs_size, size_t frame) {
+    std::vector <LeafContext> active_leafs_cpu (active_leafs_size / sizeof (LeafContext));
+    copy_helper->ReadBuffer (info.active_leafs_buffers [frame], 0, active_leafs_cpu.data (), active_leafs_size);
+    return active_leafs_cpu;
 }
 
 }

@@ -37,12 +37,12 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_utils_message_callback (
     return VK_FALSE;
 }
 
-void VulkanContext::init (int a_width, int a_height) {
+void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support) {
     VK_CHECK_RESULT (volkInitialize ());
     this->create_instance ();
     this->setup_debug_utils_messenger ();
     this->physical_device = vk_utils::findPhysicalDevice (this->get_instance (), true, 0, {});
-    this->create_device ();
+    this->create_device (a_mesh_shader_support);
     this->create_command_pools ();
     this->get_device_queues ();
     this->copy_helper = std::make_shared <vk_utils::PingPongCopyHelper> (this->get_physical_device ()
@@ -74,9 +74,9 @@ void VulkanContext::init (int a_width, int a_height) {
     this->initialized = true;
 }
 
-void VulkanContext::init (GLFWwindow* a_window, int a_width, int a_height) {
+void VulkanContext::init (GLFWwindow* a_window, int a_width, int a_height, bool a_mesh_shader_support) {
     this->window = a_window;
-    this->init (a_width, a_height);
+    this->init (a_width, a_height, a_mesh_shader_support);
 }
 
 void VulkanContext::create_instance () {
@@ -200,45 +200,51 @@ void VulkanContext::dump_mesh_shader_properties () const {
     std::cout << "-------------------------------------------\n" << std::endl;
 }
 
-void VulkanContext::create_device () {
+void VulkanContext::create_device (bool a_mesh_shader_support) {
     std::vector <const char*> validation_layers {};
     std::vector <const char*> device_extensions {};
     VkPhysicalDeviceFeatures enabled_device_featurues {};
 
-    device_extensions.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
     device_extensions.push_back (VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
-    VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures {};
-    meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
-    meshShaderFeatures.pNext = nullptr;
-
-    VkPhysicalDeviceFeatures2 features2 {};
-    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    features2.pNext = &meshShaderFeatures;
-
-    vkGetPhysicalDeviceFeatures2 (this->get_physical_device (), &features2);
-
-    VkPhysicalDeviceMeshShaderPropertiesEXT meshShaderProperties {};
-    meshShaderProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
-    meshShaderProperties.pNext = nullptr;
-
-    VkPhysicalDeviceProperties2 properties2 {};
-    properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-    properties2.pNext = &meshShaderProperties;
-
-    vkGetPhysicalDeviceProperties2 (this->get_physical_device (), &properties2);
-
-    if (!meshShaderFeatures.meshShader) {
-        throw std::runtime_error ("Mesh Shaders are NOT supported.");
-    }
-
-    this->mesh_shader_properties = meshShaderProperties;
-
+    void* pNextFeatures {nullptr};
     VkPhysicalDeviceMeshShaderFeaturesEXT requestedMeshShaderFeatures {};
-    requestedMeshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
-    requestedMeshShaderFeatures.pNext = nullptr;
-    requestedMeshShaderFeatures.taskShader = VK_TRUE;
-    requestedMeshShaderFeatures.meshShader = VK_TRUE;
+    if (a_mesh_shader_support) {
+        device_extensions.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
+
+        VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures {};
+        meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+        meshShaderFeatures.pNext = nullptr;
+
+        VkPhysicalDeviceFeatures2 features2 {};
+        features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features2.pNext = &meshShaderFeatures;
+
+        vkGetPhysicalDeviceFeatures2 (this->get_physical_device (), &features2);
+
+        VkPhysicalDeviceMeshShaderPropertiesEXT meshShaderProperties {};
+        meshShaderProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
+        meshShaderProperties.pNext = nullptr;
+
+        VkPhysicalDeviceProperties2 properties2 {};
+        properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        properties2.pNext = &meshShaderProperties;
+
+        vkGetPhysicalDeviceProperties2 (this->get_physical_device (), &properties2);
+
+        if (!meshShaderFeatures.meshShader) {
+            throw std::runtime_error ("Mesh Shaders are NOT supported.");
+        }
+
+        this->mesh_shader_properties = meshShaderProperties;
+
+        requestedMeshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+        requestedMeshShaderFeatures.pNext = nullptr;
+        requestedMeshShaderFeatures.taskShader = VK_TRUE;
+        requestedMeshShaderFeatures.meshShader = VK_TRUE;
+
+        pNextFeatures = &requestedMeshShaderFeatures;
+    }
 
     this->device = vk_utils::createLogicalDevice (this->get_physical_device ()
             , validation_layers
@@ -246,11 +252,13 @@ void VulkanContext::create_device () {
             , enabled_device_featurues
             , this->device_queue_ids
             , VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT
-            , &requestedMeshShaderFeatures);
+            , pNextFeatures);
 
     volkLoadDevice (this->get_device ());                                            
 
-    this->dump_mesh_shader_properties ();
+    if (a_mesh_shader_support) {
+        this->dump_mesh_shader_properties ();
+    }
 }
 
 void VulkanContext::create_command_pools () {

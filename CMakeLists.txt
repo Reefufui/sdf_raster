@@ -104,6 +104,7 @@ add_executable(${PROJECT_NAME}
     src/marching_cubes_lookup_table.cpp
     src/marching_cubes.cpp
     src/mesh_shader_renderer.cpp
+    src/compute_shader_renderer.cpp
     src/mesh.cpp
     src/sdf_octree.cpp
     src/vulkan_context.cpp

@@ -53,7 +53,7 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
     auto make_divisable = [] (size_t value, size_t by) -> size_t {
         return (value / by) * by;
     };
-    a_leaf_memory_limit = make_divisable (a_leaf_memory_limit, sizeof (LeafContext) * this->subtrees.size () * compute_WORKGROUP_SIZE);
+    a_leaf_memory_limit = make_divisable (a_leaf_memory_limit, sizeof (LeafContext) * this->subtrees.size () * MESH_WORKGROUP_SIZE);
     std::cout << "[ComputeShaderRenderer::init] active leafs byte size (actual, total): " << a_leaf_memory_limit << std::endl;
 
     this->active_leafs_size = a_leaf_memory_limit / this->subtrees.size ();
@@ -98,7 +98,7 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
 
     shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
             , "./assets/shaders/compute_sphere.slang.spv"
-            , VK_SHADER_STAGE_compute_BIT_EXT
+            , VK_SHADER_STAGE_MESH_BIT_EXT
             , shader_modules);
 
     shader_stages [2] = vk_utils::loadShader (this->context->get_device ()
@@ -107,7 +107,7 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
             , shader_modules);
 
     VkPushConstantRange pushConstantRange {};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_compute_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.size = sizeof (PushConstantsData);
     pushConstantRange.offset = 0;
 
@@ -124,7 +124,7 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
 			, this->subtrees
 			, this->context->get_copy_helper ()
 			, *descriptor_maker
-			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_compute_BIT_EXT
+			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT
 			, this->active_leafs_size
 			, this->context->get_total_frames ());
 
@@ -132,7 +132,7 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
 			, this->context->get_physical_device ()
 			, this->context->get_copy_helper ()
 			, *descriptor_maker
-			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_compute_BIT_EXT);
+			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT);
 
     std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
     descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);
@@ -267,63 +267,6 @@ void ComputeShaderRenderer::resize (int a_width, int a_height) {
 
     this->width = a_width;
     this->height = a_height;
-}
-
-void dump_active_leafs (const std::vector <LeafContext>& contexts, const std::string& base_filename, size_t chunk_size) {
-    if (contexts.empty ()) {
-        std::cerr << "Вектор пустой" << std::endl;
-        return;
-    }
-    
-    std::cout << "Сохранение " << contexts.size () << " листьев по " 
-              << chunk_size << " в чанк..." << std::endl;
-    
-    size_t num_chunks = (contexts.size () + chunk_size - 1) / chunk_size;
-    
-    for (size_t chunk_idx = 0; chunk_idx < num_chunks; ++chunk_idx) {
-        size_t start_idx = chunk_idx * chunk_size;
-        size_t end_idx = std::min (start_idx + chunk_size, contexts.size ());
-        
-        std::stringstream ss;
-        ss << std::setfill ('0') << std::setw (3) << chunk_idx;
-        std::string filename = base_filename + std::string (1, '_') + ss.str () + ".txt";
-        
-        std::ofstream file (filename);
-        if (!file.is_open ()) {
-            std::cerr << "Ошибка открытия файла: " << filename << std::endl;
-            continue;
-        }
-        
-        file << std::fixed << std::setprecision (6);
-        file << "# Leaf Contexts chunk #" << chunk_idx 
-             << " (листья " << start_idx << ".." << (end_idx-1) << ")\n";
-        file << "# Total in chunk: " << (end_idx - start_idx) << "\n\n";
-        
-        for (size_t leaf_idx = start_idx; leaf_idx < end_idx; ++leaf_idx) {
-            const auto& leaf = contexts [leaf_idx];
-            const auto& node = leaf.node_context;
-            if (!node.node_index) {
-                continue;
-            }
-            
-            file << "=== Leaf #" << leaf_idx << " ===\n";
-            file << "Node Index:     " << node.node_index << "\n";
-            file << "Cube Index:     " << node.cube_index << "\n";
-            file << "Voxel Size:     " << node.voxel_size << "\n";
-            file << "Min Corner:     (" 
-                 << node.min_corner.x << ", "
-                 << node.min_corner.y << ", "
-                 << node.min_corner.z << ")\n";
-            file << "Verts Offset:   " << leaf.vertices_local_offset << "\n";
-            file << "Tris Offset:    " << leaf.triangles_local_offset << "\n\n";
-        }
-        
-        file.close ();
-        std::cout << "Чанк " << chunk_idx << " сохранён: " << filename 
-                  << " (" << (end_idx - start_idx) << " листьев)" << std::endl;
-    }
-    
-    std::cout << "Всего создано файлов: " << num_chunks << std::endl;
 }
 
 void ComputeShaderRenderer::shutdown () {

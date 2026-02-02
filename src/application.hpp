@@ -7,7 +7,7 @@
 #include "GLFW/glfw3.h"
 
 #include "camera.hpp"
-#include "mesh_shader_renderer.hpp"
+#include "renderer.hpp"
 #include "vulkan_context.hpp"
 
 namespace sdf_raster {
@@ -15,7 +15,7 @@ namespace sdf_raster {
 class Application {
 public:
     Application (int a_width, int a_height);
-    Application (int width, int height, const std::string& title, size_t leaf_memory_limit);
+    Application (int width, int height, const std::string& title, size_t leaf_memory_limit, bool a_mesh_shader_support);
     ~Application ();
 
     void run (bool single_frame);
@@ -23,8 +23,8 @@ public:
 
 private:
     void cleanup ();
-    void init_renderer (size_t leaf_memory_limit);
-    void init_vulkan ();
+    void init_renderer (size_t leaf_memory_limit, bool a_mesh_shader_suppport);
+    void init_vulkan (bool a_mesh_shader_suppport);
     void init_window ();
     void process_input ();
 
@@ -51,7 +51,7 @@ private:
     } user_data;
 
     std::shared_ptr <VulkanContext> vulkan_context;
-    std::unique_ptr <MeshShaderRenderer> renderer;
+    std::unique_ptr <Renderer> renderer;
 };
 
 }

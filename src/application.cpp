@@ -6,10 +6,11 @@
 #include <thread>
 
 #include "application.hpp"
-#include "marching_cubes.hpp"
-#include "sdf_octree.hpp"
-#include "mesh_shader_renderer.hpp"
+#include "compute_shader_renderer.hpp"
 #include "cpu_sandbox/cpu_sandbox.h"
+#include "marching_cubes.hpp"
+#include "mesh_shader_renderer.hpp"
+#include "sdf_octree.hpp"
 
 namespace sdf_raster {
 
@@ -21,15 +22,15 @@ Application::Application (int a_width, int a_height)
     // init_renderer ();
 }
 
-Application::Application (int a_width, int a_height, const std::string& a_window_title, size_t a_leaf_memory_limit)
+Application::Application (int a_width, int a_height, const std::string& a_window_title, size_t a_leaf_memory_limit, bool a_mesh_shader_support)
     : width (a_width)
     , height (a_height)
     , window_title (a_window_title)
     , camera ()
     , user_data ({this}) {
     init_window ();
-    init_vulkan ();
-    init_renderer (a_leaf_memory_limit);
+    init_vulkan (a_mesh_shader_support);
+    init_renderer (a_leaf_memory_limit, a_mesh_shader_support);
     last_x = static_cast <float> (width) / 2.0f;
     last_y = static_cast <float> (height) / 2.0f;
 }
@@ -102,13 +103,17 @@ void Application::init_window () {
     glfwSetInputMode (this->window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }
 
-void Application::init_vulkan () {
+void Application::init_vulkan (bool a_mesh_shader_support) {
     this->vulkan_context = std::make_shared <VulkanContext> ();
-    this->vulkan_context->init (this->window, this->width, this->height);
+    this->vulkan_context->init (this->window, this->width, this->height, a_mesh_shader_support);
 }
 
-void Application::init_renderer (size_t leaf_memory_limit) {
-    this->renderer = std::make_unique <MeshShaderRenderer> (this->vulkan_context);
+void Application::init_renderer (size_t leaf_memory_limit, bool a_mesh_shader_support) {
+    if (a_mesh_shader_support) {
+        this->renderer = std::make_unique <MeshShaderRenderer> (this->vulkan_context);
+    } else {
+        this->renderer = std::make_unique <ComputeShaderRenderer> (this->vulkan_context);
+    }
     SdfOctree scene {};
     load_sdf_octree (scene, "./assets/sdf/lowpoly_bunny.octree");
     this->renderer->init (this->width, this->height, std::move (scene), leaf_memory_limit);

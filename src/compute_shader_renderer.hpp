@@ -10,24 +10,24 @@
 #include "camera.hpp"
 #include "marching_cubes_lookup_table.hpp"
 #include "mesh.hpp"
+#include "renderer.hpp"
 #include "sdf_octree.hpp"
 #include "shaders/common.h"
 #include "vk_descriptor_sets.h"
 #include "vulkan_context.hpp"
-#include "vulkan_context.hpp"
 
 namespace sdf_raster {
 
-class ComputeShaderRenderer {
+class ComputeShaderRenderer : public Renderer {
 public:
     explicit ComputeShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context);
     ~ComputeShaderRenderer ();
 
-    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_leaf_memory_limit);
-    void render (const Camera& a_camera);
-    void resize (int a_width, int a_height);
-    void shutdown ();
-    void update_push_constants (const Camera& a_camera);
+    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_leaf_memory_limit) override;
+    void render (const Camera& a_camera) override;
+    void resize (int a_width, int a_height) override;
+    void shutdown () override;
+    void update_push_constants (const Camera& a_camera) override;
 
 private:
     void init_compute_shading_pipeline ();

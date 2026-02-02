@@ -12,6 +12,7 @@ int main (int argc, char* argv[]) {
         std::string filename = "";
         bool headless_mode = false;
         bool single_frame = false;
+        bool mesh_shader_support = false;
 
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
@@ -26,6 +27,13 @@ int main (int argc, char* argv[]) {
                 leaf_memory_limit = std::stoi (argv[++i]);
             } else if (arg == "--single-frame") {
                 single_frame = true;
+            } else if (arg == "-render" && i + 1 < argc) {
+                if (argv [++i] == "mesh") {
+                    mesh_shader_support = true;
+                } else if (argv [++i] == "compute") {
+                } else {
+                    throw std::runtime_error ("param usage of '-render': '-render <compute|mesh>'");
+                }
             }
         }
 
@@ -33,7 +41,7 @@ int main (int argc, char* argv[]) {
             sdf_raster::Application app (width, height);
             app.marching_cubes_cpu ("./assets/sdf/lowpoly_bunny.octree", filename);
         } else {
-            sdf_raster::Application app (width, height, "sdf_raster", leaf_memory_limit);
+            sdf_raster::Application app (width, height, "sdf_raster", leaf_memory_limit, mesh_shader_support);
             app.run (single_frame);
         }
     } catch (const std::exception& e) {

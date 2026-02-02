@@ -14,8 +14,8 @@ namespace sdf_raster {
 
 class VulkanContext {
 public:
-    void init (int a_width, int a_height);
-    void init (GLFWwindow* window, int width, int height);
+    void init (int a_width, int a_height, bool a_mesh_shader_support);
+    void init (GLFWwindow* window, int width, int height, bool a_mesh_shader_support);
     void shutdown ();
     void resize (int width, int height);
 
@@ -48,7 +48,7 @@ private:
     void create_instance ();
     void setup_debug_utils_messenger ();
     void dump_mesh_shader_properties () const;
-    void create_device ();
+    void create_device (bool a_mesh_shader_support);
     void create_command_pools ();
     void get_device_queues ();
     void create_render_pass ();

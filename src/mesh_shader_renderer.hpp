@@ -13,21 +13,21 @@
 #include "sdf_octree.hpp"
 #include "shaders/common.h"
 #include "vk_descriptor_sets.h"
-#include "vulkan_context.hpp"
+#include "renderer.hpp"
 #include "vulkan_context.hpp"
 
 namespace sdf_raster {
 
-class MeshShaderRenderer {
+class MeshShaderRenderer  : public Renderer {
 public:
     explicit MeshShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context);
     ~MeshShaderRenderer ();
 
-    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_leaf_memory_limit);
-    void render (const Camera& a_camera);
-    void resize (int a_width, int a_height);
-    void shutdown ();
-    void update_push_constants (const Camera& a_camera);
+    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_leaf_memory_limit) override;
+    void render (const Camera& a_camera) override;
+    void resize (int a_width, int a_height) override;
+    void shutdown () override;
+    void update_push_constants (const Camera& a_camera) override;
 
 private:
     void init_mesh_shading_pipeline ();

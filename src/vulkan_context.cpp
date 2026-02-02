@@ -101,12 +101,36 @@ void VulkanContext::create_instance () {
         }
     }
 
+#ifdef __APPLE__
+    instance_extensions.push_back (VK_EXT_METAL_SURFACE_EXTENSION_NAME);
+    instance_extensions.push_back (VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+#endif
+
     instance_layers.push_back("VK_LAYER_KHRONOS_validation");
+
+    VkInstanceCreateFlagBits flags {};
+#ifdef __APPLE__
+    flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
+
+    void* pNext = nullptr;
+#ifdef __APPLE__
+    VkDebugUtilsMessengerCreateInfoEXT debug_messenger_create_info {};
+    if (enable_validation_layers) {
+        debug_messenger_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        debug_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        debug_messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        debug_messenger_create_info.pfnUserCallback = debug_utils_message_callback;
+        pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debug_messenger_create_info;
+    }
+#endif
 
     this->instance = vk_utils::createInstance (enable_validation_layers
             , instance_layers
             , instance_extensions
-            , &app_info);
+            , &app_info
+            , flags
+            , pNext);
 
     volkLoadInstance (this->get_instance ());
 }

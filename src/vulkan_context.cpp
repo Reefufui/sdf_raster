@@ -206,6 +206,9 @@ void VulkanContext::create_device (bool a_mesh_shader_support) {
     VkPhysicalDeviceFeatures enabled_device_featurues {};
 
     device_extensions.push_back (VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+#ifdef __APPLE__
+    device_extensions.push_back (VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+#endif
 
     void* pNextFeatures {nullptr};
     VkPhysicalDeviceMeshShaderFeaturesEXT requestedMeshShaderFeatures {};

@@ -23,7 +23,7 @@ public:
     explicit ComputeShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context);
     ~ComputeShaderRenderer ();
 
-    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_leaf_memory_limit) override;
+    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_max_vertices_count) override;
     void render (const Camera& a_camera) override;
     void resize (int a_width, int a_height) override;
     void shutdown () override;
@@ -35,7 +35,7 @@ private:
     std::shared_ptr <VulkanContext> context {nullptr};
 
     std::shared_ptr <vk_utils::DescriptorMaker> descriptor_maker {nullptr};
-    SdfOctreeDescriptorSetInfo sdf_octree_ds {};
+    SdfOctreeComputeDescriptorSetInfo sdf_octree_ds {};
     MarchingCubesLookupTableDescriptorSetInfo marching_cubes_lookup_table_ds {};
 
     VkRenderPass render_pass {VK_NULL_HANDLE};

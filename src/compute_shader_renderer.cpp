@@ -24,7 +24,7 @@ ComputeShaderRenderer::~ComputeShaderRenderer () {
     std::cout << "ComputeShaderRenderer destroyed." << std::endl;
 }
 
-void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_leaf_memory_limit) {
+void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_max_vertices_count) {
     std::cout << "ComputeShaderRenderer initializing..." << std::endl;
 
     if (!this->context || !this->context->is_initialized ()) {
@@ -33,7 +33,11 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
 
     this->width = a_width;
     this->height = a_height;
-    this->sdf_octree = std::move (a_sdf_octree);
+    if (a_sdf_octree.nodes.size ()) {
+        this->sdf_octree = std::move (a_sdf_octree);
+    } else {
+        throw std::runtime_error ("Missing SDF OCTREE. Make sure './assets/sdf/lowpoly_bunny.octree' is present in launch location");
+    }
     this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
     this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
     std::cout << "[ComputeShaderRenderer::init] MAX_OCTREE_DEPTH: " << MAX_OCTREE_DEPTH << std::endl;
@@ -48,26 +52,11 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
     const int tasks_count = this->subtrees.size ();
 
     std::cout << "[ComputeShaderRenderer::init] subtrees (tasks) count: " << tasks_count << std::endl;
-    std::cout << "[ComputeShaderRenderer::init] active leafs byte size (MAX, user-input): " << a_leaf_memory_limit << std::endl;
+    assert (tasks_count);
 
-    auto make_divisable = [] (size_t value, size_t by) -> size_t {
-        return (value / by) * by;
-    };
-    a_leaf_memory_limit = make_divisable (a_leaf_memory_limit, sizeof (LeafContext) * this->subtrees.size () * MESH_WORKGROUP_SIZE);
-    std::cout << "[ComputeShaderRenderer::init] active leafs byte size (actual, total): " << a_leaf_memory_limit << std::endl;
-
-    this->active_leafs_size = a_leaf_memory_limit / this->subtrees.size ();
-    std::cout << "[ComputeShaderRenderer::init] active leafs byte size (per subtree task): " << this->active_leafs_size << std::endl;
-    this->push_constants.max_leaf_count_per_task = this->active_leafs_size / sizeof (LeafContext);
-    std::cout << "[ComputeShaderRenderer::init] active leafs count (per subtree task): " << this->push_constants.max_leaf_count_per_task << std::endl;
-
-    // NodeContext root;
-    // root.node_index = 0;
-    // root.voxel_size = 2.f;
-    // root.min_corner = {-1.0f, -1.0f, -1.0f};
-    // cpu_sandbox::task_generator (this->subtrees [0], this->sdf_octree.nodes);
-    // cpu_sandbox::dump_obj ("new.obj");
-    // exit (0);
+    std::cout << "[ComputeShaderRenderer::init] max_vertices_count:" << a_max_vertices_count << std::endl;
+    this->push_constants.max_count_per_task = a_max_vertices_count / tasks_count;
+    std::cout << "[ComputeShaderRenderer::init] max vertices per task:" << this->push_constants.max_count_per_task << std::endl;
 
     // dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
     std::cout << "---" << std::endl;
@@ -92,13 +81,13 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
 
     shader_stages [0] = vk_utils::loadShader (this->context->get_device ()
-            , "./assets/shaders/task_generator.slang.spv"
-            , VK_SHADER_STAGE_TASK_BIT_EXT
+            , "./assets/shaders/compute.slang.spv"
+            , VK_SHADER_STAGE_COMPUTE_BIT
             , shader_modules);
 
     shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
-            , "./assets/shaders/compute_sphere.slang.spv"
-            , VK_SHADER_STAGE_MESH_BIT_EXT
+            , "./assets/shaders/vert.slang.spv"
+            , VK_SHADER_STAGE_VERTEX_BIT
             , shader_modules);
 
     shader_stages [2] = vk_utils::loadShader (this->context->get_device ()
@@ -107,7 +96,7 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
             , shader_modules);
 
     VkPushConstantRange pushConstantRange {};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.size = sizeof (PushConstantsData);
     pushConstantRange.offset = 0;
 
@@ -118,14 +107,14 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
             , ds_type_vec
             , 10
             );
-	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
+	this->sdf_octree_ds = create_sdf_octree_compute_descriptor_set (this->context->get_device ()
 			, this->context->get_physical_device ()
 			, this->sdf_octree
 			, this->subtrees
 			, this->context->get_copy_helper ()
 			, *descriptor_maker
-			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT
-			, this->active_leafs_size
+			, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+			, this->push_constants.max_count_per_task
 			, this->context->get_total_frames ());
 
 	this->marching_cubes_lookup_table_ds = create_lookup_table_descriptor_set (this->context->get_device ()
@@ -280,8 +269,8 @@ void ComputeShaderRenderer::shutdown () {
     std::cout << "[ComputeShaderRenderer::shutdown] ComputeShaderRenderer shutting down..." << std::endl;
 
     // std::cout << "[ComputeShaderRenderer::shutdown] Fetching last frame leaf contexts..." << std::endl;
-    // std::vector <LeafContext> leaf_contexts = fetch_leaf_contexts (this->context->get_copy_helper (), this->sdf_octree_ds, this->active_leafs_size, this->context->get_current_frame ());
-    // dump_active_leafs (leaf_contexts, "contexts.txt", this->active_leafs_size / sizeof (LeafContext) / this->subtrees.size ());
+    // std::vector <LeafContext> leaf_contexts = fetch_leaf_contexts (this->context->get_copy_helper (), this->sdf_octree_ds, this->max_vertices_count, this->context->get_current_frame ());
+    // dump_active_leafs (leaf_contexts, "contexts.txt", this->max_vertices_count / sizeof (LeafContext) / this->subtrees.size ());
 
     cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
     cleanup_lookup_table_descriptor_set (this->context->get_device (), this->marching_cubes_lookup_table_ds);
@@ -313,7 +302,7 @@ void ComputeShaderRenderer::update_push_constants (const Camera& a_camera) {
         this->push_constants.frustum_planes [i] = planes [i];
     }
 
-    uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->sdf_octree_ds);
+    uint insufficent_mem_flag = fetch_insufficent_mem_flag <SdfOctreeComputeDescriptorSetInfo> (this->context->get_copy_helper (), this->sdf_octree_ds);
     if (insufficent_mem_flag) {
         vkDeviceWaitIdle (this->context->get_device ());
         this->push_constants.max_octree_depth -= 1;

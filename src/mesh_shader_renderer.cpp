@@ -118,16 +118,20 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
             , ds_type_vec
             , 10
             );
-	this->sdf_octree_ds = create_sdf_octree_mesh_descriptor_set (this->context->get_device ()
+	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
 			, this->context->get_physical_device ()
+			, this->context->get_copy_helper ()
+			, *descriptor_maker
+			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT
 			, this->sdf_octree
-			, this->subtrees
+			, this->subtrees);
+	this->active_leafs_ds = create_active_leafs_descriptor_set (this->context->get_device ()
+			, this->context->get_physical_device ()
 			, this->context->get_copy_helper ()
 			, *descriptor_maker
 			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT
 			, this->active_leafs_size
 			, this->context->get_total_frames ());
-
 	this->marching_cubes_lookup_table_ds = create_lookup_table_descriptor_set (this->context->get_device ()
 			, this->context->get_physical_device ()
 			, this->context->get_copy_helper ()
@@ -136,6 +140,7 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
 
     std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
     descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);
+    descriptor_set_layouts.push_back (this->active_leafs_ds.descriptor_set_layout);
     descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds.descriptor_set_layout);
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
@@ -271,7 +276,7 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
             this->pipeline_layout,
             0,
             1,
-            &this->sdf_octree_ds.descriptor_sets [this->context->get_current_frame ()],
+            &this->sdf_octree_ds.descriptor_set,
             0,
             nullptr
             );
@@ -281,6 +286,17 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
             VK_PIPELINE_BIND_POINT_GRAPHICS,
             this->pipeline_layout,
             1,
+            1,
+            &this->active_leafs_ds.descriptor_sets [this->context->get_current_frame ()],
+            0,
+            nullptr
+            );
+
+    vkCmdBindDescriptorSets (
+            cmd_buff,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            this->pipeline_layout,
+            2,
             1,
             &this->marching_cubes_lookup_table_ds.descriptor_set,
             0,
@@ -368,7 +384,7 @@ void dump_active_leafs (const std::vector <LeafContext>& contexts, const std::st
         std::cout << "Чанк " << chunk_idx << " сохранён: " << filename 
                   << " (" << (end_idx - start_idx) << " листьев)" << std::endl;
     }
-    
+
     std::cout << "Всего создано файлов: " << num_chunks << std::endl;
 }
 
@@ -387,6 +403,7 @@ void MeshShaderRenderer::shutdown () {
     // dump_active_leafs (leaf_contexts, "contexts.txt", this->active_leafs_size / sizeof (LeafContext) / this->subtrees.size ());
 
     cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
+    cleanup_active_leafs_descriptor_set (this->context->get_device (), this->active_leafs_ds);
     cleanup_lookup_table_descriptor_set (this->context->get_device (), this->marching_cubes_lookup_table_ds);
 
     this->descriptor_maker.reset ();
@@ -416,7 +433,7 @@ void MeshShaderRenderer::update_push_constants (const Camera& a_camera) {
         this->push_constants.frustum_planes [i] = planes [i];
     }
 
-    uint insufficent_mem_flag = fetch_insufficent_mem_flag <SdfOctreeMeshDescriptorSetInfo> (this->context->get_copy_helper (), this->sdf_octree_ds);
+    uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->active_leafs_ds);
     if (insufficent_mem_flag) {
         vkDeviceWaitIdle (this->context->get_device ());
         this->push_constants.max_octree_depth -= 1;

@@ -35,7 +35,8 @@ private:
     std::shared_ptr <VulkanContext> context {nullptr};
 
     std::shared_ptr <vk_utils::DescriptorMaker> descriptor_maker {nullptr};
-    SdfOctreeMeshDescriptorSetInfo sdf_octree_ds {};
+    SdfOctreeDescriptorSetInfo sdf_octree_ds {};
+    ActiveLeafsDescriptorSetInfo active_leafs_ds {};
     MarchingCubesLookupTableDescriptorSetInfo marching_cubes_lookup_table_ds {};
 
     VkRenderPass render_pass {VK_NULL_HANDLE};

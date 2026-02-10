@@ -25,6 +25,7 @@ ComputeShaderRenderer::~ComputeShaderRenderer () {
 }
 
 void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_max_vertices_count) {
+    a_max_vertices_count = 10000;
     std::cout << "ComputeShaderRenderer initializing..." << std::endl;
 
     if (!this->context || !this->context->is_initialized ()) {
@@ -55,6 +56,7 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
     assert (tasks_count);
 
     std::cout << "[ComputeShaderRenderer::init] max_vertices_count:" << a_max_vertices_count << std::endl;
+    // this->push_constants.max_count_per_task = a_max_vertices_count / tasks_count;
     this->push_constants.max_count_per_task = a_max_vertices_count / tasks_count;
     std::cout << "[ComputeShaderRenderer::init] max vertices per task:" << this->push_constants.max_count_per_task << std::endl;
 
@@ -68,15 +70,46 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
     std::cout << "[ComputeShaderRenderer::init] Subtree [0].cube_index=" << this->subtrees [0].cube_index << std::endl;
     std::cout << "---" << std::endl;
 
+    this->init_descriptor_sets ();
     this->init_compute_shading_pipeline ();
+    this->init_graphics_shading_pipeline ();
     this->initialized = true;
     std::cout << "ComputeShaderRenderer initialized successfully." << std::endl;
+}
+
+void ComputeShaderRenderer::init_descriptor_sets () {
+    vk_utils::DescriptorTypesVec ds_type_vec {};
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
+    this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (
+            this->context->get_device ()
+            , ds_type_vec
+            , 10
+            );
+	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
+			, this->context->get_physical_device ()
+			, this->context->get_copy_helper ()
+			, *descriptor_maker
+			, VK_SHADER_STAGE_COMPUTE_BIT
+			, this->sdf_octree
+			, this->subtrees);
+	this->mesh_ds = create_mesh_descriptor_set (this->context->get_device ()
+			, this->context->get_physical_device ()
+			, this->context->get_copy_helper ()
+			, *descriptor_maker
+			, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+			, this->push_constants.max_count_per_task
+			, this->context->get_total_frames ());
+	this->marching_cubes_lookup_table_ds = create_lookup_table_descriptor_set (this->context->get_device ()
+			, this->context->get_physical_device ()
+			, this->context->get_copy_helper ()
+			, *descriptor_maker
+			, VK_SHADER_STAGE_COMPUTE_BIT);
 }
 
 void ComputeShaderRenderer::init_compute_shading_pipeline () {
     std::cout << "ComputeShaderRenderer::init_compute_shading_pipeline called." << std::endl;
 
-    const size_t shaders_count = 3;
+    const size_t shaders_count = 1;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
 
@@ -85,46 +118,14 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
             , VK_SHADER_STAGE_COMPUTE_BIT
             , shader_modules);
 
-    shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
-            , "./assets/shaders/vert.slang.spv"
-            , VK_SHADER_STAGE_VERTEX_BIT
-            , shader_modules);
-
-    shader_stages [2] = vk_utils::loadShader (this->context->get_device ()
-            , "./assets/shaders/simple_color.slang.spv"
-            , VK_SHADER_STAGE_FRAGMENT_BIT
-            , shader_modules);
-
     VkPushConstantRange pushConstantRange {};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     pushConstantRange.size = sizeof (PushConstantsData);
     pushConstantRange.offset = 0;
 
-    vk_utils::DescriptorTypesVec ds_type_vec {};
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
-    this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (
-            this->context->get_device ()
-            , ds_type_vec
-            , 10
-            );
-	this->sdf_octree_ds = create_sdf_octree_compute_descriptor_set (this->context->get_device ()
-			, this->context->get_physical_device ()
-			, this->sdf_octree
-			, this->subtrees
-			, this->context->get_copy_helper ()
-			, *descriptor_maker
-			, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-			, this->push_constants.max_count_per_task
-			, this->context->get_total_frames ());
-
-	this->marching_cubes_lookup_table_ds = create_lookup_table_descriptor_set (this->context->get_device ()
-			, this->context->get_physical_device ()
-			, this->context->get_copy_helper ()
-			, *descriptor_maker
-			, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT);
-
     std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
     descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);
+    descriptor_set_layouts.push_back (this->mesh_ds.descriptor_set_layout);
     descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds.descriptor_set_layout);
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
@@ -134,10 +135,87 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &this->pipeline_layout));
+    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &this->compute_pipeline_layout));
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage = shader_stages [0];
+    pipelineInfo.layout = this->compute_pipeline_layout;
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+    pipelineInfo.basePipelineIndex = -1;
+
+    VK_CHECK_RESULT (vkCreateComputePipelines (this->context->get_device ()
+                , VK_NULL_HANDLE
+                , 1
+                , &pipelineInfo
+                , nullptr
+                , &this->compute_pipeline));
+
+    for (VkShaderModule module : shader_modules) {
+        if (module != VK_NULL_HANDLE) {
+            vkDestroyShaderModule (this->context->get_device (), module, nullptr);
+        }
+    }
+    shader_modules.clear ();
+}
+
+void ComputeShaderRenderer::init_graphics_shading_pipeline () {
+    std::cout << "ComputeShaderRenderer::init_graphics_shading_pipeline called." << std::endl;
+
+    const size_t shaders_count = 2;
+    std::vector <VkShaderModule> shader_modules (shaders_count);
+    std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
+
+    shader_stages [0] = vk_utils::loadShader (this->context->get_device ()
+            , "./assets/shaders/vert.slang.spv"
+            , VK_SHADER_STAGE_VERTEX_BIT
+            , shader_modules);
+
+    shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
+            , "./assets/shaders/simple_color.slang.spv"
+            , VK_SHADER_STAGE_FRAGMENT_BIT
+            , shader_modules);
+
+    VkPushConstantRange pushConstantRange {};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.size = sizeof (PushConstantsData);
+    pushConstantRange.offset = 0;
+
+    std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
+    descriptor_set_layouts.push_back (this->mesh_ds.descriptor_set_layout);
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = descriptor_set_layouts.size ();
+    pipelineLayoutInfo.pSetLayouts = descriptor_set_layouts.data ();
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &this->graphics_pipeline_layout));
+
+    VkVertexInputBindingDescription bindingDescription {};
+    bindingDescription.binding = 0;
+    bindingDescription.stride = sizeof (float) * (4 + 4);
+    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector <VkVertexInputAttributeDescription> attributeDescriptions (2);
+
+    attributeDescriptions [0].binding = 0;
+    attributeDescriptions [0].location = 0;
+    attributeDescriptions [0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributeDescriptions [0].offset = 0;
+
+    attributeDescriptions [1].binding = 0;
+    attributeDescriptions [1].location = 1;
+    attributeDescriptions [1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributeDescriptions [1].offset = sizeof (float) * 4;
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast <uint32_t> (attributeDescriptions.size ());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data ();
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly {};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -219,7 +297,7 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
 
-    pipelineInfo.layout = pipeline_layout;
+    pipelineInfo.layout = this->graphics_pipeline_layout;
     if (this->context->get_render_pass () == VK_NULL_HANDLE) {
         throw std::runtime_error ("Render Pass is not initialized!");
     }
@@ -231,7 +309,7 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
                 , 1
                 , &pipelineInfo
                 , nullptr
-                , &this->pipeline));
+                , &this->graphics_pipeline));
 
     for (VkShaderModule module : shader_modules) {
         if (module != VK_NULL_HANDLE) {
@@ -273,17 +351,27 @@ void ComputeShaderRenderer::shutdown () {
     // dump_active_leafs (leaf_contexts, "contexts.txt", this->max_vertices_count / sizeof (LeafContext) / this->subtrees.size ());
 
     cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
+    cleanup_mesh_descriptor_set (this->context->get_device (), this->mesh_ds);
     cleanup_lookup_table_descriptor_set (this->context->get_device (), this->marching_cubes_lookup_table_ds);
 
     this->descriptor_maker.reset ();
 
-    if (this->pipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline (this->context->get_device (), this->pipeline, nullptr);
-        this->pipeline = VK_NULL_HANDLE;
+    if (this->compute_pipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline (this->context->get_device (), this->compute_pipeline, nullptr);
+        this->compute_pipeline = VK_NULL_HANDLE;
     }
-    if (this->pipeline_layout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout (this->context->get_device (), this->pipeline_layout, nullptr);
-        this->pipeline_layout = VK_NULL_HANDLE;
+    if (this->compute_pipeline_layout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout (this->context->get_device (), this->compute_pipeline_layout, nullptr);
+        this->compute_pipeline_layout = VK_NULL_HANDLE;
+    }
+
+    if (this->graphics_pipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline (this->context->get_device (), this->graphics_pipeline, nullptr);
+        this->graphics_pipeline = VK_NULL_HANDLE;
+    }
+    if (this->graphics_pipeline_layout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout (this->context->get_device (), this->graphics_pipeline_layout, nullptr);
+        this->graphics_pipeline_layout = VK_NULL_HANDLE;
     }
 
     this->render_pass = VK_NULL_HANDLE;
@@ -302,7 +390,7 @@ void ComputeShaderRenderer::update_push_constants (const Camera& a_camera) {
         this->push_constants.frustum_planes [i] = planes [i];
     }
 
-    uint insufficent_mem_flag = fetch_insufficent_mem_flag <SdfOctreeComputeDescriptorSetInfo> (this->context->get_copy_helper (), this->sdf_octree_ds);
+    uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->mesh_ds);
     if (insufficent_mem_flag) {
         vkDeviceWaitIdle (this->context->get_device ());
         this->push_constants.max_octree_depth -= 1;

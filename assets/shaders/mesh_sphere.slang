@@ -6,13 +6,14 @@
 
 [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> g_octree_data;
 [[vk::binding (1, 0)]] StructuredBuffer <NodeContext> g_roots;
-[[vk::binding (2, 0)]] RWStructuredBuffer <LeafContext> g_active_leafs;
-[[vk::binding (3, 0)]] RWStructuredBuffer <uint> g_insufficent_mem_flag;
 
-[[vk::binding (0, 1)]] StructuredBuffer <uint2> edge_corners; // [12]
-[[vk::binding (1, 1)]] StructuredBuffer <int> cube_index_2_edge_mask; // [256]
-[[vk::binding (2, 1)]] StructuredBuffer <int> cube_index_2_triangle_indices; // [256][16]
-[[vk::binding (3, 1)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
+[[vk::binding (0, 1)]] RWStructuredBuffer <LeafContext> g_active_leafs;
+[[vk::binding (1, 1)]] RWStructuredBuffer <uint> g_insufficent_mem_flag;
+
+[[vk::binding (0, 2)]] StructuredBuffer <uint2> edge_corners; // [12]
+[[vk::binding (1, 2)]] StructuredBuffer <int> cube_index_2_edge_mask; // [256]
+[[vk::binding (2, 2)]] StructuredBuffer <int> cube_index_2_triangle_indices; // [256][16]
+[[vk::binding (3, 2)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
 
 float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
     if (abs (0.f - valp1) < 0.00001)
@@ -109,7 +110,7 @@ void main(
                                                 , node.values [corner_indices.x]
                                                 , node.values [corner_indices.y]
                                                 ), 1.0f));
-        vertex.color = colors [(payload.leaf_buffer_offset / pc.max_leaf_count_per_task) % 16];
+        vertex.color = colors [(payload.leaf_buffer_offset / pc.max_count_per_task) % 16];
         // vertex.color = colors [group_id.x];
         vertices [leaf_context.vertices_local_offset + i] = vertex;
 

@@ -6,13 +6,14 @@
 
 [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> g_octree_data;
 [[vk::binding (1, 0)]] StructuredBuffer <NodeContext> g_roots;
-[[vk::binding (2, 0)]] RWStructuredBuffer <LeafContext> g_active_leafs;
-[[vk::binding (3, 0)]] RWStructuredBuffer <uint> g_insufficent_mem_flag;
 
-[[vk::binding (0, 1)]] StructuredBuffer <uint2> edge_corners; // [12]
-[[vk::binding (1, 1)]] StructuredBuffer <int> cube_index_2_edge_mask; // [256]
-[[vk::binding (2, 1)]] StructuredBuffer <int> cube_index_2_triangle_indices; // [256][16]
-[[vk::binding (3, 1)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
+[[vk::binding (0, 1)]] RWStructuredBuffer <LeafContext> g_active_leafs;
+[[vk::binding (1, 1)]] RWStructuredBuffer <uint> g_insufficent_mem_flag;
+
+[[vk::binding (0, 2)]] StructuredBuffer <uint2> edge_corners; // [12]
+[[vk::binding (1, 2)]] StructuredBuffer <int> cube_index_2_edge_mask; // [256]
+[[vk::binding (2, 2)]] StructuredBuffer <int> cube_index_2_triangle_indices; // [256][16]
+[[vk::binding (3, 2)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
 
 groupshared TaskPayload s_payload;
 groupshared uint s_vertices_current_offset;
@@ -34,7 +35,7 @@ void add_leaf (NodeContext context, SdfOctreeNode leaf_node) {
     const uint leaf_vertices_count = cube_index_2_mesh_output_counts [context.cube_index].x;
     const uint leaf_triangles_count = cube_index_2_mesh_output_counts [context.cube_index].y;
 
-    if (s_payload.leaf_count < pc.max_leaf_count_per_task) {
+    if (s_payload.leaf_count < pc.max_count_per_task) {
         g_active_leafs [s_payload.leaf_buffer_offset + s_payload.leaf_count].node_context = context;
         g_active_leafs [s_payload.leaf_buffer_offset + s_payload.leaf_count].vertices_local_offset = s_vertices_current_offset;
         g_active_leafs [s_payload.leaf_buffer_offset + s_payload.leaf_count].triangles_local_offset = s_triangles_current_offset;
@@ -109,7 +110,7 @@ void dfs_octree (NodeContext root) {
 [shader ("amplification")]
 [numthreads (1, 1, 1)]
 void main (in uint3 group_id : SV_GroupID) {
-    s_payload.leaf_buffer_offset = pc.max_leaf_count_per_task * group_id.x;
+    s_payload.leaf_buffer_offset = pc.max_count_per_task * group_id.x;
     s_payload.leaf_count = 0;
     s_payload.triangles_count = 0;
     s_payload.vertices_count = 0;

@@ -30,17 +30,23 @@ public:
     void update_push_constants (const Camera& a_camera) override;
 
 private:
+    void init_descriptor_sets ();
     void init_compute_shading_pipeline ();
+    void init_graphics_shading_pipeline ();
 
     std::shared_ptr <VulkanContext> context {nullptr};
 
     std::shared_ptr <vk_utils::DescriptorMaker> descriptor_maker {nullptr};
-    SdfOctreeComputeDescriptorSetInfo sdf_octree_ds {};
+    SdfOctreeDescriptorSetInfo sdf_octree_ds {};
+    MeshDescriptorSetInfo mesh_ds {};
     MarchingCubesLookupTableDescriptorSetInfo marching_cubes_lookup_table_ds {};
 
     VkRenderPass render_pass {VK_NULL_HANDLE};
-    VkPipelineLayout pipeline_layout {VK_NULL_HANDLE};
-    VkPipeline pipeline {VK_NULL_HANDLE};
+    VkPipelineLayout graphics_pipeline_layout {VK_NULL_HANDLE};
+    VkPipeline graphics_pipeline {VK_NULL_HANDLE};
+
+    VkPipelineLayout compute_pipeline_layout {VK_NULL_HANDLE};
+    VkPipeline compute_pipeline {VK_NULL_HANDLE};
 
     int width {};
     int height {};

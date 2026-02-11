@@ -28,9 +28,9 @@ int main (int argc, char* argv[]) {
             } else if (arg == "--single-frame") {
                 single_frame = true;
             } else if (arg == "-render" && i + 1 < argc) {
-                if (argv [++i] == "mesh") {
+                if (strcmp (argv [++i], "mesh") == 0) {
                     mesh_shader_support = true;
-                } else if (argv [++i] == "compute") {
+                } else if (strcmp (argv [++i], "compute") == 0) {
                 } else {
                     throw std::runtime_error ("param usage of '-render': '-render <compute|mesh>'");
                 }

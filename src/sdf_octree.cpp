@@ -160,6 +160,8 @@ ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
     buffers [max_frames_in_flight] = vk_utils::createBuffer (device, sizeof (uint)
             , VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [max_frames_in_flight]);
 
+    info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
+
     uint insufficent_mem_flag = 0;
     copy_helper->UpdateBuffer (info.insufficent_mem_flag_buffer, 0, &insufficent_mem_flag, sizeof (uint));
 

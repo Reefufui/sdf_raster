@@ -142,19 +142,21 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
         info.vertices_buffers.push_back (buffers [i * 2 + 0]);
         info.indices_buffers.push_back (buffers [i * 2 + 1]);
     }
-    info.insufficent_mem_flag_buffer = buffers [2 * max_frames_in_flight];
 
     buffers [2 * max_frames_in_flight] = vk_utils::createBuffer (device, sizeof (LiteMath::uint)
             , VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [2 * max_frames_in_flight]);
+    info.insufficent_mem_flag_buffer = buffers [2 * max_frames_in_flight];
+
+    info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
 
     LiteMath::uint insufficent_mem_flag = 0;
     copy_helper->UpdateBuffer (info.insufficent_mem_flag_buffer, 0, &insufficent_mem_flag, sizeof (LiteMath::uint));
 
-    info.descriptor_sets.resize (2 * max_frames_in_flight);
+    info.descriptor_sets.resize (max_frames_in_flight);
     for (int i = 0; i < max_frames_in_flight; ++i) {
         ds_maker.BindBegin (shader_stage_flags);
-        ds_maker.BindBuffer (0, info.vertices_buffers [i * 2 + 0], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        ds_maker.BindBuffer (1, info.indices_buffers [i * 2 + 1], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindBuffer (0, info.vertices_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindBuffer (1, info.indices_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         ds_maker.BindBuffer (2, info.insufficent_mem_flag_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
     }

@@ -24,5 +24,8 @@ void main (in uint3 group_id : SV_GroupID) {
         vertices [1] = Vertex(float4(-0.5f, -0.5f, 0.0f, 1.0f), float4(0.0f, 1.0f, 0.0f, 1.0f));
         vertices [2] = Vertex(float4( 0.5f, -0.5f, 0.0f, 1.0f), float4(0.0f, 0.0f, 1.0f, 1.0f));
     }
+    indices [0] = 0;
+    indices [1] = 1;
+    indices [2] = 2;
 }
 

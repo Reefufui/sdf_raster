@@ -38,10 +38,12 @@ public:
     inline VkExtent2D get_swapchain_extent () const { return this->swapchain.GetExtent (); }
     inline VkFormat get_swapchain_image_format () const { return this->swapchain.GetFormat (); }
     inline VkRenderPass get_render_pass () const { return this->render_pass; }
+    inline VkFramebuffer get_swapchain_framebuffer (uint32_t frame) const { return this->swapchain_framebuffers [frame]; }
 
     VkCommandBuffer begin_frame ();
     void end_frame (VkCommandBuffer command_buffer);
     uint32_t get_current_frame () { return this->current_frame; }
+    uint32_t get_current_image_index () { return this->current_image_index; }
     uint32_t get_total_frames () { return this->max_frames_in_flight; }
 
 private:

@@ -137,8 +137,8 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
     info.vertices_buffers.clear ();
     info.indices_buffers.clear ();
     for (int i = 0; i < max_frames_in_flight; ++i) {
-        buffers [i * 2 + 0] = vk_utils::createBuffer (device, vertices_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 2 + 0]);
-        buffers [i * 2 + 1] = vk_utils::createBuffer (device, indices_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 2 + 1]);
+        buffers [i * 2 + 0] = vk_utils::createBuffer (device, vertices_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT, &mem_reqs [i * 2 + 0]);
+        buffers [i * 2 + 1] = vk_utils::createBuffer (device, indices_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT, &mem_reqs [i * 2 + 1]);
         info.vertices_buffers.push_back (buffers [i * 2 + 0]);
         info.indices_buffers.push_back (buffers [i * 2 + 1]);
     }

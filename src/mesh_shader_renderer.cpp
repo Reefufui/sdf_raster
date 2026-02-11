@@ -268,40 +268,45 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
         return;
     }
 
+    const auto extent = this->context->get_swapchain_extent ();
+
+    VkRenderPassBeginInfo render_pass_info {};
+    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    render_pass_info.renderPass = this->context->get_render_pass ();
+    render_pass_info.framebuffer = this->context->get_swapchain_framebuffer (this->context->get_current_image_index ());
+    render_pass_info.renderArea.offset = {0, 0};
+    render_pass_info.renderArea.extent = extent;
+
+    VkClearValue clear_color = {{{0.2f, 0.3f, 0.3f, 1.0f}}};
+    render_pass_info.clearValueCount = 1;
+    render_pass_info.pClearValues = &clear_color;
+
+    vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport viewport {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast <float> (extent.width);
+    viewport.height = static_cast <float> (extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->pipeline);
 
-    vkCmdBindDescriptorSets (
-            cmd_buff,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            this->pipeline_layout,
-            0,
-            1,
-            &this->sdf_octree_ds.descriptor_set,
-            0,
-            nullptr
-            );
+    const auto current_frame = this->context->get_current_frame ();
+    std::array <VkDescriptorSet, 3> descriptor_sets = {
+        this->sdf_octree_ds.descriptor_set,
+        this->active_leafs_ds.descriptor_sets [current_frame],
+        this->marching_cubes_lookup_table_ds.descriptor_set
+    };
 
-    vkCmdBindDescriptorSets (
-            cmd_buff,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            this->pipeline_layout,
-            1,
-            1,
-            &this->active_leafs_ds.descriptor_sets [this->context->get_current_frame ()],
-            0,
-            nullptr
-            );
-
-    vkCmdBindDescriptorSets (
-            cmd_buff,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            this->pipeline_layout,
-            2,
-            1,
-            &this->marching_cubes_lookup_table_ds.descriptor_set,
-            0,
-            nullptr
-            );
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->pipeline_layout,
+                             0, static_cast <uint32_t> (descriptor_sets.size ()), descriptor_sets.data (), 0, nullptr);
 
     this->update_push_constants (a_camera);
     vkCmdPushConstants (cmd_buff
@@ -313,6 +318,8 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
             );
 
     vkCmdDrawMeshTasksEXT (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
+
+    vkCmdEndRenderPass (cmd_buff);
 
     this->context->end_frame (cmd_buff);
 }

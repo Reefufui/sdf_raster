@@ -547,33 +547,6 @@ VkCommandBuffer VulkanContext::begin_frame () {
 
     VK_CHECK_RESULT (vkBeginCommandBuffer (this->frame_resources [this->current_frame].command_buffer, &begin_info));
 
-    VkRenderPassBeginInfo render_pass_info {};
-    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = this->render_pass;
-    render_pass_info.framebuffer = this->swapchain_framebuffers [this->current_image_index];
-    render_pass_info.renderArea.offset = {0, 0};
-    render_pass_info.renderArea.extent = this->swapchain.GetExtent ();
-
-    VkClearValue clear_color = {{{0.2f, 0.3f, 0.3f, 1.0f}}};
-    render_pass_info.clearValueCount = 1;
-    render_pass_info.pClearValues = &clear_color;
-
-    vkCmdBeginRenderPass (this->frame_resources [this->current_frame].command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-
-    VkViewport viewport {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast <float> (this->swapchain.GetExtent ().width);
-    viewport.height = static_cast <float> (this->swapchain.GetExtent ().height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport (this->frame_resources [this->current_frame].command_buffer, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = this->swapchain.GetExtent ();
-    vkCmdSetScissor (this->frame_resources [this->current_frame].command_buffer, 0, 1, &scissor);
-
     return this->frame_resources [this->current_frame].command_buffer;
 }
 
@@ -582,7 +555,6 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
         return;
     }
 
-    vkCmdEndRenderPass (command_buffer);
     VK_CHECK_RESULT (vkEndCommandBuffer (command_buffer));
 
     VkSubmitInfo submit_info {};

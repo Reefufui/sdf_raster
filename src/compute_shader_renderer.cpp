@@ -320,6 +320,107 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
 }
 
 void ComputeShaderRenderer::render (const Camera& a_camera) {
+    if (!this->initialized) {
+        std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
+        return;
+    }
+
+    auto cmd_buff = this->context->begin_frame ();
+    if (cmd_buff == VK_NULL_HANDLE) {
+        return;
+    }
+
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_pipeline);
+
+    const auto current_frame = this->context->get_current_frame ();
+    std::array <VkDescriptorSet, 3> compute_descriptor_sets = {
+        this->sdf_octree_ds.descriptor_set,
+        this->mesh_ds.descriptor_sets [current_frame],
+        this->marching_cubes_lookup_table_ds.descriptor_set
+    };
+
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_pipeline_layout,
+                             0, static_cast <uint32_t> (compute_descriptor_sets.size ()), compute_descriptor_sets.data (), 0, nullptr);
+
+    update_push_constants (a_camera);
+    vkCmdPushConstants (cmd_buff, this->compute_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+
+    vkCmdDispatch (cmd_buff, 1, 1, 1);
+
+    VkBufferMemoryBarrier vertex_buffer_barrier = {};
+    vertex_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    vertex_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    vertex_buffer_barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+    vertex_buffer_barrier.buffer = this->mesh_ds.vertices_buffers [current_frame];
+    vertex_buffer_barrier.offset = 0;
+    vertex_buffer_barrier.size = VK_WHOLE_SIZE;
+
+    VkBufferMemoryBarrier index_buffer_barrier = {};
+    index_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    index_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    index_buffer_barrier.dstAccessMask = VK_ACCESS_INDEX_READ_BIT;
+    index_buffer_barrier.buffer = this->mesh_ds.indices_buffers [current_frame];
+    index_buffer_barrier.offset = 0;
+    index_buffer_barrier.size = VK_WHOLE_SIZE;
+
+    std::array <VkBufferMemoryBarrier, 2> barriers = {vertex_buffer_barrier, index_buffer_barrier};
+
+    vkCmdPipelineBarrier (
+        cmd_buff,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+        0,
+        0, nullptr,
+        static_cast <uint32_t> (barriers.size ()), barriers.data (),
+        0, nullptr
+    );
+
+    const auto extent = this->context->get_swapchain_extent ();
+
+    VkRenderPassBeginInfo render_pass_info {};
+    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    render_pass_info.renderPass = this->context->get_render_pass ();
+    render_pass_info.framebuffer = this->context->get_swapchain_framebuffer (this->context->get_current_image_index ());
+    render_pass_info.renderArea.offset = {0, 0};
+    render_pass_info.renderArea.extent = extent;
+
+    VkClearValue clear_color = {{{0.2f, 0.3f, 0.3f, 1.0f}}};
+    render_pass_info.clearValueCount = 1;
+    render_pass_info.pClearValues = &clear_color;
+
+    vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport viewport {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast <float> (extent.width);
+    viewport.height = static_cast <float> (extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_pipeline);
+
+    vkCmdPushConstants (cmd_buff, this->graphics_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &push_constants);
+
+    VkBuffer vertex_buffers [] = {this->mesh_ds.vertices_buffers [current_frame]};
+    VkDeviceSize offsets [] = {0};
+    vkCmdBindVertexBuffers (cmd_buff, 0, 1, vertex_buffers, offsets);
+    vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds.indices_buffers [current_frame], 0, VK_INDEX_TYPE_UINT32);
+
+    uint32_t index_count = 3;
+    // TODO: uint32_t actual_index_count = fetch_actual_index_count_from_gpu_buffer (cmd_buff, this->mesh_ds.indices_count_buffer [current_frame]);
+
+    vkCmdDrawIndexed (cmd_buff, index_count, 1, 0, 0, 0);
+
+    vkCmdEndRenderPass (cmd_buff);
+
+    this->context->end_frame (cmd_buff);
 }
 
 void ComputeShaderRenderer::resize (int a_width, int a_height) {

@@ -53,7 +53,6 @@ private:
     SdfOctree sdf_octree {};
     std::vector <NodeContext> subtrees {};
 
-	VkDeviceSize active_leafs_size;
     PushConstantsData push_constants;
 
     bool initialized {false};

@@ -61,14 +61,6 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
     std::cout << "[ComputeShaderRenderer::init] max vertices per task:" << this->push_constants.max_count_per_task << std::endl;
 
     // dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
-    std::cout << "---" << std::endl;
-    std::cout << "[ComputeShaderRenderer::init] Subtree [0].min_corner.x=" << this->subtrees [0].min_corner.x << std::endl;
-    std::cout << "[ComputeShaderRenderer::init] Subtree [0].min_corner.y=" << this->subtrees [0].min_corner.y << std::endl;
-    std::cout << "[ComputeShaderRenderer::init] Subtree [0].min_corner.z=" << this->subtrees [0].min_corner.z << std::endl;
-    std::cout << "[ComputeShaderRenderer::init] Subtree [0].min_corner.voxel_size=" << this->subtrees [0].voxel_size << std::endl;
-    std::cout << "[ComputeShaderRenderer::init] Subtree [0].min_corner.node_index=" << this->subtrees [0].node_index << std::endl;
-    std::cout << "[ComputeShaderRenderer::init] Subtree [0].cube_index=" << this->subtrees [0].cube_index << std::endl;
-    std::cout << "---" << std::endl;
 
     this->init_descriptor_sets ();
     this->init_compute_shading_pipeline ();
@@ -228,7 +220,7 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
     viewport.width = (float) this->width;
     viewport.height = (float) this->height;
     viewport.minDepth = 0.0f;
-    viewport.maxDepth = 10000.0f;
+    viewport.maxDepth = 1.0f;
 
     VkRect2D scissor {};
     scissor.offset = {0, 0};
@@ -247,7 +239,7 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -345,7 +337,7 @@ void ComputeShaderRenderer::render (const Camera& a_camera) {
     update_push_constants (a_camera);
     vkCmdPushConstants (cmd_buff, this->compute_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-    vkCmdDispatch (cmd_buff, 1, 1, 1);
+    vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
 
     VkBufferMemoryBarrier vertex_buffer_barrier = {};
     vertex_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -377,16 +369,18 @@ void ComputeShaderRenderer::render (const Camera& a_camera) {
 
     const auto extent = this->context->get_swapchain_extent ();
 
+    std::array <VkClearValue, 2> clear_values {};
+    clear_values [0].color = {{0.2f, 0.3f, 0.3f, 1.0f}};
+    clear_values [1].depthStencil = {1.0f, 0};
+
     VkRenderPassBeginInfo render_pass_info {};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     render_pass_info.renderPass = this->context->get_render_pass ();
     render_pass_info.framebuffer = this->context->get_swapchain_framebuffer (this->context->get_current_image_index ());
     render_pass_info.renderArea.offset = {0, 0};
     render_pass_info.renderArea.extent = extent;
-
-    VkClearValue clear_color = {{{0.2f, 0.3f, 0.3f, 1.0f}}};
-    render_pass_info.clearValueCount = 1;
-    render_pass_info.pClearValues = &clear_color;
+    render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
+    render_pass_info.pClearValues = clear_values.data ();
 
     vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -413,9 +407,7 @@ void ComputeShaderRenderer::render (const Camera& a_camera) {
     vkCmdBindVertexBuffers (cmd_buff, 0, 1, vertex_buffers, offsets);
     vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds.indices_buffers [current_frame], 0, VK_INDEX_TYPE_UINT32);
 
-    uint32_t index_count = 3;
-    // TODO: uint32_t actual_index_count = fetch_actual_index_count_from_gpu_buffer (cmd_buff, this->mesh_ds.indices_count_buffer [current_frame]);
-
+    const uint32_t index_count = uint32_t {36} * static_cast <uint32_t> (this->subtrees.size ());
     vkCmdDrawIndexed (cmd_buff, index_count, 1, 0, 0, 0);
 
     vkCmdEndRenderPass (cmd_buff);

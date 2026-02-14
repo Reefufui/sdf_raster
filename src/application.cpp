@@ -55,9 +55,9 @@ void Application::marching_cubes_cpu (const std::string& a_octree_filename, cons
     // root_payload.node_index = 0;
     // root_payload.voxel_size = 2.f;
     // root_payload.min_corner = {-1.0f, -1.0f, -1.0f};
-    auto subtrees = get_octree_subtrees_payloads (scene, 0);
-    cpu_sandbox::task_generator (subtrees [0], scene.nodes);
-    cpu_sandbox::dump_obj ("result.obj");
+    // auto subtrees = get_octree_subtrees_payloads (scene, 0);
+    // cpu_sandbox::task_generator (subtrees [0], scene.nodes);
+    // cpu_sandbox::dump_obj ("result.obj");
 }
 
 void Application::run (bool single_frame) {

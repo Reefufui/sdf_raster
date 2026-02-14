@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <set>
 #include <stdexcept>
@@ -67,8 +68,16 @@ void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support)
             , this->max_frames_in_flight
             , true);
 
+    this->create_depth_resources ();
     this->create_render_pass ();
-    this->swapchain_framebuffers = vk_utils::createFrameBuffers (this->get_device (), this->swapchain, this->render_pass);
+
+    std::vector <VkImageView> depth_views (this->swapchain.GetImageCount ());
+    for (size_t i = 0; i < this->swapchain.GetImageCount (); ++i) {
+        depth_views [i] = depth_textures [i].view;
+    }
+
+    this->swapchain_framebuffers = vk_utils::createFrameBuffers (this->get_device (), this->swapchain, this->render_pass, depth_views);
+
     this->create_frame_resources ();
 
     this->initialized = true;
@@ -349,6 +358,8 @@ void VulkanContext::shutdown () {
         vkDeviceWaitIdle (this->get_device ());
     }
 
+    this->destroy_depth_resources ();
+
     this->swapchain.Cleanup ();
     for (auto framebuffer : this->swapchain_framebuffers) {
         if (framebuffer != VK_NULL_HANDLE) {
@@ -433,6 +444,8 @@ void VulkanContext::resize(int a_width, int a_height) {
     }
     vkDeviceWaitIdle (this->get_device ());
 
+    this->destroy_depth_resources ();
+
     for (auto framebuffer : this->swapchain_framebuffers) {
         if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer (this->get_device (), framebuffer, nullptr);
     }
@@ -448,11 +461,18 @@ void VulkanContext::resize(int a_width, int a_height) {
                                      , height
                                      , this->max_frames_in_flight
                                      , true);
-    this->swapchain_framebuffers = vk_utils::createFrameBuffers (this->get_device (), this->swapchain, this->render_pass);
+    this->create_depth_resources ();
+
+    std::vector <VkImageView> depth_views (this->swapchain.GetImageCount ());
+    for (size_t i = 0; i < this->swapchain.GetImageCount (); ++i) {
+        depth_views [i] = depth_textures [i].view;
+    }
+    this->swapchain_framebuffers = vk_utils::createFrameBuffers (this->get_device (), this->swapchain, this->render_pass, depth_views);
 
     this->create_frame_resources ();
 
     this->current_frame = 0;
+    this->current_image_index = 0;
 }
 
 void VulkanContext::create_render_pass () {
@@ -470,27 +490,54 @@ void VulkanContext::create_render_pass () {
     color_attachment_ref.attachment = 0;
     color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentDescription depth_attachment {};
+    depth_attachment.format = this->depth_format;
+    depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depth_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkAttachmentReference depth_attachment_ref {};
+    depth_attachment_ref.attachment = 1;
+    depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription subpass {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &color_attachment_ref;
+    subpass.pDepthStencilAttachment = &depth_attachment_ref;
 
-    VkSubpassDependency dependency {};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    std::array <VkSubpassDependency, 2> dependencies;
+
+    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[0].dstSubpass = 0;
+    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].srcAccessMask = 0;
+    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[0].dependencyFlags = 0;
+
+    dependencies[1].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[1].dstSubpass = 0;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[1].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    dependencies[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[1].dependencyFlags = 0;
+
+    std::array <VkAttachmentDescription, 2> attachments = {color_attachment, depth_attachment};
 
     VkRenderPassCreateInfo render_pass_info {};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    render_pass_info.attachmentCount = 1;
-    render_pass_info.pAttachments = &color_attachment;
+    render_pass_info.attachmentCount = static_cast <uint32_t> (attachments.size ());
+    render_pass_info.pAttachments = attachments.data ();
     render_pass_info.subpassCount = 1;
     render_pass_info.pSubpasses = &subpass;
-    render_pass_info.dependencyCount = 1;
-    render_pass_info.pDependencies = &dependency;
+    render_pass_info.dependencyCount = static_cast <uint32_t> (dependencies.size ());
+    render_pass_info.pDependencies = dependencies.data ();
 
     VK_CHECK_RESULT (vkCreateRenderPass (this->get_device (), &render_pass_info, nullptr, &this->render_pass));
 }
@@ -586,6 +633,53 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
     }
 
     this->current_frame = (this->current_frame + 1) % this->max_frames_in_flight;
+}
+
+void VulkanContext::create_depth_resources () {
+    if (!vk_utils::getSupportedDepthFormat (this->get_physical_device (), {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &this->depth_format)) {
+        throw std::runtime_error ("create_render_pass: couldn't find supported depth format");
+    }
+
+    VkExtent2D swapChainExtent = this->swapchain.GetExtent ();
+
+    this->depth_textures.resize (max_frames_in_flight);
+
+    VkCommandBuffer cmd = vk_utils::createCommandBuffer (this->device, this->transfer_command_pool_transistent);
+    VkCommandBufferBeginInfo cmd_buff_info = {};
+    cmd_buff_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    VK_CHECK_RESULT (vkBeginCommandBuffer (cmd, &cmd_buff_info));
+
+    for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
+        this->depth_textures [i] = vk_utils::createDepthTexture (this->device, this->physical_device
+            , swapChainExtent.width, swapChainExtent.height, this->depth_format, true);
+
+        vk_utils::setImageLayout (
+            cmd,
+            this->depth_textures [i].image,
+            VK_IMAGE_ASPECT_DEPTH_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
+
+    }
+
+    vkEndCommandBuffer (cmd);
+    vk_utils::executeCommandBufferNow (cmd, this->transfer_queue, this->device);
+
+    this->depth_sampler = vk_utils::createSampler (this->device, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                          VK_BORDER_COLOR_INT_OPAQUE_BLACK, 1);
+}
+
+void VulkanContext::destroy_depth_resources () {
+    for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
+        vk_utils::deleteImg (this->device, &this->depth_textures [i]);
+    }
+    this->depth_textures.clear ();
+    if (this->depth_sampler != VK_NULL_HANDLE) {
+        vkDestroySampler (this->device, this->depth_sampler, nullptr);
+        this->depth_sampler = VK_NULL_HANDLE;
+    }
 }
 
 }

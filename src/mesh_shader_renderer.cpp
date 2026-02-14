@@ -70,14 +70,6 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     // exit (0);
 
     // dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
-    std::cout << "---" << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.x=" << this->subtrees [0].min_corner.x << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.y=" << this->subtrees [0].min_corner.y << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.z=" << this->subtrees [0].min_corner.z << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.voxel_size=" << this->subtrees [0].voxel_size << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].min_corner.node_index=" << this->subtrees [0].node_index << std::endl;
-    std::cout << "[MeshShaderRenderer::init] Subtree [0].cube_index=" << this->subtrees [0].cube_index << std::endl;
-    std::cout << "---" << std::endl;
 
     this->init_mesh_shading_pipeline ();
     this->initialized = true;
@@ -380,9 +372,9 @@ void dump_active_leafs (const std::vector <LeafContext>& contexts, const std::st
             file << "Cube Index:     " << node.cube_index << "\n";
             file << "Voxel Size:     " << node.voxel_size << "\n";
             file << "Min Corner:     (" 
-                 << node.min_corner.x << ", "
-                 << node.min_corner.y << ", "
-                 << node.min_corner.z << ")\n";
+                 << node.min_corner_x << ", "
+                 << node.min_corner_y << ", "
+                 << node.min_corner_z << ")\n";
             file << "Verts Offset:   " << leaf.vertices_local_offset << "\n";
             file << "Tris Offset:    " << leaf.triangles_local_offset << "\n\n";
         }

@@ -30,7 +30,9 @@ struct Vertex {
 #endif // __cplusplus
 
 struct NodeContext {
-    float3 min_corner;
+    float min_corner_x;
+    float min_corner_y;
+    float min_corner_z;
     float voxel_size;
     int node_index;
     int cube_index;

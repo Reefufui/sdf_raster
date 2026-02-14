@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vk_context.h"
+#include "vk_images.h"
 #include "vk_swapchain.h"
 #include "vk_utils.h"
 #include "GLFW/glfw3.h"
@@ -55,6 +56,8 @@ private:
     void get_device_queues ();
     void create_render_pass ();
     void create_frame_resources ();
+    void create_depth_resources ();
+    void destroy_depth_resources ();
 
 private:
     VkInstance instance = VK_NULL_HANDLE;
@@ -80,6 +83,10 @@ private:
     VulkanSwapChain swapchain;
     std::vector <VkFramebuffer> swapchain_framebuffers;
     VkRenderPass render_pass = VK_NULL_HANDLE;
+
+    std::vector <vk_utils::VulkanImageMem> depth_textures;
+    VkFormat depth_format;
+    VkSampler depth_sampler = VK_NULL_HANDLE;
 
     const int max_frames_in_flight = 3;
     uint32_t current_frame = 0;

@@ -124,12 +124,15 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
         throw std::runtime_error ("ICopyEngine shared_ptr cannot be null.");
     }
 
-    VkDeviceSize vertices_size = max_vertices_count * sizeof (Vertex);
-    VkDeviceSize indices_size = max_vertices_count * sizeof (LiteMath::uint);
+    // VkDeviceSize vertices_size = max_vertices_count * sizeof (Vertex);
+    // VkDeviceSize indices_size = max_vertices_count * sizeof (LiteMath::uint) * 3;
+    VkDeviceSize indices_size = 36 * 190 * sizeof (uint32_t);
+    VkDeviceSize vertices_size = 8 * 190 * sizeof (Vertex);
 
     if (max_vertices_count == 0) {
         throw std::runtime_error ("create_mesh_descriptor_set: max_vertices_count is 0, cannot create descriptor set.");
     }
+    std::cout << "create_mesh_descriptor_set: max_vertices_count = " << max_vertices_count << std::endl;
 
     std::vector <VkBuffer> buffers (1 + 2 * max_frames_in_flight);
     std::vector <VkMemoryRequirements> mem_reqs (1 + 2 * max_frames_in_flight);
@@ -196,6 +199,16 @@ LiteMath::uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngin
     LiteMath::uint data;
     copy_helper->ReadBuffer (info.insufficent_mem_flag_buffer, 0, &data, sizeof (LiteMath::uint));
     return data;
+}
+
+Mesh fetch_mesh_from_device (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, const MeshDescriptorSetInfo& info, size_t frame) {
+    std::vector <uint32_t> idxs (36 * 190);
+    std::vector <Vertex> verts (8 * 190);
+
+    copy_helper->ReadBuffer (info.indices_buffers [frame], 0, idxs.data (), sizeof (uint32_t) * 36 * 190);
+    copy_helper->ReadBuffer (info.vertices_buffers [frame], 0, verts.data (), sizeof (Vertex) * 8 * 190);
+
+    return {std::move (idxs), std::move (verts)};
 }
 
 }

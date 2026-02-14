@@ -68,6 +68,7 @@ namespace sdf_raster {
 
         std::vector <VkBuffer> vertices_buffers;
         std::vector <VkBuffer> indices_buffers;
+        VkBuffer indices_count = VK_NULL_HANDLE;
         VkBuffer insufficent_mem_flag_buffer = VK_NULL_HANDLE;
 
         VkDeviceMemory memory = VK_NULL_HANDLE;
@@ -86,5 +87,6 @@ namespace sdf_raster {
 
     LiteMath::uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, MeshDescriptorSetInfo info);
 
+    Mesh fetch_mesh_from_device (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, const MeshDescriptorSetInfo& info, size_t frame);
 }
 

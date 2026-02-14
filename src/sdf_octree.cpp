@@ -216,6 +216,20 @@ void cleanup_active_leafs_descriptor_set (VkDevice device, ActiveLeafsDescriptor
     info = {};
 }
 
+namespace {
+
+std::ostream& operator<< (std::ostream& os, const NodeContext& context) {
+    os << "NodeContext {"
+        << " min_corner: (" << context.min_corner_x << "," << context.min_corner_y << "," << context.min_corner_z << ")"
+        << " voxel_size: " << context.voxel_size << ","
+        << " node_index: " << context.node_index << ","
+        << " cube_index: " << context.cube_index
+        << " }";
+    return os;
+}
+
+}
+
 std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend) {
     std::vector <NodeContext> payloads;
 
@@ -255,23 +269,19 @@ std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, 
         s.pop ();
 
         const SdfOctreeNode& node = scene.nodes [current.node_idx];
-        std::cout << "values: ";
-        for (int i = 0; i < 8; ++i) {
-            std::cout << " " << node.values [i];
-        }
-        std::cout << " offset: " << node.offset << std::endl;
 
         if (current.level >= max_level_to_descend || node.offset == 0) {
             int cube_index = calc_cube_index (node.values);
             if (node.offset == 0 && (cube_index == 0 || cube_index == 255)) {
                 continue; // no triangles
             }
-
             payloads.push_back ({
-                current.min_corner,
+                current.min_corner.x,
+                current.min_corner.y,
+                current.min_corner.z,
                 current.voxel_size,
                 static_cast <int> (current.node_idx),
-                cube_index,
+                cube_index
             });
             continue;
         }
@@ -295,6 +305,9 @@ std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, 
         }
     }
 
+    for (size_t i = 0; i < payloads.size (); ++i) {
+        std::cout << "Subtree LVL=" << max_level_to_descend << " ["<< i << "] = " << payloads [i] << std::endl;
+    }
     return payloads;
 }
 

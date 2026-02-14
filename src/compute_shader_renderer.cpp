@@ -25,7 +25,6 @@ ComputeShaderRenderer::~ComputeShaderRenderer () {
 }
 
 void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_max_vertices_count) {
-    a_max_vertices_count = 10000;
     std::cout << "ComputeShaderRenderer initializing..." << std::endl;
 
     if (!this->context || !this->context->is_initialized ()) {
@@ -187,20 +186,28 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
 
     VkVertexInputBindingDescription bindingDescription {};
     bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof (float) * (4 + 4);
+    bindingDescription.stride = sizeof (Vertex);
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::vector <VkVertexInputAttributeDescription> attributeDescriptions (2);
+    std::vector <VkVertexInputAttributeDescription> attributeDescriptions (3);
 
+    // position
     attributeDescriptions [0].binding = 0;
     attributeDescriptions [0].location = 0;
     attributeDescriptions [0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
     attributeDescriptions [0].offset = 0;
 
+    // normal
     attributeDescriptions [1].binding = 0;
     attributeDescriptions [1].location = 1;
     attributeDescriptions [1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
     attributeDescriptions [1].offset = sizeof (float) * 4;
+
+    // color
+    attributeDescriptions [2].binding = 0;
+    attributeDescriptions [2].location = 2;
+    attributeDescriptions [2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributeDescriptions [2].offset = sizeof (float) * 8;
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

@@ -1,18 +1,18 @@
-struct VertexInput {
-    float4 position : TEXCOORD0;
-    float4 color    : TEXCOORD1;
-};
+// vert.slang
 
-struct VertexOutput
-{
-    float4 position : SV_Position;
-    float4 color    : COLOR0;
+#include "common.h"
+
+struct VertexStageOutput {
+    Vertex frament_input : FragmentInput;
+    float4 sv_position : SV_Position;
 };
 
 [shader ("vertex")]
-VertexOutput main(VertexInput input) {
-    VertexOutput output;
-    output.position = input.position;
-    output.color = input.color;
+VertexStageOutput main (Vertex input) {
+    VertexStageOutput output;
+    output.sv_position = input.position;
+    output.frament_input.position = input.position;
+    output.frament_input.normal = input.normal;
+    output.frament_input.color = input.color;
     return output;
 }

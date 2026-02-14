@@ -20,14 +20,13 @@ using float4 = LiteMath::float4;
 using float4x4 = LiteMath::float4x4;
 using uint = unsigned int;
 
-#else
+#endif // __cplusplus
 
 struct Vertex {
-    float4 position : SV_Position;
-    float4 color : Color;
+    float4 position;
+    float4 normal;
+    float4 color;
 };
-
-#endif // __cplusplus
 
 struct NodeContext {
     float min_corner_x;

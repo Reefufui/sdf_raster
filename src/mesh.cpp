@@ -6,26 +6,6 @@
 
 namespace sdf_raster {
 
-std::size_t hash_vec(const LiteMath::float3& v) {
-    float x = v.x;
-    float y = v.y;
-    float z = v.z;
-
-    x = x >=0 ? 2 * x : -2 * x - 1;
-    y = y >=0 ? 2 * y : -2 * y - 1;
-    z = z >=0 ? 2 * z : -2 * z - 1;
-
-    auto max = std::max({x,y,z});
-    double hash = pow(max,3) + (2 * max * z) + z;
-    if(max == z)
-        hash += pow(std::max(x,y), 2);
-    if(y >= x)
-        hash += x+y;
-    else
-        hash += y;
-    return static_cast<std::size_t>(hash);
-}
-
 Mesh::Mesh() {
 }
 
@@ -42,11 +22,6 @@ void Mesh::clear() {
     indices.clear();
 }
 
-void Mesh::add_vertex(Vertex v) {
-    uint32_t index = this->index_vertex(v);
-    this->indices.push_back(index);
-}
-
 void Mesh::add_vertex_fast(Vertex v) {
     int new_index = vertices.size();
     this->indices.push_back(new_index);
@@ -54,25 +29,9 @@ void Mesh::add_vertex_fast(Vertex v) {
 }
 
 void Mesh::add_triangle(Vertex a, Vertex b, Vertex c) {
-    uint32_t index_a = this->index_vertex(a);
-    uint32_t index_b = this->index_vertex(b);
-    uint32_t index_c = this->index_vertex(c);
-
-    this->indices.push_back(index_a);
-    this->indices.push_back(index_b);
-    this->indices.push_back(index_c);
-}
-
-uint32_t Mesh::index_vertex(const Vertex& v) {
-    auto it = vertex_to_index.find(v);
-    if (it != vertex_to_index.end()) {
-        return it->second;
-    } else {
-        int new_index = vertices.size();
-        vertices.push_back(v);
-        vertex_to_index[v] = new_index;
-        return new_index;
-    }
+    this->add_vertex_fast (a);
+    this->add_vertex_fast (b);
+    this->add_vertex_fast (c);
 }
 
 void save_mesh_as_obj (const Mesh& mesh, const std::string& filename) {
@@ -126,8 +85,8 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
 
     // VkDeviceSize vertices_size = max_vertices_count * sizeof (Vertex);
     // VkDeviceSize indices_size = max_vertices_count * sizeof (LiteMath::uint) * 3;
-    VkDeviceSize indices_size = 36 * 190 * sizeof (uint32_t);
-    VkDeviceSize vertices_size = 8 * 190 * sizeof (Vertex);
+    VkDeviceSize indices_size = 36 * 256 * sizeof (uint32_t);
+    VkDeviceSize vertices_size = 23 * 256 * sizeof (Vertex);
 
     if (max_vertices_count == 0) {
         throw std::runtime_error ("create_mesh_descriptor_set: max_vertices_count is 0, cannot create descriptor set.");
@@ -202,11 +161,11 @@ LiteMath::uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngin
 }
 
 Mesh fetch_mesh_from_device (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, const MeshDescriptorSetInfo& info, size_t frame) {
-    std::vector <uint32_t> idxs (36 * 190);
-    std::vector <Vertex> verts (8 * 190);
+    std::vector <uint32_t> idxs (36 * 256);
+    std::vector <Vertex> verts (23 * 256);
 
-    copy_helper->ReadBuffer (info.indices_buffers [frame], 0, idxs.data (), sizeof (uint32_t) * 36 * 190);
-    copy_helper->ReadBuffer (info.vertices_buffers [frame], 0, verts.data (), sizeof (Vertex) * 8 * 190);
+    copy_helper->ReadBuffer (info.indices_buffers [frame], 0, idxs.data (), sizeof (uint32_t) * 36 * 256);
+    copy_helper->ReadBuffer (info.vertices_buffers [frame], 0, verts.data (), sizeof (Vertex) * 23 * 256);
 
     return {std::move (idxs), std::move (verts)};
 }

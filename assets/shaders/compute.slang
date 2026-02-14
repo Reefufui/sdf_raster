@@ -17,6 +17,8 @@
 [[vk::binding (2, 2)]] StructuredBuffer <int> cube_index_2_triangle_indices; // [256][16]
 [[vk::binding (3, 2)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
 
+#include "flatshadable_voxel.slang"
+
 float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
     if (abs (0.f - valp1) < 0.00001)
         return (p1);
@@ -127,44 +129,6 @@ void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
     s_indices_count += leaf_triangles_count;
 }
 
-void draw_voxel (uint ti, NodeContext root) {
-    const float4 cube_color = colors [ti % 8];
-    const float voxel_size = root.voxel_size;
-    const float4 min_corner = float4 (root.min_corner_x, root.min_corner_y, root.min_corner_z, 0.f);
-
-    g_vertices [ti * 8 + 0].position = mul (pc.view_proj, min_corner + float4 (0.f, 0.f, 0.f, 1.f));
-    g_vertices [ti * 8 + 1].position = mul (pc.view_proj, min_corner + float4 (voxel_size, 0.0f, 0.0f, 1.0f));
-    g_vertices [ti * 8 + 2].position = mul (pc.view_proj, min_corner + float4 (voxel_size, voxel_size, 0.0f, 1.0f));
-    g_vertices [ti * 8 + 3].position = mul (pc.view_proj, min_corner + float4 (0.0f, voxel_size, 0.0f, 1.0f));
-    g_vertices [ti * 8 + 4].position = mul (pc.view_proj, min_corner + float4 (0.0f, 0.0f, voxel_size, 1.0f));
-    g_vertices [ti * 8 + 5].position = mul (pc.view_proj, min_corner + float4 (voxel_size, 0.0f, voxel_size, 1.0f));
-    g_vertices [ti * 8 + 6].position = mul (pc.view_proj, min_corner + float4 (voxel_size, voxel_size, voxel_size, 1.0f));
-    g_vertices [ti * 8 + 7].position = mul (pc.view_proj, min_corner + float4 (0.0f, voxel_size, voxel_size, 1.0f));
-
-    for (int i = 0; i < 8; ++i) {
-        g_vertices [ti * 8 + i].color = cube_color;
-    }
-
-    uint indices [36] = {
-        0, 1, 2,
-        0, 2, 3,
-        4, 6, 5,
-        4, 7, 6,
-        0, 3, 7,
-        0, 7, 4,
-        1, 5, 6,
-        1, 6, 2,
-        0, 4, 5,
-        0, 5, 1,
-        3, 2, 6,
-        3, 6, 7
-    };
-
-    for (int i = 0; i < 36; ++i) {
-        g_indices [ti * 36 + i] = ti * 8 + indices [i];
-    }
-}
-
 void dfs_octree (in uint3 group_id, NodeContext root) {
     if (g_octree_data [root.node_index].offset == 0) {
         process_voxel (root, g_octree_data [root.node_index]);
@@ -222,7 +186,7 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
 [shader ("compute")]
 [numthreads (1, 1, 1)]
 void main (uint3 thread_id : SV_DispatchThreadID) {
-    draw_voxel (thread_id.x, g_roots [thread_id.x]);
+    flatshadable_voxel (g_roots [thread_id.x], thread_id.x, colors [thread_id.x % 16]);
     return;
 }
 

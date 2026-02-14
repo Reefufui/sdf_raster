@@ -7,8 +7,7 @@
 #include "vk_descriptor_sets.h"
 #include "vk_utils.h"
 
-//
-// Lookup Tables for Marching Cubes
+// Lookup Tables for Marching Cubes (VK_FRONT_FACE_COUNTER_CLOCKWISE)
 //
 // These tables differ from the original paper (Marching Cubes: A High Resolution 3D Surface Construction Algorithm)
 //
@@ -40,9 +39,8 @@
 //    0 +-------------+ 1             +------0------+         
 //
 // Triangulation cases are generated prioritising rotations over inversions, which can introduce non-manifold geometry.
-//
 
-// Pair of vertex indices for each edge on the cube
+
 static const LiteMath::uint2 edge_corners [12] = {
     LiteMath::uint2 {0, 1}
     , LiteMath::uint2 {1, 3}

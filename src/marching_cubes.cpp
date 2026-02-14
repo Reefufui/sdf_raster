@@ -186,11 +186,12 @@ void process_leaf_node (const VoxelInfo& voxel_info , Mesh& mesh , const float i
 
     const int *triangle_indices = cube_index_2_triangle_indices [cube_index];
     for (int i = 0; triangle_indices [i] != -1; ++i) {
+        const auto position = edge_vertices [triangle_indices [i]];
         Vertex vertex;
-        vertex.position = edge_vertices [triangle_indices [i]];
-        vertex.normal = estimate_normal (scene, vertex.position);
+        vertex.position = LiteMath::to_float4 (position, 1.f);
+        vertex.normal = LiteMath::to_float4 (estimate_normal (scene, position), 1.f);
         mesh.add_vertex_fast (vertex);
-        cpu_sandbox::add_vertex (LiteMath::to_float4 (vertex.position, 1.f));
+        cpu_sandbox::add_vertex (vertex.position);
 
         if ((i + 1) % 3 == 0) {
             size_t offset = cpu_sandbox::get_vertex_count ();

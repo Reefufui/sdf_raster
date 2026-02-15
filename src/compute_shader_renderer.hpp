@@ -32,9 +32,20 @@ public:
 private:
     void init_descriptor_sets ();
     void init_compute_active_leafs_pipeline ();
+    void init_compute_prefix_sum_pass1_pipeline ();
+    void init_compute_prefix_sum_pass2_pipeline ();
+    void init_compute_prefix_sum_pass3_pipeline ();
+    void init_compute_geometry_pipeline ();
     void init_graphics_shading_pipeline ();
 
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame);
+    void compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame);
+    void prefix_sum_pass1 (VkCommandBuffer cmd_buff, size_t current_frame);
+    void prefix_sum_pass2 (VkCommandBuffer cmd_buff, size_t current_frame);
+    void prefix_sum_pass3 (VkCommandBuffer cmd_buff, size_t current_frame);
+    void compute_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
+    void geometry_barrier (VkCommandBuffer cmd_buff, size_t current_frame);
+    void draw_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
 
     std::shared_ptr <VulkanContext> context {nullptr};
 
@@ -49,8 +60,16 @@ private:
     VkPipelineLayout graphics_pipeline_layout {VK_NULL_HANDLE};
     VkPipeline graphics_pipeline {VK_NULL_HANDLE};
 
-    VkPipelineLayout compute_pipeline_layout {VK_NULL_HANDLE};
-    VkPipeline compute_pipeline {VK_NULL_HANDLE};
+    VkPipeline compute_active_leafs_pipeline {VK_NULL_HANDLE};
+    VkPipeline compute_geometry_pipeline {VK_NULL_HANDLE};
+    VkPipeline compute_prefix_sum_pass1_pipeline {VK_NULL_HANDLE};
+    VkPipeline compute_prefix_sum_pass2_pipeline {VK_NULL_HANDLE};
+    VkPipeline compute_prefix_sum_pass3_pipeline {VK_NULL_HANDLE};
+    VkPipelineLayout compute_active_leafs_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout compute_geometry_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout compute_prefix_sum_pass1_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout compute_prefix_sum_pass2_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout compute_prefix_sum_pass3_pipeline_layout {VK_NULL_HANDLE};
 
     int width {};
     int height {};

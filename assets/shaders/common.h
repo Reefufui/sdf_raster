@@ -1,6 +1,7 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#define PREFIX_SUM_WORKGROUP_SIZE 256
 #define MESH_WORKGROUP_SIZE 16
 #define MAX_VERTS_PER_MESHLET (MESH_WORKGROUP_SIZE * 12)
 #define MAX_PRIMS_PER_MESHLET (MESH_WORKGROUP_SIZE * 5)
@@ -19,6 +20,16 @@ using float3 = LiteMath::float3;
 using float4 = LiteMath::float4;
 using float4x4 = LiteMath::float4x4;
 using uint = unsigned int;
+
+#else
+
+struct VkDrawIndexedIndirectCommand {
+    uint    indexCount;
+    uint    instanceCount;
+    uint    firstIndex;
+    int     vertexOffset;
+    uint    firstInstance;
+};
 
 #endif // __cplusplus
 

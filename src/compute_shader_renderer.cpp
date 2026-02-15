@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <stdexcept>
 
+#include "vk_pipeline.h"
 #include "compute_shader_renderer.hpp"
 #include "application.hpp"
 #include "cpu_sandbox/cpu_sandbox.h"
@@ -57,7 +58,12 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
 
     this->init_descriptor_sets ();
     this->init_compute_active_leafs_pipeline ();
+    this->init_compute_prefix_sum_pass1_pipeline ();
+    this->init_compute_prefix_sum_pass2_pipeline ();
+    this->init_compute_prefix_sum_pass3_pipeline ();
+    this->init_compute_geometry_pipeline ();
     this->init_graphics_shading_pipeline ();
+
     this->initialized = true;
     std::cout << "ComputeShaderRenderer initialized successfully." << std::endl;
 }
@@ -106,56 +112,59 @@ void ComputeShaderRenderer::init_descriptor_sets () {
 
 void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
     std::cout << "ComputeShaderRenderer::init_compute_active_leafs_pipeline called." << std::endl;
+    vk_utils::ComputePipelineMaker compute_pipeline_maker;
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/compute.slang.spv");
+    this->compute_active_leafs_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
+            this->sdf_octree_ds.descriptor_set_layout
+            , this->mesh_ds.descriptor_set_layout
+            , this->marching_cubes_lookup_table_ds.descriptor_set_layout
+            , this->active_leafs_ds.descriptor_set_layout
+        }, sizeof (PushConstantsData));
+    this->compute_active_leafs_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
+}
 
-    const size_t shaders_count = 1;
-    std::vector <VkShaderModule> shader_modules (shaders_count);
-    std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
+void ComputeShaderRenderer::init_compute_prefix_sum_pass1_pipeline () {
+    std::cout << "ComputeShaderRenderer::init_compute_prefix_sum_pass1 pipeline called." << std::endl;
+    vk_utils::ComputePipelineMaker compute_pipeline_maker;
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/prefix_sum_pass1.slang.spv");
+    this->compute_prefix_sum_pass1_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
+            this->active_leafs_ds.descriptor_set_layout
+        }, sizeof (PushConstantsData));
+    this->compute_prefix_sum_pass1_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
+}
 
-    shader_stages [0] = vk_utils::loadShader (this->context->get_device ()
-            , "./assets/shaders/compute.slang.spv"
-            , VK_SHADER_STAGE_COMPUTE_BIT
-            , shader_modules);
+void ComputeShaderRenderer::init_compute_prefix_sum_pass2_pipeline () {
+    std::cout << "ComputeShaderRenderer::init_compute_prefix_sum_pass2_pipeline pipeline called." << std::endl;
+    vk_utils::ComputePipelineMaker compute_pipeline_maker;
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/prefix_sum_pass2.slang.spv");
+    this->compute_prefix_sum_pass2_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
+            this->active_leafs_ds.descriptor_set_layout
+        }, sizeof (PushConstantsData));
+    this->compute_prefix_sum_pass2_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
+}
 
-    VkPushConstantRange pushConstantRange {};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pushConstantRange.size = sizeof (PushConstantsData);
-    pushConstantRange.offset = 0;
+void ComputeShaderRenderer::init_compute_prefix_sum_pass3_pipeline () {
+    std::cout << "ComputeShaderRenderer::init_compute_prefix_sum_pass3_pipeline called." << std::endl;
+    vk_utils::ComputePipelineMaker compute_pipeline_maker;
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/prefix_sum_pass3.slang.spv");
+    this->compute_prefix_sum_pass3_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
+            this->active_leafs_ds.descriptor_set_layout
+        }, sizeof (PushConstantsData));
+    this->compute_prefix_sum_pass3_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
+}
 
-    std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
-    descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);
-    descriptor_set_layouts.push_back (this->mesh_ds.descriptor_set_layout);
-    descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds.descriptor_set_layout);
-    descriptor_set_layouts.push_back (this->active_leafs_ds.descriptor_set_layout);
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = descriptor_set_layouts.size ();
-    pipelineLayoutInfo.pSetLayouts = descriptor_set_layouts.data ();
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &this->compute_pipeline_layout));
-
-    VkComputePipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    pipelineInfo.stage = shader_stages [0];
-    pipelineInfo.layout = this->compute_pipeline_layout;
-    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
-    pipelineInfo.basePipelineIndex = -1;
-
-    VK_CHECK_RESULT (vkCreateComputePipelines (this->context->get_device ()
-                , VK_NULL_HANDLE
-                , 1
-                , &pipelineInfo
-                , nullptr
-                , &this->compute_pipeline));
-
-    for (VkShaderModule module : shader_modules) {
-        if (module != VK_NULL_HANDLE) {
-            vkDestroyShaderModule (this->context->get_device (), module, nullptr);
-        }
-    }
-    shader_modules.clear ();
+void ComputeShaderRenderer::init_compute_geometry_pipeline () {
+    std::cout << "ComputeShaderRenderer::init_compute_prefix_sum_pipeline called." << std::endl;
+    vk_utils::ComputePipelineMaker compute_pipeline_maker;
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/triangles_gen.slang.spv");
+    this->compute_geometry_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
+            this->sdf_octree_ds.descriptor_set_layout
+            , this->mesh_ds.descriptor_set_layout
+            , this->marching_cubes_lookup_table_ds.descriptor_set_layout
+            , this->active_leafs_ds.descriptor_set_layout
+            , this->draw_indexed_indirect_command_ds.descriptor_set_layout
+        }, sizeof (PushConstantsData));
+    this->compute_geometry_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
 void ComputeShaderRenderer::init_graphics_shading_pipeline () {
@@ -352,38 +361,49 @@ void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff
     );
 }
 
-void ComputeShaderRenderer::render (const Camera& a_camera) {
-    if (!this->initialized) {
-        std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
-        return;
-    }
+void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame) {
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
-    auto cmd_buff = this->context->begin_frame ();
-    if (cmd_buff == VK_NULL_HANDLE) {
-        return;
-    }
-
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_pipeline);
-
-    const auto current_frame = this->context->get_current_frame ();
-
-    this->reset_active_leafs_counter (cmd_buff, current_frame);
-
-    std::array <VkDescriptorSet, 4> compute_descriptor_sets = {
+    std::array <VkDescriptorSet, 4> ds = {
         this->sdf_octree_ds.descriptor_set,
         this->mesh_ds.descriptor_sets [current_frame],
         this->marching_cubes_lookup_table_ds.descriptor_set,
         this->active_leafs_ds.descriptor_sets [current_frame]
     };
 
-    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_pipeline_layout,
-                             0, static_cast <uint32_t> (compute_descriptor_sets.size ()), compute_descriptor_sets.data (), 0, nullptr);
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline_layout,
+                             0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
 
-    update_push_constants (a_camera);
-    vkCmdPushConstants (cmd_buff, this->compute_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+    vkCmdPushConstants (cmd_buff, this->compute_active_leafs_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
     vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
+}
 
+void ComputeShaderRenderer::prefix_sum_pass1 (VkCommandBuffer cmd_buff, size_t current_frame) {
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prefix_sum_pass1_pipeline);
+
+    std::array <VkDescriptorSet, 1> ds = {
+        this->active_leafs_ds.descriptor_sets [current_frame]
+    };
+
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prefix_sum_pass1_pipeline_layout,
+                             0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
+
+    vkCmdPushConstants (cmd_buff, this->compute_active_leafs_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+
+    // vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
+}
+
+void ComputeShaderRenderer::prefix_sum_pass2 (VkCommandBuffer cmd_buff, size_t current_frame) {
+}
+
+void ComputeShaderRenderer::prefix_sum_pass3 (VkCommandBuffer cmd_buff, size_t current_frame) {
+}
+
+void ComputeShaderRenderer::compute_geometry (VkCommandBuffer cmd_buff, size_t current_frame) {
+}
+
+void ComputeShaderRenderer::geometry_barrier (VkCommandBuffer cmd_buff, size_t current_frame) {
     VkBufferMemoryBarrier vertex_buffer_barrier = {};
     vertex_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     vertex_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -411,7 +431,9 @@ void ComputeShaderRenderer::render (const Camera& a_camera) {
         static_cast <uint32_t> (barriers.size ()), barriers.data (),
         0, nullptr
     );
+}
 
+void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, size_t current_frame) {
     const auto extent = this->context->get_swapchain_extent ();
 
     std::array <VkClearValue, 2> clear_values {};
@@ -454,8 +476,33 @@ void ComputeShaderRenderer::render (const Camera& a_camera) {
 
     const uint32_t index_count = uint32_t {36} * static_cast <uint32_t> (this->subtrees.size ());
     vkCmdDrawIndexed (cmd_buff, index_count, 1, 0, 0, 0);
+    // vkCmdDrawIndexedIndirect (cmd_buff, this->draw_indexed_indirect_command_ds.draw_indexed_indirect_command_buffers [current_frame], 0, 1, 0);
 
     vkCmdEndRenderPass (cmd_buff);
+}
+
+void ComputeShaderRenderer::render (const Camera& a_camera) {
+    if (!this->initialized) {
+        std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
+        return;
+    }
+
+    auto cmd_buff = this->context->begin_frame ();
+    if (cmd_buff == VK_NULL_HANDLE) {
+        return;
+    }
+
+    const auto current_frame = this->context->get_current_frame ();
+
+    this->update_push_constants (a_camera);
+    this->reset_active_leafs_counter (cmd_buff, current_frame);
+    this->compute_active_leafs (cmd_buff, current_frame);
+    this->prefix_sum_pass1 (cmd_buff, current_frame);
+    this->prefix_sum_pass2 (cmd_buff, current_frame);
+    this->prefix_sum_pass3 (cmd_buff, current_frame);
+    this->compute_geometry (cmd_buff, current_frame);
+    this->geometry_barrier (cmd_buff, current_frame);
+    this->draw_geometry (cmd_buff, current_frame);
 
     this->context->end_frame (cmd_buff);
 }
@@ -496,23 +543,12 @@ void ComputeShaderRenderer::shutdown () {
 
     this->descriptor_maker.reset ();
 
-    if (this->compute_pipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline (this->context->get_device (), this->compute_pipeline, nullptr);
-        this->compute_pipeline = VK_NULL_HANDLE;
-    }
-    if (this->compute_pipeline_layout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout (this->context->get_device (), this->compute_pipeline_layout, nullptr);
-        this->compute_pipeline_layout = VK_NULL_HANDLE;
-    }
-
-    if (this->graphics_pipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline (this->context->get_device (), this->graphics_pipeline, nullptr);
-        this->graphics_pipeline = VK_NULL_HANDLE;
-    }
-    if (this->graphics_pipeline_layout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout (this->context->get_device (), this->graphics_pipeline_layout, nullptr);
-        this->graphics_pipeline_layout = VK_NULL_HANDLE;
-    }
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_active_leafs_pipeline, this->compute_active_leafs_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass1_pipeline, this->compute_prefix_sum_pass1_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass2_pipeline, this->compute_prefix_sum_pass2_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass3_pipeline, this->compute_prefix_sum_pass3_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_geometry_pipeline, this->compute_geometry_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_pipeline, this->graphics_pipeline_layout);
 
     this->render_pass = VK_NULL_HANDLE;
 

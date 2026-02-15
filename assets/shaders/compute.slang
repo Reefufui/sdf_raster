@@ -1,4 +1,4 @@
-// task_generator.slang
+// compute.slang
 
 #include "common.h"
 
@@ -23,24 +23,7 @@
 [[vk::binding (3, 3)]] RWStructuredBuffer <uint> g_active_leaf_indices_count;
 [[vk::binding (4, 3)]] RWStructuredBuffer <uint> g_active_leaf_overflow_flag;
 
-#include "flatshadable_voxel.slang"
-
-float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
-    if (abs (0.f - valp1) < 0.00001)
-        return (p1);
-    if (abs (0.f - valp2) < 0.00001)
-        return (p2);
-    if (abs (valp1 - valp2) < 0.00001)
-        return (p1);
-
-    float mu = (0.f - valp1) / (valp2 - valp1);
-
-    float3 p;
-    p.x = p1.x + mu * (p2.x - p1.x);
-    p.y = p1.y + mu * (p2.y - p1.y);
-    p.z = p1.z + mu * (p2.z - p1.z);
-    return (p);
-}
+#include "flatshadable_voxel.h"
 
 static const float4 colors [MESH_WORKGROUP_SIZE] = {
     float4(1.0, 0.0, 0.0, 1.0),   // Красный

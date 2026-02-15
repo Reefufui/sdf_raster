@@ -102,8 +102,10 @@ add_executable(${PROJECT_NAME}
     ${vk_utils_project_SOURCE_DIR}/vk_copy.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_descriptor_sets.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_images.cpp
+    ${vk_utils_project_SOURCE_DIR}/vk_pipeline.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_swapchain.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_utils.cpp
+
     src/application.cpp
     src/camera.cpp
     src/main.cpp

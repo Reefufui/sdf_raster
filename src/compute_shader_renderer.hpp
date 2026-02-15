@@ -31,8 +31,10 @@ public:
 
 private:
     void init_descriptor_sets ();
-    void init_compute_shading_pipeline ();
+    void init_compute_active_leafs_pipeline ();
     void init_graphics_shading_pipeline ();
+
+    void reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame);
 
     std::shared_ptr <VulkanContext> context {nullptr};
 
@@ -40,6 +42,8 @@ private:
     SdfOctreeDescriptorSetInfo sdf_octree_ds {};
     MeshDescriptorSetInfo mesh_ds {};
     MarchingCubesLookupTableDescriptorSetInfo marching_cubes_lookup_table_ds {};
+    ActiveLeafsDescriptorSetInfo active_leafs_ds {};
+    DrawIndexedIndirectCommandDescriptorSetInfo draw_indexed_indirect_command_ds {};
 
     VkRenderPass render_pass {VK_NULL_HANDLE};
     VkPipelineLayout graphics_pipeline_layout {VK_NULL_HANDLE};

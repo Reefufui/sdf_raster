@@ -53,13 +53,13 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     auto make_divisable = [] (size_t value, size_t by) -> size_t {
         return (value / by) * by;
     };
-    a_leaf_memory_limit = make_divisable (a_leaf_memory_limit, sizeof (LeafContext) * this->subtrees.size () * MESH_WORKGROUP_SIZE);
+    a_leaf_memory_limit = make_divisable (a_leaf_memory_limit, sizeof (NodeContext) * this->subtrees.size () * MESH_WORKGROUP_SIZE);
     std::cout << "[MeshShaderRenderer::init] active leafs byte size (actual, total): " << a_leaf_memory_limit << std::endl;
 
     this->active_leafs_size = a_leaf_memory_limit / this->subtrees.size ();
     std::cout << "[MeshShaderRenderer::init] active leafs byte size (per subtree task): " << this->active_leafs_size << std::endl;
-    this->push_constants.max_count_per_task = this->active_leafs_size / sizeof (LeafContext);
-    std::cout << "[MeshShaderRenderer::init] active leafs count (per subtree task): " << this->push_constants.max_count_per_task << std::endl;
+    // TODO: this->push_constants.max_count_per_task = this->active_leafs_size / sizeof (LeafContext);
+    // std::cout << "[MeshShaderRenderer::init] active leafs count (per subtree task): " << this->push_constants.max_count_per_task << std::endl;
 
     // NodeContext root;
     // root.node_index = 0;
@@ -330,62 +330,62 @@ void MeshShaderRenderer::resize (int a_width, int a_height) {
     this->height = a_height;
 }
 
-void dump_active_leafs (const std::vector <LeafContext>& contexts, const std::string& base_filename, size_t chunk_size) {
-    if (contexts.empty ()) {
-        std::cerr << "Вектор пустой" << std::endl;
-        return;
-    }
-    
-    std::cout << "Сохранение " << contexts.size () << " листьев по " 
-              << chunk_size << " в чанк..." << std::endl;
-    
-    size_t num_chunks = (contexts.size () + chunk_size - 1) / chunk_size;
-    
-    for (size_t chunk_idx = 0; chunk_idx < num_chunks; ++chunk_idx) {
-        size_t start_idx = chunk_idx * chunk_size;
-        size_t end_idx = std::min (start_idx + chunk_size, contexts.size ());
-        
-        std::stringstream ss;
-        ss << std::setfill ('0') << std::setw (3) << chunk_idx;
-        std::string filename = base_filename + std::string (1, '_') + ss.str () + ".txt";
-        
-        std::ofstream file (filename);
-        if (!file.is_open ()) {
-            std::cerr << "Ошибка открытия файла: " << filename << std::endl;
-            continue;
-        }
-        
-        file << std::fixed << std::setprecision (6);
-        file << "# Leaf Contexts chunk #" << chunk_idx 
-             << " (листья " << start_idx << ".." << (end_idx-1) << ")\n";
-        file << "# Total in chunk: " << (end_idx - start_idx) << "\n\n";
-        
-        for (size_t leaf_idx = start_idx; leaf_idx < end_idx; ++leaf_idx) {
-            const auto& leaf = contexts [leaf_idx];
-            const auto& node = leaf.node_context;
-            if (!node.node_index) {
-                continue;
-            }
-            
-            file << "=== Leaf #" << leaf_idx << " ===\n";
-            file << "Node Index:     " << node.node_index << "\n";
-            file << "Cube Index:     " << node.cube_index << "\n";
-            file << "Voxel Size:     " << node.voxel_size << "\n";
-            file << "Min Corner:     (" 
-                 << node.min_corner_x << ", "
-                 << node.min_corner_y << ", "
-                 << node.min_corner_z << ")\n";
-            file << "Verts Offset:   " << leaf.vertices_local_offset << "\n";
-            file << "Tris Offset:    " << leaf.triangles_local_offset << "\n\n";
-        }
-        
-        file.close ();
-        std::cout << "Чанк " << chunk_idx << " сохранён: " << filename 
-                  << " (" << (end_idx - start_idx) << " листьев)" << std::endl;
-    }
-
-    std::cout << "Всего создано файлов: " << num_chunks << std::endl;
-}
+// void dump_active_leafs (const std::vector <LeafContext>& contexts, const std::string& base_filename, size_t chunk_size) {
+//     if (contexts.empty ()) {
+//         std::cerr << "Вектор пустой" << std::endl;
+//         return;
+//     }
+//
+//     std::cout << "Сохранение " << contexts.size () << " листьев по " 
+//               << chunk_size << " в чанк..." << std::endl;
+//
+//     size_t num_chunks = (contexts.size () + chunk_size - 1) / chunk_size;
+//
+//     for (size_t chunk_idx = 0; chunk_idx < num_chunks; ++chunk_idx) {
+//         size_t start_idx = chunk_idx * chunk_size;
+//         size_t end_idx = std::min (start_idx + chunk_size, contexts.size ());
+//
+//         std::stringstream ss;
+//         ss << std::setfill ('0') << std::setw (3) << chunk_idx;
+//         std::string filename = base_filename + std::string (1, '_') + ss.str () + ".txt";
+//
+//         std::ofstream file (filename);
+//         if (!file.is_open ()) {
+//             std::cerr << "Ошибка открытия файла: " << filename << std::endl;
+//             continue;
+//         }
+//
+//         file << std::fixed << std::setprecision (6);
+//         file << "# Leaf Contexts chunk #" << chunk_idx 
+//              << " (листья " << start_idx << ".." << (end_idx-1) << ")\n";
+//         file << "# Total in chunk: " << (end_idx - start_idx) << "\n\n";
+//
+//         for (size_t leaf_idx = start_idx; leaf_idx < end_idx; ++leaf_idx) {
+//             const auto& leaf = contexts [leaf_idx];
+//             const auto& node = leaf.node_context;
+//             if (!node.node_index) {
+//                 continue;
+//             }
+//
+//             file << "=== Leaf #" << leaf_idx << " ===\n";
+//             file << "Node Index:     " << node.node_index << "\n";
+//             file << "Cube Index:     " << node.cube_index << "\n";
+//             file << "Voxel Size:     " << node.voxel_size << "\n";
+//             file << "Min Corner:     (" 
+//                  << node.min_corner_x << ", "
+//                  << node.min_corner_y << ", "
+//                  << node.min_corner_z << ")\n";
+//             file << "Verts Offset:   " << leaf.vertices << "\n";
+//             file << "Tris Offset:    " << leaf.triangles << "\n\n";
+//         }
+//
+//         file.close ();
+//         std::cout << "Чанк " << chunk_idx << " сохранён: " << filename 
+//                   << " (" << (end_idx - start_idx) << " листьев)" << std::endl;
+//     }
+//
+//     std::cout << "Всего создано файлов: " << num_chunks << std::endl;
+// }
 
 void MeshShaderRenderer::shutdown () {
     vkDeviceWaitIdle (this->context->get_device ());

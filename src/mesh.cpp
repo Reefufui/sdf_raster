@@ -88,10 +88,10 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
     VkDeviceSize indices_size = 36 * 256 * sizeof (uint32_t);
     VkDeviceSize vertices_size = 23 * 256 * sizeof (Vertex);
 
-    if (max_vertices_count == 0) {
-        throw std::runtime_error ("create_mesh_descriptor_set: max_vertices_count is 0, cannot create descriptor set.");
-    }
-    std::cout << "create_mesh_descriptor_set: max_vertices_count = " << max_vertices_count << std::endl;
+    // if (max_vertices_count == 0) {
+    //     throw std::runtime_error ("create_mesh_descriptor_set: max_vertices_count is 0, cannot create descriptor set.");
+    // }
+    // std::cout << "create_mesh_descriptor_set: max_vertices_count = " << max_vertices_count << std::endl;
 
     std::vector <VkBuffer> buffers (1 + 2 * max_frames_in_flight);
     std::vector <VkMemoryRequirements> mem_reqs (1 + 2 * max_frames_in_flight);

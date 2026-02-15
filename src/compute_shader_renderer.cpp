@@ -50,19 +50,13 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
     std::cout << "[ComputeShaderRenderer::init] sizeof (PushConstantsData): " << sizeof (PushConstantsData) << std::endl;
 
     const int tasks_count = this->subtrees.size ();
-
-    std::cout << "[ComputeShaderRenderer::init] subtrees (tasks) count: " << tasks_count << std::endl;
+    std::cout << "[ComputeShaderRenderer::init] Subtree count: " << tasks_count << std::endl;
     assert (tasks_count);
 
-    std::cout << "[ComputeShaderRenderer::init] max_vertices_count:" << a_max_vertices_count << std::endl;
-    // this->push_constants.max_count_per_task = a_max_vertices_count / tasks_count;
-    this->push_constants.max_count_per_task = a_max_vertices_count / tasks_count;
-    std::cout << "[ComputeShaderRenderer::init] max vertices per task:" << this->push_constants.max_count_per_task << std::endl;
-
-    // dump_octree_subtree_pretty (this->sdf_octree, this->subtrees [0].node_index, 20, "", 0);
+    this->push_constants.active_leafs_max_count = 1024 * 256;
 
     this->init_descriptor_sets ();
-    this->init_compute_shading_pipeline ();
+    this->init_compute_active_leafs_pipeline ();
     this->init_graphics_shading_pipeline ();
     this->initialized = true;
     std::cout << "ComputeShaderRenderer initialized successfully." << std::endl;
@@ -71,34 +65,47 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
 void ComputeShaderRenderer::init_descriptor_sets () {
     vk_utils::DescriptorTypesVec ds_type_vec {};
     ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
-    this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (
-            this->context->get_device ()
-            , ds_type_vec
-            , 10
-            );
+    this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
+
 	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
-			, this->context->get_physical_device ()
-			, this->context->get_copy_helper ()
-			, *descriptor_maker
-			, VK_SHADER_STAGE_COMPUTE_BIT
-			, this->sdf_octree
-			, this->subtrees);
+	    , this->context->get_physical_device ()
+	    , this->context->get_copy_helper ()
+	    , *descriptor_maker
+	    , VK_SHADER_STAGE_COMPUTE_BIT
+	    , this->sdf_octree
+	    , this->subtrees);
+
 	this->mesh_ds = create_mesh_descriptor_set (this->context->get_device ()
-			, this->context->get_physical_device ()
-			, this->context->get_copy_helper ()
-			, *descriptor_maker
-			, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-			, this->push_constants.max_count_per_task
-			, this->context->get_total_frames ());
+	    , this->context->get_physical_device ()
+	    , this->context->get_copy_helper ()
+	    , *descriptor_maker
+	    , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+	    , 0
+	    , this->context->get_total_frames ());
+
 	this->marching_cubes_lookup_table_ds = create_lookup_table_descriptor_set (this->context->get_device ()
-			, this->context->get_physical_device ()
-			, this->context->get_copy_helper ()
-			, *descriptor_maker
-			, VK_SHADER_STAGE_COMPUTE_BIT);
+	    , this->context->get_physical_device ()
+	    , this->context->get_copy_helper ()
+	    , *descriptor_maker
+	    , VK_SHADER_STAGE_COMPUTE_BIT);
+
+	this->active_leafs_ds = create_active_leafs_descriptor_set (this->context->get_device ()
+	    , this->context->get_physical_device ()
+	    , this->context->get_copy_helper ()
+	    , *descriptor_maker
+	    , VK_SHADER_STAGE_COMPUTE_BIT
+	    , this->push_constants.active_leafs_max_count
+	    , this->context->get_total_frames ());
+
+    this->draw_indexed_indirect_command_ds = create_draw_indexed_indirect_command_descriptor_set (this->context->get_device ()
+        , this->context->get_physical_device ()
+        , *descriptor_maker
+        , VK_SHADER_STAGE_COMPUTE_BIT
+        , this->context->get_total_frames ());
 }
 
-void ComputeShaderRenderer::init_compute_shading_pipeline () {
-    std::cout << "ComputeShaderRenderer::init_compute_shading_pipeline called." << std::endl;
+void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
+    std::cout << "ComputeShaderRenderer::init_compute_active_leafs_pipeline called." << std::endl;
 
     const size_t shaders_count = 1;
     std::vector <VkShaderModule> shader_modules (shaders_count);
@@ -118,6 +125,7 @@ void ComputeShaderRenderer::init_compute_shading_pipeline () {
     descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);
     descriptor_set_layouts.push_back (this->mesh_ds.descriptor_set_layout);
     descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds.descriptor_set_layout);
+    descriptor_set_layouts.push_back (this->active_leafs_ds.descriptor_set_layout);
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -318,6 +326,32 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
     shader_modules.clear ();
 }
 
+void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame) {
+    const uint32_t initial_active_leafs_count = 0;
+    vkCmdFillBuffer (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [current_frame], 0, sizeof (uint32_t), initial_active_leafs_count);
+
+    VkBufferMemoryBarrier bufferBarrier = {};
+    bufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    bufferBarrier.pNext = nullptr;
+    bufferBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    bufferBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    bufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bufferBarrier.buffer = this->active_leafs_ds.active_leaf_counter_buffers [current_frame];
+    bufferBarrier.offset = 0;
+    bufferBarrier.size = VK_WHOLE_SIZE;
+
+    vkCmdPipelineBarrier (
+        cmd_buff,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0,
+        0, nullptr,
+        1, &bufferBarrier,
+        0, nullptr
+    );
+}
+
 void ComputeShaderRenderer::render (const Camera& a_camera) {
     if (!this->initialized) {
         std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
@@ -332,10 +366,14 @@ void ComputeShaderRenderer::render (const Camera& a_camera) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_pipeline);
 
     const auto current_frame = this->context->get_current_frame ();
-    std::array <VkDescriptorSet, 3> compute_descriptor_sets = {
+
+    this->reset_active_leafs_counter (cmd_buff, current_frame);
+
+    std::array <VkDescriptorSet, 4> compute_descriptor_sets = {
         this->sdf_octree_ds.descriptor_set,
         this->mesh_ds.descriptor_sets [current_frame],
-        this->marching_cubes_lookup_table_ds.descriptor_set
+        this->marching_cubes_lookup_table_ds.descriptor_set,
+        this->active_leafs_ds.descriptor_sets [current_frame]
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_pipeline_layout,
@@ -453,6 +491,8 @@ void ComputeShaderRenderer::shutdown () {
     cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
     cleanup_mesh_descriptor_set (this->context->get_device (), this->mesh_ds);
     cleanup_lookup_table_descriptor_set (this->context->get_device (), this->marching_cubes_lookup_table_ds);
+    cleanup_active_leafs_descriptor_set (this->context->get_device (), this->active_leafs_ds);
+    cleanup_draw_indexed_indirect_command_descriptor_set (this->context->get_device (), this->draw_indexed_indirect_command_ds);
 
     this->descriptor_maker.reset ();
 
@@ -501,7 +541,6 @@ void ComputeShaderRenderer::update_push_constants (const Camera& a_camera) {
         }
     }
 }
-
 
 } // namespace sdf_raster
 

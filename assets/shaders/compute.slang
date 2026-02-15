@@ -10,12 +10,18 @@
 [[vk::binding (0, 1)]] RWStructuredBuffer <Vertex> g_vertices;
 [[vk::binding (1, 1)]] RWStructuredBuffer <uint> g_indices;
 [[vk::binding (2, 1)]] RWStructuredBuffer <uint> g_indices_count;
-[[vk::binding (3, 1)]] RWStructuredBuffer <uint> g_insufficent_mem_flag;
+[[vk::binding (3, 1)]] RWStructuredBuffer <uint> g_insufficent_mesh_mem_flag;
 
 [[vk::binding (0, 2)]] StructuredBuffer <uint2> edge_corners; // [12]
 [[vk::binding (1, 2)]] StructuredBuffer <int> cube_index_2_edge_mask; // [256]
 [[vk::binding (2, 2)]] StructuredBuffer <int> cube_index_2_triangle_indices; // [256][16]
 [[vk::binding (3, 2)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
+
+[[vk::binding (0, 3)]] RWStructuredBuffer <NodeContext> g_active_leafs;
+[[vk::binding (1, 3)]] RWStructuredBuffer <uint> g_active_leaf_counter;
+[[vk::binding (2, 3)]] RWStructuredBuffer <uint> g_active_leaf_vertices_count;
+[[vk::binding (3, 3)]] RWStructuredBuffer <uint> g_active_leaf_indices_count;
+[[vk::binding (4, 3)]] RWStructuredBuffer <uint> g_active_leaf_overflow_flag;
 
 #include "flatshadable_voxel.slang"
 
@@ -55,10 +61,7 @@ static const float4 colors [MESH_WORKGROUP_SIZE] = {
     float4(0.0, 0.0, 0.0, 1.0)    // Черный
 };
 
-groupshared uint s_vertices_count;
-groupshared uint s_indices_count;
-
-void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
+void process_voxel (uint3 group_id, NodeContext context, SdfOctreeNode leaf_node) {
     context.cube_index = 0;
 
     for (int i = 0; i < 8; ++i) {
@@ -71,67 +74,22 @@ void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
         return;
     }
 
-    const uint leaf_vertices_count = cube_index_2_mesh_output_counts [context.cube_index].x;
-    const uint leaf_triangles_count = cube_index_2_mesh_output_counts [context.cube_index].y;
+    uint active_leaf_offset = 0;
+    InterlockedAdd (g_active_leaf_indices_count [0], 1, active_leaf_offset);
 
-    if (s_vertices_count + leaf_vertices_count > pc.max_count_per_task) {
+    if (active_leaf_offset >= pc.active_leafs_max_count) {
+        g_active_leaf_overflow_flag [0] = 1;
         return;
-        // g_insufficent_mem_flag [0] = 1;
     }
 
-    const float3 voxel_size_modifier = {context.voxel_size};
-    float3 corners [8];
-    const float3 min_corner = {context.min_corner_x, context.min_corner_y, context.min_corner_z};
-
-    for (int i = 0; i < 8; ++i) {
-        float3 corner_offset = {0.0f, 0.0f, 0.0f};
-        if (((i >> 0) & 1) == 1) corner_offset.x = context.voxel_size;
-        if (((i >> 1) & 1) == 1) corner_offset.y = context.voxel_size;
-        if (((i >> 2) & 1) == 1) corner_offset.z = context.voxel_size;
-        corners [i] = min_corner + corner_offset;
-    }
-
-    uint triangles_count = 0;
-    for (; triangles_count < MAX_LEAF_PRIMS; ++triangles_count) {
-        if (cube_index_2_triangle_indices [context.cube_index * 16 + triangles_count * 3] == -1) break;
-    }
-
-    for (int i = 0; i < triangles_count; ++i) {
-        const int base = context.cube_index * 16 + i * 3;
-        g_indices [i * 3 + 0] = s_vertices_count + cube_index_2_triangle_indices [base + 0];
-        g_indices [i * 3 + 1] = s_vertices_count + cube_index_2_triangle_indices [base + 1];
-        g_indices [i * 3 + 2] = s_vertices_count + cube_index_2_triangle_indices [base + 2];
-    }
-
-    const int edge_mask = cube_index_2_edge_mask [context.cube_index]; // non-zero because of check in task shader
-    int edge_bit = 1;
-
-    for (int i = 0; i < MAX_LEAF_VERTS; ++i) {
-        if ((edge_mask & edge_bit) == 0) {
-            edge_bit <<= 1;
-            continue;
-        }
-
-        const uint2 corner_indices = edge_corners [i];
-        Vertex vertex;
-        vertex.position = mul (pc.view_proj, float4 (interpolate_vertex (corners [corner_indices.x]
-                                                , corners [corner_indices.y]
-                                                , leaf_node.values [corner_indices.x]
-                                                , leaf_node.values [corner_indices.y]
-                                                ), 1.0f));
-        // vertex.color = colors [0];
-        g_vertices [s_vertices_count + i] = vertex;
-
-        edge_bit <<= 1;
-    }
-
-    s_vertices_count += leaf_vertices_count;
-    s_indices_count += leaf_triangles_count;
+    g_active_leafs [active_leaf_offset] = context;
+    g_active_leaf_vertices_count [active_leaf_offset] = cube_index_2_mesh_output_counts [context.cube_index].x;
+    g_active_leaf_indices_count [active_leaf_offset] = cube_index_2_mesh_output_counts [context.cube_index].y * 3;
 }
 
 void dfs_octree (in uint3 group_id, NodeContext root) {
     if (g_octree_data [root.node_index].offset == 0) {
-        process_voxel (root, g_octree_data [root.node_index]);
+        process_voxel (group_id, root, g_octree_data [root.node_index]);
         return;
     }
 
@@ -172,7 +130,7 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
             context.min_corner_y = child_coord.y;
             context.min_corner_z = child_coord.z;
             context.node_index = child_node_index;
-            process_voxel (context, child_node);
+            process_voxel (group_id, context, child_node);
         } else { // internal node
             node_index_stack [level] = child_node_index;
             coord_stack [level] = child_coord;
@@ -186,6 +144,7 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
 [shader ("compute")]
 [numthreads (1, 1, 1)]
 void main (uint3 thread_id : SV_DispatchThreadID) {
+    dfs_octree (thread_id, g_roots [thread_id.x]);
     flatshadable_voxel (g_roots [thread_id.x], thread_id.x, colors [thread_id.x % 16]);
     return;
 }

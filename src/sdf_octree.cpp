@@ -138,7 +138,7 @@ ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
         , vk_utils::DescriptorMaker& ds_maker
         , VkShaderStageFlags shader_stage_flags
-        , VkDeviceSize active_leafs_size
+        , size_t active_leafs_count
         , size_t max_frames_in_flight) {
     std::cout << "create_active_leafs_descriptor_set: creating..." << std::endl;
     ActiveLeafsDescriptorSetInfo info = {};
@@ -147,29 +147,83 @@ ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
         throw std::runtime_error ("ICopyEngine shared_ptr cannot be null.");
     }
 
-    std::vector <VkBuffer> buffers (1 + max_frames_in_flight);
-    std::vector <VkMemoryRequirements> mem_reqs (1 + max_frames_in_flight);
+    const VkDeviceSize active_leafs_size = active_leafs_count * sizeof (NodeContext);
+    const VkDeviceSize active_leaf_counter_size = sizeof (uint);
+    const VkDeviceSize active_leaf_vertices_count_size = active_leafs_count * sizeof (uint);
+    const VkDeviceSize active_leaf_indices_count_size = active_leafs_count * sizeof (uint);
+    const VkDeviceSize active_leaf_overflow_flag_size = sizeof (uint);
+
+    std::vector <VkBuffer> buffers (max_frames_in_flight * 4 + 1);
+    std::vector <VkMemoryRequirements> mem_reqs (max_frames_in_flight * 4 + 1);
 
     info.active_leafs_buffers.clear ();
-    for (int i = 0; i < max_frames_in_flight; ++i) {
-        buffers [i] = vk_utils::createBuffer (device, active_leafs_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i]);
-        info.active_leafs_buffers.push_back (buffers [i]);
-    }
-    info.insufficent_mem_flag_buffer = buffers [max_frames_in_flight];
+    info.active_leaf_counter_buffers.clear ();
+    info.active_leaf_vertices_count_buffers.clear ();
+    info.active_leaf_indices_count_buffers.clear ();
 
-    buffers [max_frames_in_flight] = vk_utils::createBuffer (device, sizeof (uint)
-            , VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [max_frames_in_flight]);
+    for (int i = 0; i < max_frames_in_flight; ++i) {
+        buffers [i * 4 + 0] = vk_utils::createBuffer (device, active_leafs_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 0]);
+        buffers [i * 4 + 1] = vk_utils::createBuffer (device, active_leaf_counter_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 1]);
+        buffers [i * 4 + 2] = vk_utils::createBuffer (device, active_leaf_vertices_count_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 2]);
+        buffers [i * 4 + 3] = vk_utils::createBuffer (device, active_leaf_indices_count_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 3]);
+
+        info.active_leafs_buffers.push_back (buffers [i * 4 + 0]);
+        info.active_leaf_counter_buffers.push_back (buffers [i * 4 + 1]);
+        info.active_leaf_vertices_count_buffers.push_back (buffers [i * 4 + 2]);
+        info.active_leaf_indices_count_buffers.push_back (buffers [i * 4 + 3]);
+    }
+
+    buffers [max_frames_in_flight * 4] = vk_utils::createBuffer (device, active_leaf_overflow_flag_size
+            , VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [max_frames_in_flight * 4]);
+    info.active_leaf_overflow_flag_buffer = buffers [max_frames_in_flight * 4];
 
     info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
 
-    uint insufficent_mem_flag = 0;
-    copy_helper->UpdateBuffer (info.insufficent_mem_flag_buffer, 0, &insufficent_mem_flag, sizeof (uint));
+    const uint overflow_flag = 0;
+    copy_helper->UpdateBuffer (info.active_leaf_overflow_flag_buffer, 0, &overflow_flag, active_leaf_overflow_flag_size);
 
     info.descriptor_sets.resize (max_frames_in_flight);
     for (int i = 0; i < max_frames_in_flight; ++i) {
         ds_maker.BindBegin (shader_stage_flags);
         ds_maker.BindBuffer (0, info.active_leafs_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        ds_maker.BindBuffer (1, info.insufficent_mem_flag_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindBuffer (1, info.active_leaf_counter_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindBuffer (2, info.active_leaf_vertices_count_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindBuffer (3, info.active_leaf_indices_count_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindBuffer (4, info.active_leaf_overflow_flag_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
+    }
+
+    return info;
+}
+
+DrawIndexedIndirectCommandDescriptorSetInfo create_draw_indexed_indirect_command_descriptor_set (
+        VkDevice device
+        , VkPhysicalDevice physical_device
+        , vk_utils::DescriptorMaker& ds_maker
+        , VkShaderStageFlags shader_stage_flags
+        , size_t max_frames_in_flight) {
+    std::cout << "create_draw_indexed_indirect_command_descriptor_set: creating..." << std::endl;
+    DrawIndexedIndirectCommandDescriptorSetInfo info = {};
+
+    const VkDeviceSize draw_indexed_indirect_command_size = sizeof (VkDrawIndexedIndirectCommand);
+
+    std::vector <VkBuffer> buffers (max_frames_in_flight);
+    std::vector <VkMemoryRequirements> mem_reqs (max_frames_in_flight);
+
+    info.draw_indexed_indirect_command_buffers.clear ();
+
+    for (int i = 0; i < max_frames_in_flight; ++i) {
+        buffers [i] = vk_utils::createBuffer (device, draw_indexed_indirect_command_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i]);
+
+        info.draw_indexed_indirect_command_buffers.push_back (buffers [i]);
+    }
+
+    info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
+
+    info.descriptor_sets.resize (max_frames_in_flight);
+    for (int i = 0; i < max_frames_in_flight; ++i) {
+        ds_maker.BindBegin (shader_stage_flags);
+        ds_maker.BindBuffer (0, info.draw_indexed_indirect_command_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
     }
 
@@ -201,11 +255,39 @@ void cleanup_active_leafs_descriptor_set (VkDevice device, ActiveLeafsDescriptor
             vkDestroyBuffer (device, info.active_leafs_buffers [i], nullptr);
             info.active_leafs_buffers [i] = VK_NULL_HANDLE;
         }
+        if (info.active_leaf_counter_buffers [i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer (device, info.active_leaf_counter_buffers [i], nullptr);
+            info.active_leaf_counter_buffers [i] = VK_NULL_HANDLE;
+        }
+        if (info.active_leaf_vertices_count_buffers [i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer (device, info.active_leaf_vertices_count_buffers [i], nullptr);
+            info.active_leaf_vertices_count_buffers [i] = VK_NULL_HANDLE;
+        }
+        if (info.active_leaf_indices_count_buffers [i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer (device, info.active_leaf_indices_count_buffers [i], nullptr);
+            info.active_leaf_indices_count_buffers [i] = VK_NULL_HANDLE;
+        }
     }
 
-    if (info.insufficent_mem_flag_buffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer (device, info.insufficent_mem_flag_buffer, nullptr);
-        info.insufficent_mem_flag_buffer = VK_NULL_HANDLE;
+    if (info.active_leaf_overflow_flag_buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer (device, info.active_leaf_overflow_flag_buffer, nullptr);
+        info.active_leaf_overflow_flag_buffer = VK_NULL_HANDLE;
+    }
+
+    if (info.memory != VK_NULL_HANDLE) {
+        vkFreeMemory (device, info.memory, nullptr);
+        info.memory = VK_NULL_HANDLE;
+    }
+
+    info = {};
+}
+
+void cleanup_draw_indexed_indirect_command_descriptor_set (VkDevice device, DrawIndexedIndirectCommandDescriptorSetInfo& info) {
+    for (int i = 0; i < info.draw_indexed_indirect_command_buffers.size (); ++i) {
+        if (info.draw_indexed_indirect_command_buffers [i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer (device, info.draw_indexed_indirect_command_buffers [i], nullptr);
+            info.draw_indexed_indirect_command_buffers [i] = VK_NULL_HANDLE;
+        }
     }
 
     if (info.memory != VK_NULL_HANDLE) {
@@ -348,7 +430,7 @@ int get_octree_max_depth (const SdfOctree& scene, int max_level_to_descend) {
     return max_overall_depth;
 }
 
-void dump_octree_subtree_pretty(const SdfOctree& scene, uint32_t subtree_root_node_idx, int max_display_depth, const std::string& prefix, int current_display_depth) {
+void dump_octree_subtree_pretty (const SdfOctree& scene, uint32_t subtree_root_node_idx, int max_display_depth, const std::string& prefix, int current_display_depth) {
     if (subtree_root_node_idx >= scene.nodes.size()) {
         std::cerr << prefix << "Error: Node index " << subtree_root_node_idx << " is out of bounds." << std::endl;
         return;
@@ -381,7 +463,7 @@ void dump_octree_subtree_pretty(const SdfOctree& scene, uint32_t subtree_root_no
 
             std::string branch_prefix = child_prefix + (i == 7 ? "    " : "|   ");
 
-            dump_octree_subtree_pretty(
+            dump_octree_subtree_pretty (
                 scene,
                 child_node_idx,
                 max_display_depth,
@@ -392,15 +474,15 @@ void dump_octree_subtree_pretty(const SdfOctree& scene, uint32_t subtree_root_no
     }
 }
 
-std::vector <LeafContext> fetch_leaf_contexts (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, VkDeviceSize active_leafs_size, size_t frame) {
-    std::vector <LeafContext> active_leafs_cpu (active_leafs_size / sizeof (LeafContext));
-    copy_helper->ReadBuffer (info.active_leafs_buffers [frame], 0, active_leafs_cpu.data (), active_leafs_size);
-    return active_leafs_cpu;
-}
+// std::vector <LeafContext> fetch_leaf_contexts (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, VkDeviceSize active_leafs_size, size_t frame) {
+//     std::vector <LeafContext> active_leafs_cpu (active_leafs_size / sizeof (LeafContext));
+//     copy_helper->ReadBuffer (info.active_leafs_buffers [frame], 0, active_leafs_cpu.data (), active_leafs_size);
+//     return active_leafs_cpu;
+// }
 
 uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info) {
     uint data;
-    copy_helper->ReadBuffer (info.insufficent_mem_flag_buffer, 0, &data, sizeof (uint));
+    copy_helper->ReadBuffer (info.active_leaf_overflow_flag_buffer, 0, &data, sizeof (uint));
     return data;
 }
 

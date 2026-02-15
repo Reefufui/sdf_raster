@@ -37,12 +37,6 @@ struct NodeContext {
     int cube_index;
 };
 
-struct LeafContext {
-    NodeContext node_context;
-    uint vertices_local_offset;
-    uint triangles_local_offset;
-};
-
 struct TaskPayload {
     uint leaf_buffer_offset;
     uint leaf_count;
@@ -56,7 +50,7 @@ struct PushConstantsData {
     float4 color;
     float4 frustum_planes [6];
     int max_octree_depth;
-    uint max_count_per_task; // leaf/vertex count (depends on -mode <mesh>|<compute>)
+    uint active_leafs_max_count;
 };
 
 struct SdfOctreeNode {

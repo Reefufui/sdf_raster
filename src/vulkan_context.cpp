@@ -70,14 +70,7 @@ void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support)
 
     this->create_depth_resources ();
     this->create_render_pass ();
-
-    std::vector <VkImageView> depth_views (this->swapchain.GetImageCount ());
-    for (size_t i = 0; i < this->swapchain.GetImageCount (); ++i) {
-        depth_views [i] = depth_textures [i].view;
-    }
-
-    this->swapchain_framebuffers = vk_utils::createFrameBuffers (this->get_device (), this->swapchain, this->render_pass, depth_views);
-
+    this->create_framebuffers ();
     this->create_frame_resources ();
 
     this->initialized = true;
@@ -462,13 +455,7 @@ void VulkanContext::resize(int a_width, int a_height) {
                                      , this->max_frames_in_flight
                                      , true);
     this->create_depth_resources ();
-
-    std::vector <VkImageView> depth_views (this->swapchain.GetImageCount ());
-    for (size_t i = 0; i < this->swapchain.GetImageCount (); ++i) {
-        depth_views [i] = depth_textures [i].view;
-    }
-    this->swapchain_framebuffers = vk_utils::createFrameBuffers (this->get_device (), this->swapchain, this->render_pass, depth_views);
-
+    this->create_framebuffers ();
     this->create_frame_resources ();
 
     this->current_frame = 0;
@@ -633,6 +620,27 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
     }
 
     this->current_frame = (this->current_frame + 1) % this->max_frames_in_flight;
+}
+
+void VulkanContext::create_framebuffers () {
+    this->swapchain_framebuffers.resize (this->swapchain.GetImageCount ());
+
+    for (uint32_t i = 0; i < swapchain_framebuffers.size (); i++) {
+        std::vector <VkImageView> attachments;
+        attachments.push_back (this->swapchain.GetAttachment (i).view);
+        attachments.push_back (this->depth_textures [i].view);
+
+        VkFramebufferCreateInfo framebufferInfo = {};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = this->render_pass;
+        framebufferInfo.attachmentCount = static_cast <uint32_t> (attachments.size ());
+        framebufferInfo.pAttachments = attachments.data ();
+        framebufferInfo.width = this->swapchain.GetExtent ().width;
+        framebufferInfo.height = this->swapchain.GetExtent ().height;
+        framebufferInfo.layers = 1;
+
+        VK_CHECK_RESULT (vkCreateFramebuffer (this->device, &framebufferInfo, nullptr, &this->swapchain_framebuffers [i]));
+    }
 }
 
 void VulkanContext::create_depth_resources () {

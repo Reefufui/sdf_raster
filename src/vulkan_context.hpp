@@ -57,6 +57,7 @@ private:
     void create_render_pass ();
     void create_frame_resources ();
     void create_depth_resources ();
+    void create_framebuffers ();
     void destroy_depth_resources ();
 
 private:

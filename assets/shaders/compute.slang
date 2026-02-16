@@ -127,8 +127,12 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
 [shader ("compute")]
 [numthreads (1, 1, 1)]
 void main (uint3 thread_id : SV_DispatchThreadID) {
+    if (thread_id.x == 0) {
+        g_active_leaf_counter [0].y = 1;
+        g_active_leaf_counter [0].z = 1;
+    }
     dfs_octree (thread_id, g_roots [thread_id.x]);
-    flatshadable_voxel (g_roots [thread_id.x], thread_id.x, colors [thread_id.x % 16]);
+    // flatshadable_voxel (g_roots [thread_id.x], thread_id.x, colors [thread_id.x % 16]);
     return;
 }
 

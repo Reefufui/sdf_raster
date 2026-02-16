@@ -39,6 +39,7 @@ private:
     void init_graphics_shading_pipeline ();
 
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame);
+    void clear_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
     void compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame);
     void active_leafs_barrier (VkCommandBuffer cmd_buff, size_t current_frame);
     void prefix_sum_pass1 (VkCommandBuffer cmd_buff, size_t current_frame);

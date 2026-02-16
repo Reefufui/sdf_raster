@@ -8,6 +8,20 @@
 #include "application.hpp"
 #include "cpu_sandbox/cpu_sandbox.h"
 
+namespace {
+
+std::ostream& operator<< (std::ostream& os, const NodeContext& context) {
+    os << "NodeContext {"
+        << " min_corner: (" << context.min_corner_x << "," << context.min_corner_y << "," << context.min_corner_z << ")"
+        << " voxel_size: " << context.voxel_size << ","
+        << " node_index: " << context.node_index << ","
+        << " cube_index: " << context.cube_index
+        << " }";
+    return os;
+}
+
+}
+
 namespace sdf_raster {
 
 ComputeShaderRenderer::ComputeShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context)
@@ -54,7 +68,7 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
     std::cout << "[ComputeShaderRenderer::init] Subtree count: " << tasks_count << std::endl;
     assert (tasks_count);
 
-    this->push_constants.active_leafs_max_count = 1024 * 256;
+    this->push_constants.active_leafs_max_count = 778240;
 
     this->init_descriptor_sets ();
     this->init_compute_active_leafs_pipeline ();
@@ -264,7 +278,7 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
     VkPipelineMultisampleStateCreateInfo multisampling {};
@@ -336,19 +350,18 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
 }
 
 void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame) {
-    const uint32_t initial_active_leafs_count = 0;
-    vkCmdFillBuffer (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [current_frame], 0, sizeof (uint32_t), initial_active_leafs_count);
+    vkCmdFillBuffer (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [current_frame], 0, VK_WHOLE_SIZE, 0x00000000);
 
-    VkBufferMemoryBarrier bufferBarrier = {};
-    bufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    bufferBarrier.pNext = nullptr;
-    bufferBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    bufferBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    bufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    bufferBarrier.buffer = this->active_leafs_ds.active_leaf_counter_buffers [current_frame];
-    bufferBarrier.offset = 0;
-    bufferBarrier.size = VK_WHOLE_SIZE;
+    VkBufferMemoryBarrier buffer_barrier = {};
+    buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    buffer_barrier.pNext = nullptr;
+    buffer_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    buffer_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buffer_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buffer_barrier.buffer = this->active_leafs_ds.active_leaf_counter_buffers [current_frame];
+    buffer_barrier.offset = 0;
+    buffer_barrier.size = VK_WHOLE_SIZE;
 
     vkCmdPipelineBarrier (
         cmd_buff,
@@ -356,7 +369,36 @@ void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         0,
         0, nullptr,
-        1, &bufferBarrier,
+        1, &buffer_barrier,
+        0, nullptr
+    );
+}
+
+void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff, size_t current_frame) {
+    vkCmdFillBuffer (cmd_buff, this->mesh_ds.vertices_buffers [current_frame], 0, VK_WHOLE_SIZE, 0x00000000);
+    vkCmdFillBuffer (cmd_buff, this->mesh_ds.indices_buffers [current_frame], 0, VK_WHOLE_SIZE, 0x00000000);
+
+    VkBufferMemoryBarrier buffer_barrier = {};
+    buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    buffer_barrier.pNext = nullptr;
+    buffer_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    buffer_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buffer_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buffer_barrier.offset = 0;
+    buffer_barrier.size = VK_WHOLE_SIZE;
+
+    std::vector <VkBufferMemoryBarrier> barriers (2, buffer_barrier);
+    barriers [0].buffer = this->mesh_ds.vertices_buffers [current_frame];
+    barriers [1].buffer = this->mesh_ds.indices_buffers [current_frame];
+
+    vkCmdPipelineBarrier (
+        cmd_buff,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0,
+        0, nullptr,
+        static_cast <uint32_t> (barriers.size ()), barriers.data (),
         0, nullptr
     );
 }
@@ -463,7 +505,7 @@ void ComputeShaderRenderer::prefix_sum_pass3 (VkCommandBuffer cmd_buff, size_t c
 }
 
 void ComputeShaderRenderer::compute_geometry (VkCommandBuffer cmd_buff, size_t current_frame) {
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_geometry_pipeline);
 
     std::array <VkDescriptorSet, 5> ds = {
         this->sdf_octree_ds.descriptor_set,
@@ -572,14 +614,14 @@ void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, size_t curr
     vkCmdBindVertexBuffers (cmd_buff, 0, 1, vertex_buffers, offsets);
     vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds.indices_buffers [current_frame], 0, VK_INDEX_TYPE_UINT32);
 
-    const uint32_t index_count = uint32_t {36} * static_cast <uint32_t> (this->subtrees.size ());
-    vkCmdDrawIndexed (cmd_buff, index_count, 1, 0, 0, 0);
-    // vkCmdDrawIndexedIndirect (cmd_buff, this->draw_indexed_indirect_command_ds.draw_indexed_indirect_command_buffers [current_frame], 0, 1, 0);
+    vkCmdDrawIndexedIndirect (cmd_buff, this->draw_indexed_indirect_command_ds.draw_indexed_indirect_command_buffers [current_frame], 0, 1, 0);
 
     vkCmdEndRenderPass (cmd_buff);
 }
 
 void ComputeShaderRenderer::render (const Camera& a_camera) {
+    vkDeviceWaitIdle (this->context->get_device ());
+
     if (!this->initialized) {
         std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
         return;
@@ -594,16 +636,43 @@ void ComputeShaderRenderer::render (const Camera& a_camera) {
 
     this->update_push_constants (a_camera);
     this->reset_active_leafs_counter (cmd_buff, current_frame);
+    this->clear_geometry (cmd_buff, current_frame);
     this->compute_active_leafs (cmd_buff, current_frame);
     this->active_leafs_barrier (cmd_buff, current_frame);
     // this->prefix_sum_pass1 (cmd_buff, current_frame);
     // this->prefix_sum_pass2 (cmd_buff, current_frame);
     // this->prefix_sum_pass3 (cmd_buff, current_frame);
-    // this->compute_geometry (cmd_buff, current_frame);
+    this->compute_geometry (cmd_buff, current_frame);
     this->geometry_barrier (cmd_buff, current_frame);
     this->draw_geometry (cmd_buff, current_frame);
 
     this->context->end_frame (cmd_buff);
+
+    static bool dump = false;
+    if (!dump) {
+        vkDeviceWaitIdle (this->context->get_device ());
+
+        size_t active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, current_frame);
+        const auto active_leafs = fetch_active_leafs (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, current_frame);
+        const auto vertices_count = fetch_vertices_count (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, current_frame);
+        const auto indices_count = fetch_indices_count (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, current_frame);
+        size_t vertices_count_total = 0;
+        size_t indices_count_total = 0;
+        for (size_t i = 0; i < active_leafs.size (); ++i) {
+            std::cout << "ActiveLeaf ["<< i << "] = " << active_leafs [i] << ", v: " << vertices_count [i] << ", i " << indices_count [i] << std::endl;
+            vertices_count_total += vertices_count [i];
+            indices_count_total += indices_count [i];
+        }
+        std::cout << "ActiveLeaf count: " << active_leafs_count << "/" << this->push_constants.active_leafs_max_count << std::endl;
+        std::cout << "vertices count: " << vertices_count_total << "/" << 100000 << std::endl;
+        std::cout << "indices count: " << indices_count_total << "/" << 100000 << std::endl;
+
+        const auto mesh = fetch_mesh_from_device (this->context->get_copy_helper (), this->mesh_ds, current_frame);
+        save_mesh_as_obj (mesh, "result.obj");
+
+        dump = true;
+        vkDeviceWaitIdle (this->context->get_device ());
+    }
 }
 
 void ComputeShaderRenderer::resize (int a_width, int a_height) {

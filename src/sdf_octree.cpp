@@ -474,11 +474,29 @@ void dump_octree_subtree_pretty (const SdfOctree& scene, uint32_t subtree_root_n
     }
 }
 
-// std::vector <LeafContext> fetch_leaf_contexts (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, VkDeviceSize active_leafs_size, size_t frame) {
-//     std::vector <LeafContext> active_leafs_cpu (active_leafs_size / sizeof (LeafContext));
-//     copy_helper->ReadBuffer (info.active_leafs_buffers [frame], 0, active_leafs_cpu.data (), active_leafs_size);
-//     return active_leafs_cpu;
-// }
+std::vector <NodeContext> fetch_active_leafs (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t active_leafs_count, size_t frame) {
+    std::vector <NodeContext> active_leafs_cpu (active_leafs_count);
+    copy_helper->ReadBuffer (info.active_leafs_buffers [frame], 0, active_leafs_cpu.data (), active_leafs_count * sizeof (NodeContext));
+    return active_leafs_cpu;
+}
+
+size_t fetch_active_leaf_counter (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t frame) {
+    VkDispatchIndirectCommand command = {0, 0, 0};
+    copy_helper->ReadBuffer (info.active_leaf_counter_buffers [frame], 0, &command, sizeof (VkDispatchIndirectCommand));
+    return static_cast <size_t> (command.x);
+}
+
+std::vector <uint> fetch_vertices_count (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t active_leafs_count, size_t frame) {
+    std::vector <uint> vertices_count (active_leafs_count);
+    copy_helper->ReadBuffer (info.active_leaf_vertices_count_buffers [frame], 0, vertices_count.data (), active_leafs_count * sizeof (uint));
+    return vertices_count;
+}
+
+std::vector <uint> fetch_indices_count (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t active_leafs_count, size_t frame) {
+    std::vector <uint> indices_count (active_leafs_count);
+    copy_helper->ReadBuffer (info.active_leaf_indices_count_buffers [frame], 0, indices_count.data (), active_leafs_count * sizeof (uint));
+    return indices_count;
+}
 
 uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info) {
     uint data;

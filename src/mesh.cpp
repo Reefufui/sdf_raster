@@ -85,8 +85,8 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
 
     // VkDeviceSize vertices_size = max_vertices_count * sizeof (Vertex);
     // VkDeviceSize indices_size = max_vertices_count * sizeof (LiteMath::uint) * 3;
-    VkDeviceSize indices_size = 36 * 256 * sizeof (uint32_t);
-    VkDeviceSize vertices_size = 23 * 256 * sizeof (Vertex);
+    VkDeviceSize indices_size = 100000 * sizeof (uint32_t);
+    VkDeviceSize vertices_size = 100000 * sizeof (Vertex);
 
     // if (max_vertices_count == 0) {
     //     throw std::runtime_error ("create_mesh_descriptor_set: max_vertices_count is 0, cannot create descriptor set.");
@@ -99,8 +99,8 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
     info.vertices_buffers.clear ();
     info.indices_buffers.clear ();
     for (int i = 0; i < max_frames_in_flight; ++i) {
-        buffers [i * 2 + 0] = vk_utils::createBuffer (device, vertices_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT, &mem_reqs [i * 2 + 0]);
-        buffers [i * 2 + 1] = vk_utils::createBuffer (device, indices_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT, &mem_reqs [i * 2 + 1]);
+        buffers [i * 2 + 0] = vk_utils::createBuffer (device, vertices_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT, &mem_reqs [i * 2 + 0]);
+        buffers [i * 2 + 1] = vk_utils::createBuffer (device, indices_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT, &mem_reqs [i * 2 + 1]);
         info.vertices_buffers.push_back (buffers [i * 2 + 0]);
         info.indices_buffers.push_back (buffers [i * 2 + 1]);
     }
@@ -161,11 +161,11 @@ LiteMath::uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngin
 }
 
 Mesh fetch_mesh_from_device (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, const MeshDescriptorSetInfo& info, size_t frame) {
-    std::vector <uint32_t> idxs (36 * 256);
-    std::vector <Vertex> verts (23 * 256);
+    std::vector <uint32_t> idxs (100000);
+    std::vector <Vertex> verts (100000);
 
-    copy_helper->ReadBuffer (info.indices_buffers [frame], 0, idxs.data (), sizeof (uint32_t) * 36 * 256);
-    copy_helper->ReadBuffer (info.vertices_buffers [frame], 0, verts.data (), sizeof (Vertex) * 23 * 256);
+    copy_helper->ReadBuffer (info.indices_buffers [frame], 0, idxs.data (), sizeof (uint32_t) * 100000);
+    copy_helper->ReadBuffer (info.vertices_buffers [frame], 0, verts.data (), sizeof (Vertex) * 100000);
 
     return {std::move (idxs), std::move (verts)};
 }

@@ -65,8 +65,10 @@ float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
 
 void generate_geometry (uint active_leaf_index) {
 	NodeContext context = g_active_leafs [active_leaf_index];
-	uint vertices_offset = g_active_leaf_vertices_offsets [active_leaf_index];
-	uint indices_offset = g_active_leaf_indices_offsets [active_leaf_index];
+	// uint vertices_offset = g_active_leaf_vertices_offsets [active_leaf_index];
+	// uint indices_offset = g_active_leaf_indices_offsets [active_leaf_index];
+	uint vertices_offset = active_leaf_index * MAX_LEAF_VERTS;
+	uint indices_offset = active_leaf_index * MAX_LEAF_PRIMS * 3;
 
     const float3 min_corner = {context.min_corner_x, context.min_corner_y, context.min_corner_z};
 

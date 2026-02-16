@@ -148,7 +148,7 @@ ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
     }
 
     const VkDeviceSize active_leafs_size = active_leafs_count * sizeof (NodeContext);
-    const VkDeviceSize active_leaf_counter_size = sizeof (uint);
+    const VkDeviceSize active_leaf_counter_size = sizeof (VkDispatchIndirectCommand);
     const VkDeviceSize active_leaf_vertices_count_size = active_leafs_count * sizeof (uint);
     const VkDeviceSize active_leaf_indices_count_size = active_leafs_count * sizeof (uint);
     const VkDeviceSize active_leaf_overflow_flag_size = sizeof (uint);
@@ -163,7 +163,7 @@ ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
 
     for (int i = 0; i < max_frames_in_flight; ++i) {
         buffers [i * 4 + 0] = vk_utils::createBuffer (device, active_leafs_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 0]);
-        buffers [i * 4 + 1] = vk_utils::createBuffer (device, active_leaf_counter_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 1]);
+        buffers [i * 4 + 1] = vk_utils::createBuffer (device, active_leaf_counter_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 1]);
         buffers [i * 4 + 2] = vk_utils::createBuffer (device, active_leaf_vertices_count_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 2]);
         buffers [i * 4 + 3] = vk_utils::createBuffer (device, active_leaf_indices_count_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 3]);
 

@@ -379,6 +379,68 @@ void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff, size
     vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
 }
 
+void ComputeShaderRenderer::active_leafs_barrier (VkCommandBuffer cmd_buff, size_t current_frame) {
+    VkBufferMemoryBarrier active_leafs_buffer_barrier = {};
+    active_leafs_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    active_leafs_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    active_leafs_buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    active_leafs_buffer_barrier.buffer = this->active_leafs_ds.active_leafs_buffers [current_frame];
+    active_leafs_buffer_barrier.offset = 0;
+    active_leafs_buffer_barrier.size = VK_WHOLE_SIZE;
+
+    VkBufferMemoryBarrier active_leaf_vertices_count_buffer_barrier = {};
+    active_leaf_vertices_count_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    active_leaf_vertices_count_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    active_leaf_vertices_count_buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    active_leaf_vertices_count_buffer_barrier.buffer = this->active_leafs_ds.active_leaf_vertices_count_buffers [current_frame];
+    active_leaf_vertices_count_buffer_barrier.offset = 0;
+    active_leaf_vertices_count_buffer_barrier.size = VK_WHOLE_SIZE;
+
+    VkBufferMemoryBarrier active_leaf_indices_count_buffer_barrier = {};
+    active_leaf_indices_count_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    active_leaf_indices_count_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    active_leaf_indices_count_buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    active_leaf_indices_count_buffer_barrier.buffer = this->active_leafs_ds.active_leaf_indices_count_buffers [current_frame];
+    active_leaf_indices_count_buffer_barrier.offset = 0;
+    active_leaf_indices_count_buffer_barrier.size = VK_WHOLE_SIZE;
+
+    std::array <VkBufferMemoryBarrier, 3> barriers = {
+        active_leafs_buffer_barrier
+        , active_leaf_vertices_count_buffer_barrier
+        , active_leaf_indices_count_buffer_barrier
+    };
+
+    vkCmdPipelineBarrier (
+        cmd_buff,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0,
+        0, nullptr,
+        static_cast <uint32_t> (barriers.size ()), barriers.data (),
+        0, nullptr
+    );
+
+    VkBufferMemoryBarrier indirect_dispatch_barrier {};
+    indirect_dispatch_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    indirect_dispatch_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    indirect_dispatch_barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    indirect_dispatch_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    indirect_dispatch_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    indirect_dispatch_barrier.buffer = this->active_leafs_ds.active_leaf_counter_buffers [current_frame];
+    indirect_dispatch_barrier.offset = 0;
+    indirect_dispatch_barrier.size = VK_WHOLE_SIZE;
+
+    vkCmdPipelineBarrier (
+        cmd_buff,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+        0,
+        0, nullptr,
+        1, &indirect_dispatch_barrier,
+        0, nullptr
+    );
+}
+
 void ComputeShaderRenderer::prefix_sum_pass1 (VkCommandBuffer cmd_buff, size_t current_frame) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prefix_sum_pass1_pipeline);
 
@@ -401,6 +463,22 @@ void ComputeShaderRenderer::prefix_sum_pass3 (VkCommandBuffer cmd_buff, size_t c
 }
 
 void ComputeShaderRenderer::compute_geometry (VkCommandBuffer cmd_buff, size_t current_frame) {
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
+
+    std::array <VkDescriptorSet, 5> ds = {
+        this->sdf_octree_ds.descriptor_set,
+        this->mesh_ds.descriptor_sets [current_frame],
+        this->marching_cubes_lookup_table_ds.descriptor_set,
+        this->active_leafs_ds.descriptor_sets [current_frame],
+        this->draw_indexed_indirect_command_ds.descriptor_sets [current_frame]
+    };
+
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_geometry_pipeline_layout,
+                             0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
+
+    vkCmdPushConstants (cmd_buff, this->compute_geometry_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+
+    vkCmdDispatchIndirect (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [current_frame], 0);
 }
 
 void ComputeShaderRenderer::geometry_barrier (VkCommandBuffer cmd_buff, size_t current_frame) {
@@ -429,6 +507,26 @@ void ComputeShaderRenderer::geometry_barrier (VkCommandBuffer cmd_buff, size_t c
         0,
         0, nullptr,
         static_cast <uint32_t> (barriers.size ()), barriers.data (),
+        0, nullptr
+    );
+
+    VkBufferMemoryBarrier indirect_draw_barrier {};
+    indirect_draw_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    indirect_draw_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    indirect_draw_barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    indirect_draw_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    indirect_draw_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    indirect_draw_barrier.buffer = this->draw_indexed_indirect_command_ds.draw_indexed_indirect_command_buffers [current_frame];
+    indirect_draw_barrier.offset = 0;
+    indirect_draw_barrier.size = VK_WHOLE_SIZE;
+
+    vkCmdPipelineBarrier (
+        cmd_buff,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+        0,
+        0, nullptr,
+        1, &indirect_draw_barrier,
         0, nullptr
     );
 }
@@ -497,10 +595,11 @@ void ComputeShaderRenderer::render (const Camera& a_camera) {
     this->update_push_constants (a_camera);
     this->reset_active_leafs_counter (cmd_buff, current_frame);
     this->compute_active_leafs (cmd_buff, current_frame);
-    this->prefix_sum_pass1 (cmd_buff, current_frame);
-    this->prefix_sum_pass2 (cmd_buff, current_frame);
-    this->prefix_sum_pass3 (cmd_buff, current_frame);
-    this->compute_geometry (cmd_buff, current_frame);
+    this->active_leafs_barrier (cmd_buff, current_frame);
+    // this->prefix_sum_pass1 (cmd_buff, current_frame);
+    // this->prefix_sum_pass2 (cmd_buff, current_frame);
+    // this->prefix_sum_pass3 (cmd_buff, current_frame);
+    // this->compute_geometry (cmd_buff, current_frame);
     this->geometry_barrier (cmd_buff, current_frame);
     this->draw_geometry (cmd_buff, current_frame);
 

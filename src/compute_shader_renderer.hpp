@@ -40,6 +40,7 @@ private:
 
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame);
     void compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame);
+    void active_leafs_barrier (VkCommandBuffer cmd_buff, size_t current_frame);
     void prefix_sum_pass1 (VkCommandBuffer cmd_buff, size_t current_frame);
     void prefix_sum_pass2 (VkCommandBuffer cmd_buff, size_t current_frame);
     void prefix_sum_pass3 (VkCommandBuffer cmd_buff, size_t current_frame);

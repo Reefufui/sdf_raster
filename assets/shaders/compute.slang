@@ -18,7 +18,7 @@
 [[vk::binding (3, 2)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
 
 [[vk::binding (0, 3)]] RWStructuredBuffer <NodeContext> g_active_leafs;
-[[vk::binding (1, 3)]] RWStructuredBuffer <uint> g_active_leaf_counter;
+[[vk::binding (1, 3)]] RWStructuredBuffer <VkDispatchIndirectCommand> g_active_leaf_counter;
 [[vk::binding (2, 3)]] RWStructuredBuffer <uint> g_active_leaf_vertices_count;
 [[vk::binding (3, 3)]] RWStructuredBuffer <uint> g_active_leaf_indices_count;
 [[vk::binding (4, 3)]] RWStructuredBuffer <uint> g_active_leaf_overflow_flag;
@@ -27,7 +27,7 @@
 
 static const float4 colors [MESH_WORKGROUP_SIZE] = {
     float4(1.0, 0.0, 0.0, 1.0),   // Красный
-    float4(0.0, 1.0, 0.0, 1.0),   // Зеленый  
+    float4(0.0, 1.0, 0.0, 1.0),   // Зеленый
     float4(0.0, 0.0, 1.0, 1.0),   // Синий
     float4(1.0, 1.0, 0.0, 1.0),   // Желтый
     float4(1.0, 0.0, 1.0, 1.0),   // Магента
@@ -58,7 +58,7 @@ void process_voxel (uint3 group_id, NodeContext context, SdfOctreeNode leaf_node
     }
 
     uint active_leaf_offset = 0;
-    InterlockedAdd (g_active_leaf_indices_count [0], 1, active_leaf_offset);
+    InterlockedAdd (g_active_leaf_counter [0].x, 1, active_leaf_offset);
 
     if (active_leaf_offset >= pc.active_leafs_max_count) {
         g_active_leaf_overflow_flag [0] = 1;

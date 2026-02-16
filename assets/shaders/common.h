@@ -24,11 +24,17 @@ using uint = unsigned int;
 #else
 
 struct VkDrawIndexedIndirectCommand {
-    uint    indexCount;
-    uint    instanceCount;
-    uint    firstIndex;
-    int     vertexOffset;
-    uint    firstInstance;
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+
+struct VkDispatchIndirectCommand {
+    uint x;
+    uint y;
+    uint z;
 };
 
 #endif // __cplusplus

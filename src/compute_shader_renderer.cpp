@@ -100,7 +100,7 @@ void ComputeShaderRenderer::init_descriptor_sets () {
 	    , this->context->get_copy_helper ()
 	    , *descriptor_maker
 	    , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-	    , 0
+	    , this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS
 	    , this->context->get_total_frames ());
 
 	this->marching_cubes_lookup_table_ds = create_lookup_table_descriptor_set (this->context->get_device ()
@@ -698,10 +698,6 @@ void ComputeShaderRenderer::shutdown () {
     }
 
     std::cout << "[ComputeShaderRenderer::shutdown] ComputeShaderRenderer shutting down..." << std::endl;
-
-    // std::cout << "[ComputeShaderRenderer::shutdown] Fetching last frame leaf contexts..." << std::endl;
-    // std::vector <LeafContext> leaf_contexts = fetch_leaf_contexts (this->context->get_copy_helper (), this->sdf_octree_ds, this->max_vertices_count, this->context->get_current_frame ());
-    // dump_active_leafs (leaf_contexts, "contexts.txt", this->max_vertices_count / sizeof (LeafContext) / this->subtrees.size ());
 
     cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
     cleanup_mesh_descriptor_set (this->context->get_device (), this->mesh_ds);

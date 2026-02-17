@@ -46,7 +46,7 @@ static const float4 colors [16] = {
     float4 (0.0, 0.0, 0.0, 1.0)    // Черный
 };
 
-float3 interpolate_vertex (float3 p1, float3 p2, float valp1, float valp2) {
+float3 interpolate (float3 p1, float3 p2, float valp1, float valp2) {
     if (abs (0.f - valp1) < 0.00001)
         return (p1);
     if (abs (0.f - valp2) < 0.00001)
@@ -97,6 +97,49 @@ void generate_geometry (uint active_leaf_index) {
     const int edge_mask = cube_index_2_edge_mask [context.cube_index];
     int edge_bit = 1;
 
+    float3 normals = float3 (0.0f);
+    normals += float3 (
+        leaf_node.values [1] - leaf_node.values [0]
+        , leaf_node.values [2] - leaf_node.values [0]
+        , leaf_node.values [4] - leaf_node.values [0]
+    );
+    normals += float3 (
+        leaf_node.values [1] - leaf_node.values [0]
+        , leaf_node.values [3] - leaf_node.values [1]
+        , leaf_node.values [5] - leaf_node.values [1]
+    );
+    normals += float3 (
+        leaf_node.values [3] - leaf_node.values [2]
+        , leaf_node.values [2] - leaf_node.values [0]
+        , leaf_node.values [6] - leaf_node.values [2]
+    );
+    normals += float3 (
+        leaf_node.values [3] - leaf_node.values [2]
+        , leaf_node.values [3] - leaf_node.values [1]
+        , leaf_node.values [7] - leaf_node.values [3]
+    );
+    normals += float3 (
+        leaf_node.values [5] - leaf_node.values [4]
+        , leaf_node.values [6] - leaf_node.values [4]
+        , leaf_node.values [4] - leaf_node.values [0]
+    );
+    normals += float3 (
+        leaf_node.values [5] - leaf_node.values [4]
+        , leaf_node.values [7] - leaf_node.values [5]
+        , leaf_node.values [5] - leaf_node.values [1]
+    );
+    normals += float3 (
+        leaf_node.values [7] - leaf_node.values [6]
+        , leaf_node.values [6] - leaf_node.values [4]
+        , leaf_node.values [6] - leaf_node.values [2]
+    );
+    normals += float3 (
+        leaf_node.values [7] - leaf_node.values [6]
+        , leaf_node.values [7] - leaf_node.values [5]
+        , leaf_node.values [7] - leaf_node.values [3]
+    );
+    normals = normalize (normals);
+
     for (int i = 0; i < MAX_LEAF_VERTS; ++i) {
         if ((edge_mask & edge_bit) == 0) {
             edge_bit <<= 1;
@@ -105,13 +148,13 @@ void generate_geometry (uint active_leaf_index) {
 
         const uint2 corner_indices = edge_corners [i];
         Vertex vertex;
-        vertex.position = mul (pc.view_proj, float4 (interpolate_vertex (corners [corner_indices.x]
+        vertex.position = mul (pc.view_proj, float4 (interpolate (corners [corner_indices.x]
                                                 , corners [corner_indices.y]
                                                 , leaf_node.values [corner_indices.x]
                                                 , leaf_node.values [corner_indices.y]
                                                 ), 1.0f));
-        vertex.normal = float4 (1.f, 1.f, 1.f, 1.f); // TODO
-        vertex.color = colors [context.node_index % 16];
+        vertex.normal = float4 (normals, 1.0f);
+        vertex.color = float4 (0.0f, 1.0f, 0.0f, 1.0f);
         g_vertices [vertices_offset + i] = vertex;
 
         edge_bit <<= 1;

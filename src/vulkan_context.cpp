@@ -70,6 +70,7 @@ void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support)
 
     this->create_depth_resources ();
     this->create_render_pass ();
+    this->create_render_pass_after ();
     this->create_framebuffers ();
     this->create_frame_resources ();
 
@@ -206,6 +207,15 @@ void VulkanContext::create_device (bool a_mesh_shader_support) {
     std::vector <const char*> validation_layers {};
     std::vector <const char*> device_extensions {};
     VkPhysicalDeviceFeatures enabled_device_featurues {};
+    VkPhysicalDeviceFeatures requested_features = {};
+
+    vkGetPhysicalDeviceFeatures (this->get_physical_device (), &enabled_device_featurues);
+    if (enabled_device_featurues.wideLines) {
+        std::cout << "Physical device supports wideLines. Enabling it." << std::endl;
+        requested_features.wideLines = VK_TRUE; // TODO:
+    } else {
+        std::cerr << "Physical device does NOT support wideLines. Using lineWidth = 1.0." << std::endl;
+    }
 
     device_extensions.push_back (VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 #ifdef __APPLE__
@@ -371,6 +381,10 @@ void VulkanContext::shutdown () {
         vkDestroyRenderPass (this->get_device (), this->render_pass, nullptr);
         this->render_pass = VK_NULL_HANDLE;
     }
+    if (this->render_pass_after != VK_NULL_HANDLE) {
+        vkDestroyRenderPass (this->get_device (), this->render_pass_after, nullptr);
+        this->render_pass_after = VK_NULL_HANDLE;
+    }
 
     if (this->compute_command_pool_reset != VK_NULL_HANDLE) {
         vkDestroyCommandPool (this->get_device (), this->compute_command_pool_reset, nullptr);
@@ -529,6 +543,74 @@ void VulkanContext::create_render_pass () {
     VK_CHECK_RESULT (vkCreateRenderPass (this->get_device (), &render_pass_info, nullptr, &this->render_pass));
 }
 
+void VulkanContext::create_render_pass_after () {
+    VkAttachmentDescription color_attachment {};
+    color_attachment.format = this->swapchain.GetFormat ();
+    color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_NONE;
+    color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference color_attachment_ref {};
+    color_attachment_ref.attachment = 0;
+    color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentDescription depth_attachment {};
+    depth_attachment.format = this->depth_format;
+    depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_NONE;
+    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depth_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkAttachmentReference depth_attachment_ref {};
+    depth_attachment_ref.attachment = 1;
+    depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass {};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &color_attachment_ref;
+    subpass.pDepthStencilAttachment = &depth_attachment_ref;
+
+    std::array <VkSubpassDependency, 2> dependencies;
+
+    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[0].dstSubpass = 0;
+    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].srcAccessMask = 0;
+    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[0].dependencyFlags = 0;
+
+    dependencies[1].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[1].dstSubpass = 0;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[1].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    dependencies[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[1].dependencyFlags = 0;
+
+    std::array <VkAttachmentDescription, 2> attachments = {color_attachment, depth_attachment};
+
+    VkRenderPassCreateInfo render_pass_info {};
+    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    render_pass_info.attachmentCount = static_cast <uint32_t> (attachments.size ());
+    render_pass_info.pAttachments = attachments.data ();
+    render_pass_info.subpassCount = 1;
+    render_pass_info.pSubpasses = &subpass;
+    render_pass_info.dependencyCount = static_cast <uint32_t> (dependencies.size ());
+    render_pass_info.pDependencies = dependencies.data ();
+
+    VK_CHECK_RESULT (vkCreateRenderPass (this->get_device (), &render_pass_info, nullptr, &this->render_pass_after));
+}
+
+
 void VulkanContext::create_frame_resources () {
     this->frame_resources.resize (this->max_frames_in_flight);
 
@@ -660,16 +742,6 @@ void VulkanContext::create_depth_resources () {
     for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
         this->depth_textures [i] = vk_utils::createDepthTexture (this->device, this->physical_device
             , swapChainExtent.width, swapChainExtent.height, this->depth_format, true);
-
-        vk_utils::setImageLayout (
-            cmd,
-            this->depth_textures [i].image,
-            VK_IMAGE_ASPECT_DEPTH_BIT,
-            VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
-
     }
 
     vkEndCommandBuffer (cmd);

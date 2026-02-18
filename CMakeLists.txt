@@ -33,6 +33,7 @@ set(VULKAN_SDK_ROOT "$ENV{VULKAN_SDK}")
 
 include(FetchContent)
 
+message(STATUS "Checking for volk_project...")
 FetchContent_Declare(
     volk_project
     GIT_REPOSITORY https://github.com/zeux/volk.git
@@ -40,7 +41,9 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(volk_project)
+message(STATUS "volk_project is available (SOURCE_DIR: ${volk_project_SOURCE_DIR})")
 
+message(STATUS "Checking for glfw_project...")
 FetchContent_Declare(
     glfw_project
     GIT_REPOSITORY https://github.com/glfw/glfw.git
@@ -53,7 +56,9 @@ FetchContent_Declare(
         -DGLFW_INSTALL=OFF
 )
 FetchContent_MakeAvailable(glfw_project)
+message(STATUS "glfw_project is available (SOURCE_DIR: ${glfw_project_SOURCE_DIR})")
 
+message(STATUS "Checking for litemath...")
 FetchContent_Declare(
     litemath
     GIT_REPOSITORY https://github.com/msu-graphics-group/LiteMath.git
@@ -61,35 +66,48 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(litemath)
+message(STATUS "litemath is available (SOURCE_DIR: ${litemath_SOURCE_DIR})")
 
+message(STATUS "Checking for vk_utils_project...")
 FetchContent_Declare(
     vk_utils_project
     GIT_REPOSITORY https://github.com/msu-graphics-group/vk-utils.git
     GIT_TAG        master
     GIT_SHALLOW    TRUE
 )
-FetchContent_Populate(vk_utils_project)
+FetchContent_MakeAvailable(vk_utils_project)
+message(STATUS "vk_utils_project is available (SOURCE_DIR: ${vk_utils_project_SOURCE_DIR})")
 
+message(STATUS "Checking for stb_project...")
 FetchContent_Declare(
     stb_project
     GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG        master # Или конкретный релиз/коммит, например, v1.23
+    GIT_TAG        master
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(stb_project) # Загрузит репозиторий и сделает его доступным
+message(STATUS "stb_project is available (SOURCE_DIR: ${stb_project_SOURCE_DIR})")
 
+message(STATUS "Checking for nlohmann_json...")
 FetchContent_Declare(
     nlohmann_json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
     GIT_TAG        v3.12.0
 )
 FetchContent_MakeAvailable(nlohmann_json)
+message(STATUS "nlohmann_json is available (SOURCE_DIR: ${nlohmann_json_SOURCE_DIR})")
+
+message(STATUS "Checking for imgui...")
+FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG        v1.92.6
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(imgui)
+message(STATUS "imgui is available (SOURCE_DIR: ${imgui_SOURCE_DIR})")
 
 find_package(Vulkan REQUIRED)
-message(STATUS "Vulkan found: ${Vulkan_FOUND}")
-message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
-message(STATUS "Vulkan libraries: ${Vulkan_LIBRARIES}")
-
 message(STATUS "Vulkan found: ${Vulkan_FOUND}")
 message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 message(STATUS "Vulkan libraries: ${Vulkan_LIBRARIES}")
@@ -106,14 +124,22 @@ add_executable(${PROJECT_NAME}
     ${vk_utils_project_SOURCE_DIR}/vk_swapchain.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_utils.cpp
 
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+
     src/application.cpp
     src/camera.cpp
+    src/compute_shader_renderer.cpp
     src/main.cpp
     src/marching_cubes_lookup_table.cpp
     src/marching_cubes.cpp
     src/mesh_shader_renderer.cpp
-    src/compute_shader_renderer.cpp
     src/mesh.cpp
+    src/occlusion_culling.cpp
     src/sdf_octree.cpp
     src/vulkan_context.cpp
 
@@ -132,12 +158,15 @@ endif()
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC USE_STB_IMAGE)
 target_compile_definitions(${PROJECT_NAME} PRIVATE USE_VOLK)
+target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_DISABLE_OBSOLETE_FUNCTIONS=1)
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${vk_utils_project_SOURCE_DIR}
     ${litemath_SOURCE_DIR}
     ${stb_project_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -145,18 +174,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     volk
     Vulkan::Vulkan
     nlohmann_json
+    ${Vulkan_LOADER_LIBRARY}
 )
 
-# Линкуем всё
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    ${Vulkan_LOADER_LIBRARY} # <-- Линкуемся со стандартным Loader'ом
-)
-
-# Установка RPATH на runtime
 set_target_properties(${PROJECT_NAME} PROPERTIES
-    # Устанавливаем RPATH на директорию, содержащую libvulkan.dylib
-    # (Это та же директория, что и для libMoltenVK.dylib в твоем случае)
-    INSTALL_RPATH "$ENV{VULKAN_SDK}/lib" # <-- Указываем директорию
+    INSTALL_RPATH "$ENV{VULKAN_SDK}/lib"
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE -fopenmp)
@@ -164,7 +186,6 @@ target_link_options(${PROJECT_NAME} PRIVATE -fopenmp)
 
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     message(STATUS "Configuring for Debug build...")
-    # Попробуйте ТОЛЬКО -g и -O0
     target_compile_options(${PROJECT_NAME} PRIVATE -g -O0 -Wall -Wextra)
     target_link_options(${PROJECT_NAME} PRIVATE -g)
 elseif(CMAKE_BUILD_TYPE MATCHES Release)
@@ -204,7 +225,6 @@ foreach(SLANG_FILE ${SLANG_SOURCE_FILES})
         COMMAND ${CMAKE_COMMAND} -E make_directory "${SPIRV_OUTPUT_DIR}/"
         COMMAND ${SLANGC} ${SLANG_FILE} -o ${OUTPUT_SPV_FILE} -target spirv
         DEPENDS ${SLANG_FILE}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         VERBATIM
     )
     list(APPEND BUILT_SPIRV_FILES ${OUTPUT_SPV_FILE})
@@ -214,4 +234,13 @@ add_custom_target(CompileSlangShaders ALL DEPENDS ${BUILT_SPIRV_FILES})
 
 add_dependencies(${PROJECT_NAME} CompileSlangShaders)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/assets/)
+
+set(SDF_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/sdf")
+set(SDF_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/assets/sdf")
+add_custom_command(
+    TARGET ${PROJECT_NAME}
+    PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${SDF_SOURCE_DIR}" "${SDF_BINARY_DIR}"
+    COMMENT "Copying assets/sdf to binary directory"
+)
 

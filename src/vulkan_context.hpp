@@ -39,6 +39,7 @@ public:
     inline VkExtent2D get_swapchain_extent () const { return this->swapchain.GetExtent (); }
     inline VkFormat get_swapchain_image_format () const { return this->swapchain.GetFormat (); }
     inline VkRenderPass get_render_pass () const { return this->render_pass; }
+    inline VkRenderPass get_render_pass_after () const { return this->render_pass_after; }
     inline VkFramebuffer get_swapchain_framebuffer (uint32_t frame) const { return this->swapchain_framebuffers [frame]; }
 
     VkCommandBuffer begin_frame ();
@@ -46,6 +47,8 @@ public:
     uint32_t get_current_frame () { return this->current_frame; }
     uint32_t get_current_image_index () { return this->current_image_index; }
     uint32_t get_total_frames () { return this->max_frames_in_flight; }
+    const std::vector <vk_utils::VulkanImageMem>& get_depth_textures () { return this->depth_textures; }
+    VkSampler get_depth_sampler () { return this->depth_sampler; }
 
 private:
     void create_instance ();
@@ -55,6 +58,7 @@ private:
     void create_command_pools ();
     void get_device_queues ();
     void create_render_pass ();
+    void create_render_pass_after ();
     void create_frame_resources ();
     void create_depth_resources ();
     void create_framebuffers ();
@@ -84,6 +88,7 @@ private:
     VulkanSwapChain swapchain;
     std::vector <VkFramebuffer> swapchain_framebuffers;
     VkRenderPass render_pass = VK_NULL_HANDLE;
+    VkRenderPass render_pass_after = VK_NULL_HANDLE;
 
     std::vector <vk_utils::VulkanImageMem> depth_textures;
     VkFormat depth_format;

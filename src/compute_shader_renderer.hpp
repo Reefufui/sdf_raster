@@ -10,6 +10,7 @@
 #include "camera.hpp"
 #include "marching_cubes_lookup_table.hpp"
 #include "mesh.hpp"
+#include "occlusion_culling.hpp"
 #include "renderer.hpp"
 #include "sdf_octree.hpp"
 #include "shaders/common.h"
@@ -38,6 +39,9 @@ private:
     void init_compute_geometry_pipeline ();
     void init_graphics_shading_pipeline ();
 
+    void init_graphics_frustum_pipeline ();
+    void toggle_frustum_buffer (Camera& camera);
+
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame);
     void clear_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
     void compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame);
@@ -48,6 +52,7 @@ private:
     void compute_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
     void geometry_barrier (VkCommandBuffer cmd_buff, size_t current_frame);
     void draw_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
+    void draw_frustum (VkCommandBuffer cmd_buff, size_t current_frame);
 
     std::shared_ptr <VulkanContext> context {nullptr};
 
@@ -57,10 +62,13 @@ private:
     MarchingCubesLookupTableDescriptorSetInfo marching_cubes_lookup_table_ds {};
     ActiveLeafsDescriptorSetInfo active_leafs_ds {};
     DrawIndexedIndirectCommandDescriptorSetInfo draw_indexed_indirect_command_ds {};
+    DepthBufferDescriptorSetInfo depth_buffer_ds {};
 
     VkRenderPass render_pass {VK_NULL_HANDLE};
     VkPipelineLayout graphics_pipeline_layout {VK_NULL_HANDLE};
     VkPipeline graphics_pipeline {VK_NULL_HANDLE};
+    VkPipelineLayout graphics_frustum_pipeline_layout {VK_NULL_HANDLE};
+    VkPipeline graphics_frustum_pipeline {VK_NULL_HANDLE};
 
     VkPipeline compute_active_leafs_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_geometry_pipeline {VK_NULL_HANDLE};
@@ -77,6 +85,7 @@ private:
     int height {};
     SdfOctree sdf_octree {};
     std::vector <NodeContext> subtrees {};
+    std::unique_ptr <FrustumBuffer> frustum_buffer {nullptr};
 
     PushConstantsData push_constants;
 

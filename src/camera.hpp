@@ -2,7 +2,9 @@
 
 #include <vector>
 #include <cmath>
+#include <memory>
 
+#include "vk_copy.h"
 #include "LiteMath.h"
 
 namespace sdf_raster {
@@ -12,10 +14,10 @@ enum Camera_Movement {
 };
 
 struct Camera {
-    Camera (LiteMath::float3 initial_position = LiteMath::float3 (0.0f, 0.0f, 0.0f)
+    Camera (LiteMath::float3 initial_position = LiteMath::float3 (2.0f, 0.5f, -1.0f)
             , LiteMath::float3 initial_up = LiteMath::float3 (0.0f, -1.0f, 0.0f)
-            , float initial_yaw = 0.0f
-            , float initial_pitch = 0.0f);
+            , float initial_yaw = -200.0f
+            , float initial_pitch = -15.0f);
 
     LiteMath::float4x4 get_view_projection_matrix (float aspect_ratio) const;
 
@@ -37,6 +39,8 @@ struct Camera {
 
     void load (const std::string& filename);
 
+    void reset ();
+
     LiteMath::float3 camera_position;
     LiteMath::float3 camera_up;
     LiteMath::float3 camera_right;
@@ -51,6 +55,38 @@ struct Camera {
     float fov_y;
     float near_plane;
     float far_plane;
+};
+
+class FrustumBuffer {
+public:
+    static std::unique_ptr <FrustumBuffer> get_frustum_buffer (VkDevice device
+        , VkPhysicalDevice physical_device
+        , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
+        , const Camera& camera
+        , size_t image_width
+        , size_t image_height);
+
+    inline Camera get_camera () { return this->saved_camera; };
+    inline VkBuffer get_buffer () { return this->buffer; };
+    inline size_t get_vertex_count () { return this->vertex_count; };
+
+    ~FrustumBuffer ();
+
+private:
+    FrustumBuffer (VkDevice device
+        , VkPhysicalDevice physical_device
+        , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
+        , const Camera& camera
+        , size_t image_width
+        , size_t image_height);
+
+    static constexpr size_t vertex_count = 24;
+
+    VkDevice deletion_device;
+    Camera saved_camera;
+
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
 };
 
 }

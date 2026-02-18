@@ -28,6 +28,7 @@ public:
     void resize (int a_width, int a_height) override;
     void shutdown () override;
     void update_push_constants (const Camera& a_camera) override;
+    void toggle_frustum_buffer (Camera& camera) override;
 
 private:
     void init_mesh_shading_pipeline ();

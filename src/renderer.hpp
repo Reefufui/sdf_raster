@@ -14,6 +14,7 @@ public:
     virtual void resize (int a_width, int a_height) = 0;
     virtual void shutdown () = 0;
     virtual void update_push_constants (const Camera& a_camera) = 0;
+    virtual void toggle_frustum_buffer (Camera& camera) = 0;
 };
 
 } // namespace sdf_raster

@@ -444,6 +444,9 @@ void MeshShaderRenderer::update_push_constants (const Camera& a_camera) {
     }
 }
 
+void MeshShaderRenderer::toggle_frustum_buffer (Camera& camera) {
+}
+
 
 } // namespace sdf_raster
 

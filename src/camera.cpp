@@ -3,6 +3,7 @@
 
 #include "nlohmann/json.hpp"
 #include "camera.hpp"
+#include "vk_buffers.h"
 
 namespace sdf_raster {
 
@@ -15,7 +16,7 @@ Camera::Camera (LiteMath::float3 initial_position , LiteMath::float3 initial_up 
     , movement_speed (2.5f)
     , mouse_sensitivity (0.1f)
     , fov_y (60.0f)
-    , near_plane (0.001f)
+    , near_plane (0.1f)
     , far_plane (100.0f) {
     update_camera_vectors ();
 }
@@ -174,4 +175,114 @@ void Camera::load (const std::string& filename) {
     }
 }
 
+void Camera::reset () {
+    this->camera_position = LiteMath::float3 (2.0f, 0.5f, -1.0f);
+    this->camera_up = LiteMath::float3 (0.0f, -1.0f, 0.0f);
+    this->camera_front = LiteMath::float3 (0.0f, 0.0f, -1.0f);
+    this->yaw_angle = -200.0f;
+    this->pitch_angle = -15.0f;
+    this->fov_y = 60.0f;
+    this->movement_speed = 2.5f;
+    this->mouse_sensitivity = 0.1f;
+    this->near_plane = 0.1f;
+    this->far_plane = 100.0f;
+
+    update_camera_vectors ();
 }
+
+namespace {
+
+std::vector <LiteMath::float3> gen_vertices (const Camera& camera, size_t image_width, size_t image_height) {
+    std::vector <LiteMath::float3> corners_world;
+    corners_world.reserve (8);
+
+    static LiteMath::float4 clip_corners [8] = {
+        LiteMath::float4 (-1, -1, 0, 1), LiteMath::float4 (1, -1, 0, 1), // BL, BR Near
+        LiteMath::float4 (-1,  1, 0, 1), LiteMath::float4 (1,  1, 0, 1), // TL, TR Near
+        LiteMath::float4 (-1, -1, 1, 1), LiteMath::float4 (1, -1, 1, 1), // BL, BR Far
+        LiteMath::float4 (-1,  1, 1, 1), LiteMath::float4 (1,  1, 1, 1)  // TL, TR Far
+    };
+
+    const float aspect_ratio = static_cast <float> (image_width) / static_cast <float> (image_height);
+    const auto inv_view_proj = LiteMath::inverse4x4 (camera.get_view_projection_matrix (aspect_ratio));
+
+    for (int i = 0; i < 8; ++i) {
+        LiteMath::float4 world_p = inv_view_proj * clip_corners [i];
+        world_p /= world_p.w;
+
+        corners_world.push_back (LiteMath::float3 (world_p.x, world_p.y, world_p.z));
+    }
+
+    std::vector <LiteMath::float3> vertices (24);
+    int vertex_idx = 0;
+    // Near Plane
+    vertices [vertex_idx++] = corners_world [0]; vertices [vertex_idx++] = corners_world [1]; // 0-1
+    vertices [vertex_idx++] = corners_world [1]; vertices [vertex_idx++] = corners_world [3]; // 1-3
+    vertices [vertex_idx++] = corners_world [3]; vertices [vertex_idx++] = corners_world [2]; // 3-2
+    vertices [vertex_idx++] = corners_world [2]; vertices [vertex_idx++] = corners_world [0]; // 2-0
+
+    // Far Plane
+    vertices [vertex_idx++] = corners_world [4]; vertices [vertex_idx++] = corners_world [5]; // 4-5
+    vertices [vertex_idx++] = corners_world [5]; vertices [vertex_idx++] = corners_world [7]; // 5-7
+    vertices [vertex_idx++] = corners_world [7]; vertices [vertex_idx++] = corners_world [6]; // 7-6
+    vertices [vertex_idx++] = corners_world [6]; vertices [vertex_idx++] = corners_world [4]; // 6-4
+
+    // Connecting Edges
+    vertices [vertex_idx++] = corners_world [0]; vertices [vertex_idx++] = corners_world [4]; // 0-4
+    vertices [vertex_idx++] = corners_world [1]; vertices [vertex_idx++] = corners_world [5]; // 1-5
+    vertices [vertex_idx++] = corners_world [2]; vertices [vertex_idx++] = corners_world [6]; // 2-6
+    vertices [vertex_idx++] = corners_world [3]; vertices [vertex_idx++] = corners_world [7]; // 3-7
+
+    return vertices;
+}
+
+}
+
+std::unique_ptr <FrustumBuffer> FrustumBuffer::get_frustum_buffer (
+        VkDevice device
+        , VkPhysicalDevice physical_device
+        , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
+        , const Camera& camera
+        , size_t image_width
+        , size_t image_height) {
+    return std::unique_ptr <FrustumBuffer> (new FrustumBuffer (device, physical_device, copy_helper, camera, image_width, image_height));
+}
+
+FrustumBuffer::FrustumBuffer (
+        VkDevice device
+        , VkPhysicalDevice physical_device
+        , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
+        , const Camera& camera
+        , size_t image_width
+        , size_t image_height) : deletion_device (device), saved_camera (camera) {
+    std::cout << "FrustumBuffer::FrustumBuffer: creating..." << std::endl;
+
+    if (!copy_helper) {
+        throw std::runtime_error ("ICopyEngine shared_ptr cannot be null.");
+    }
+
+    const auto& vertices = gen_vertices (camera, image_width, image_height);
+    const VkDeviceSize frustum_size = vertices.size () * sizeof (vertices [0]);
+
+    this->buffer = vk_utils::createBuffer (device, frustum_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT, nullptr);
+    this->memory = vk_utils::allocateAndBindWithPadding (device, physical_device, { this->buffer });
+
+    copy_helper->UpdateBuffer (this->buffer, 0, vertices.data (), frustum_size);
+}
+
+FrustumBuffer::~FrustumBuffer () {
+    vkDeviceWaitIdle (this->deletion_device);
+
+    if (this->buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer (this->deletion_device, this->buffer, nullptr);
+        this->buffer = VK_NULL_HANDLE;
+    }
+
+    if (this->memory != VK_NULL_HANDLE) {
+        vkFreeMemory (this->deletion_device, this->memory, nullptr);
+        this->memory = VK_NULL_HANDLE;
+    }
+}
+
+}
+

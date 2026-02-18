@@ -78,6 +78,8 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
     this->init_compute_geometry_pipeline ();
     this->init_graphics_shading_pipeline ();
 
+    this->init_graphics_frustum_pipeline ();
+
     this->initialized = true;
     std::cout << "ComputeShaderRenderer initialized successfully." << std::endl;
 }
@@ -85,6 +87,7 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
 void ComputeShaderRenderer::init_descriptor_sets () {
     vk_utils::DescriptorTypesVec ds_type_vec {};
     ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000);
     this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
 
 	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
@@ -122,6 +125,14 @@ void ComputeShaderRenderer::init_descriptor_sets () {
         , *descriptor_maker
         , VK_SHADER_STAGE_COMPUTE_BIT
         , this->context->get_total_frames ());
+
+    this->depth_buffer_ds = create_depth_buffer_descriptor_set (this->context->get_device ()
+        , this->context->get_physical_device ()
+        , *descriptor_maker
+        , VK_SHADER_STAGE_COMPUTE_BIT
+        , this->context->get_depth_textures ()
+        , this->context->get_depth_sampler ()
+        , this->context->get_total_frames ());
 }
 
 void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
@@ -133,6 +144,7 @@ void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
             , this->mesh_ds.descriptor_set_layout
             , this->marching_cubes_lookup_table_ds.descriptor_set_layout
             , this->active_leafs_ds.descriptor_set_layout
+            , this->depth_buffer_ds.descriptor_set_layout
         }, sizeof (PushConstantsData));
     this->compute_active_leafs_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
@@ -215,10 +227,10 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
 
     VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &this->graphics_pipeline_layout));
 
-    VkVertexInputBindingDescription bindingDescription {};
-    bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof (Vertex);
-    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    VkVertexInputBindingDescription binding_desc {};
+    binding_desc.binding = 0;
+    binding_desc.stride = sizeof (Vertex);
+    binding_desc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     std::vector <VkVertexInputAttributeDescription> attributeDescriptions (3);
 
@@ -240,12 +252,12 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
     attributeDescriptions [2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
     attributeDescriptions [2].offset = sizeof (float) * 8;
 
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = static_cast <uint32_t> (attributeDescriptions.size ());
-    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data ();
+    VkPipelineVertexInputStateCreateInfo vertex_layout {};
+    vertex_layout.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertex_layout.vertexBindingDescriptionCount = 1;
+    vertex_layout.pVertexBindingDescriptions = &binding_desc;
+    vertex_layout.vertexAttributeDescriptionCount = static_cast <uint32_t> (attributeDescriptions.size ());
+    vertex_layout.pVertexAttributeDescriptions = attributeDescriptions.data ();
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly {};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -318,7 +330,7 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
     pipelineInfo.stageCount = static_cast <uint32_t> (shader_stages.size ());
     pipelineInfo.pStages = shader_stages.data ();
 
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pVertexInputState = &vertex_layout;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
@@ -348,6 +360,173 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
     }
     shader_modules.clear ();
 }
+
+void ComputeShaderRenderer::init_graphics_frustum_pipeline () {
+    std::cout << "ComputeShaderRenderer::init_graphics_frustum_pipeline called." << std::endl;
+
+    const size_t shaders_count = 2;
+    std::vector <VkShaderModule> shader_modules (shaders_count);
+    std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
+
+    shader_stages [0] = vk_utils::loadShader (this->context->get_device ()
+            , "./assets/shaders/frustum_vert.slang.spv"
+            , VK_SHADER_STAGE_VERTEX_BIT
+            , shader_modules);
+
+    shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
+            , "./assets/shaders/frustum_frag.slang.spv"
+            , VK_SHADER_STAGE_FRAGMENT_BIT
+            , shader_modules);
+
+    VkPushConstantRange pushConstantRange {};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.size = sizeof (PushConstantsData);
+    pushConstantRange.offset = 0;
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 0;
+    pipelineLayoutInfo.pSetLayouts = nullptr;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &this->graphics_frustum_pipeline_layout));
+
+    VkVertexInputBindingDescription binding_desc {};
+    binding_desc.binding = 0;
+    binding_desc.stride = sizeof (LiteMath::float3);
+    binding_desc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::vector <VkVertexInputAttributeDescription> attributeDescriptions (1);
+    attributeDescriptions [0].binding = 0;
+    attributeDescriptions [0].location = 0;
+    attributeDescriptions [0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions [0].offset = 0;
+
+    VkPipelineVertexInputStateCreateInfo vertex_layout {};
+    vertex_layout.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertex_layout.vertexBindingDescriptionCount = 1;
+    vertex_layout.pVertexBindingDescriptions = &binding_desc;
+    vertex_layout.vertexAttributeDescriptionCount = static_cast <uint32_t> (attributeDescriptions.size ());
+    vertex_layout.pVertexAttributeDescriptions = attributeDescriptions.data ();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly {};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkViewport viewport {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float) this->width;
+    viewport.height = (float) this->height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor {};
+    scissor.offset = {0, 0};
+    scissor.extent = {(uint32_t) this->width, (uint32_t) this->height};
+
+    VkPipelineViewportStateCreateInfo viewportState {};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer {};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling {};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil {};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment {};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending {};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    std::vector <VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState {};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast <uint32_t> (dynamicStates.size ());
+    dynamicState.pDynamicStates = dynamicStates.data ();
+
+    VkGraphicsPipelineCreateInfo pipelineInfo {};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = static_cast <uint32_t> (shader_stages.size ());
+    pipelineInfo.pStages = shader_stages.data ();
+
+    pipelineInfo.pVertexInputState = &vertex_layout;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+
+    pipelineInfo.layout = this->graphics_frustum_pipeline_layout;
+    if (this->context->get_render_pass () == VK_NULL_HANDLE) {
+        throw std::runtime_error ("Render Pass is not initialized!");
+    }
+    pipelineInfo.renderPass = this->context->get_render_pass ();
+    pipelineInfo.subpass = 0;
+
+    VK_CHECK_RESULT (vkCreateGraphicsPipelines (this->context->get_device ()
+                , VK_NULL_HANDLE
+                , 1
+                , &pipelineInfo
+                , nullptr
+                , &this->graphics_frustum_pipeline));
+
+    for (VkShaderModule module : shader_modules) {
+        if (module != VK_NULL_HANDLE) {
+            vkDestroyShaderModule (this->context->get_device (), module, nullptr);
+        }
+    }
+    shader_modules.clear ();
+}
+
+void ComputeShaderRenderer::toggle_frustum_buffer (Camera& camera) {
+    if (this->frustum_buffer) {
+        camera = this->frustum_buffer->get_camera ();
+        this->frustum_buffer.reset ();
+        return;
+    }
+
+    this->frustum_buffer = FrustumBuffer::get_frustum_buffer (this->context->get_device ()
+        , this->context->get_physical_device ()
+        , this->context->get_copy_helper ()
+        , camera
+        , this->width
+        , this->height);
+}
+
 
 void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame) {
     vkCmdFillBuffer (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [current_frame], 0, VK_WHOLE_SIZE, 0x00000000);
@@ -406,11 +585,12 @@ void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff, size_t cur
 void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
-    std::array <VkDescriptorSet, 4> ds = {
+    std::array <VkDescriptorSet, 5> ds = {
         this->sdf_octree_ds.descriptor_set,
         this->mesh_ds.descriptor_sets [current_frame],
         this->marching_cubes_lookup_table_ds.descriptor_set,
-        this->active_leafs_ds.descriptor_sets [current_frame]
+        this->active_leafs_ds.descriptor_sets [current_frame],
+        this->depth_buffer_ds.descriptor_sets [current_frame]
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline_layout,
@@ -577,7 +757,11 @@ void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, size_t curr
     const auto extent = this->context->get_swapchain_extent ();
 
     std::array <VkClearValue, 2> clear_values {};
-    clear_values [0].color = {{0.2f, 0.3f, 0.3f, 1.0f}};
+    if (this->frustum_buffer) {
+        clear_values [0].color = {{0.0f, 0.1f, 0.1f, 1.0f}};
+    } else {
+        clear_values [0].color = {{0.2f, 0.3f, 0.3f, 1.0f}};
+    }
     clear_values [1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo render_pass_info {};
@@ -619,9 +803,46 @@ void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, size_t curr
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void ComputeShaderRenderer::render (const Camera& a_camera) {
-    vkDeviceWaitIdle (this->context->get_device ());
+void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff, size_t current_frame) {
+    const auto extent = this->context->get_swapchain_extent ();
 
+    VkRenderPassBeginInfo render_pass_info {};
+    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    render_pass_info.renderPass = this->context->get_render_pass_after ();
+    render_pass_info.framebuffer = this->context->get_swapchain_framebuffer (this->context->get_current_image_index ());
+    render_pass_info.renderArea.offset = {0, 0};
+    render_pass_info.renderArea.extent = extent;
+
+    vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport viewport {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast <float> (extent.width);
+    viewport.height = static_cast <float> (extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_frustum_pipeline);
+
+    vkCmdPushConstants (cmd_buff, this->graphics_frustum_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &push_constants);
+
+    VkBuffer vertex_buffers [] = {this->frustum_buffer->get_buffer ()};
+    VkDeviceSize offsets [] = {0};
+    vkCmdBindVertexBuffers (cmd_buff, 0, 1, vertex_buffers, offsets);
+
+    vkCmdDraw (cmd_buff, this->frustum_buffer->get_vertex_count (), 1, 0, 0);
+
+    vkCmdEndRenderPass (cmd_buff);
+}
+
+void ComputeShaderRenderer::render (const Camera& a_camera) {
     if (!this->initialized) {
         std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
         return;
@@ -645,10 +866,13 @@ void ComputeShaderRenderer::render (const Camera& a_camera) {
     this->compute_geometry (cmd_buff, current_frame);
     this->geometry_barrier (cmd_buff, current_frame);
     this->draw_geometry (cmd_buff, current_frame);
+    if (this->frustum_buffer) {
+        draw_frustum (cmd_buff, current_frame);
+    }
 
     this->context->end_frame (cmd_buff);
 
-    static bool dump = false;
+    static bool dump = true;
     if (!dump) {
         vkDeviceWaitIdle (this->context->get_device ());
 
@@ -705,6 +929,9 @@ void ComputeShaderRenderer::shutdown () {
     cleanup_active_leafs_descriptor_set (this->context->get_device (), this->active_leafs_ds);
     cleanup_draw_indexed_indirect_command_descriptor_set (this->context->get_device (), this->draw_indexed_indirect_command_ds);
 
+    if (this->frustum_buffer) {
+        this->frustum_buffer.reset ();
+    }
     this->descriptor_maker.reset ();
 
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_active_leafs_pipeline, this->compute_active_leafs_pipeline_layout);
@@ -714,7 +941,7 @@ void ComputeShaderRenderer::shutdown () {
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_geometry_pipeline, this->compute_geometry_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_pipeline, this->graphics_pipeline_layout);
 
-    this->render_pass = VK_NULL_HANDLE;
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_frustum_pipeline, this->graphics_frustum_pipeline_layout);
 
     this->initialized = false;
 }

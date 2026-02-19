@@ -87,6 +87,7 @@ void Application::run (bool single_frame) {
         this->delta_time = static_cast <float> (current_time - last_frame);
         this->last_frame = current_time;
 
+        this->camera.update_camera_vectors ();
         this->renderer->render (this->camera);
     } while (!glfwWindowShouldClose (this->window) && !single_frame);
 }

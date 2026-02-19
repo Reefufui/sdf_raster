@@ -34,10 +34,9 @@ public:
     void dump (const std::string& filename) const;
     void load (const std::string& filename);
     void reset ();
-
-private:
     void update_camera_vectors ();
 
+private:
     LiteMath::float3 camera_position {2.0f, 0.5f, -1.0f};
     LiteMath::float3 camera_up {0.0f, -1.0f, 0.0f};
     LiteMath::float3 camera_front {0.f, 0.f, -1.f};

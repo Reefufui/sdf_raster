@@ -11,7 +11,6 @@
 namespace sdf_raster {
 
 Camera::Camera () {
-    this->update_camera_vectors ();
 }
 
 LiteMath::float4 Camera::get_position () const {
@@ -36,12 +35,10 @@ const std::array <LiteMath::float4, 8>& Camera::get_frustum_corners () const {
 
 void Camera::set_aspect_ratio (float aspect_ratio) {
     this->aspect_ratio = aspect_ratio;
-    this->update_camera_vectors ();
 }
 
 void Camera::set_far_plane (float far_plane) {
     this->far_plane = far_plane;
-    this->update_camera_vectors ();
 }
 
 void Camera::process_keyboard_input (Camera_Movement direction, float delta_time) {
@@ -71,8 +68,6 @@ void Camera::process_mouse_movement (float x_offset, float y_offset, bool constr
         if (this->pitch_angle > 89.9f) this->pitch_angle = 89.9f;
         if (this->pitch_angle < -89.9f) this->pitch_angle = -89.9f;
     }
-
-    this->update_camera_vectors ();
 }
 
 void Camera::process_scroll (float offset, bool constrain_fov) {
@@ -81,8 +76,6 @@ void Camera::process_scroll (float offset, bool constrain_fov) {
         if (this->fov_y < 1.0f) this->fov_y = 1.0f;
         if (this->fov_y > 60.0f) this->fov_y = 60.0f;
     }
-
-    this->update_camera_vectors ();
 }
 
 void Camera::update_camera_vectors () {
@@ -151,9 +144,6 @@ void Camera::load (const std::string& filename) {
             fov_y = j.at ("fov_y").get <float> ();
             movement_speed = j.at ("movement_speed").get <float> ();
             mouse_sensitivity = j.at ("mouse_sensitivity").get <float> ();
-
-            this->update_camera_vectors ();
-
         } catch (const nlohmann::json::exception& e) {
             std::cerr << "Error parsing camera settings from JSON: " << e.what () << std::endl;
         } catch (const std::exception& e) {
@@ -174,8 +164,6 @@ void Camera::reset () {
     this->fov_y = 45.0f;
     this->movement_speed = 2.5f;
     this->mouse_sensitivity = 0.1f;
-
-    this->update_camera_vectors ();
 }
 
 namespace {

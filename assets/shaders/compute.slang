@@ -24,8 +24,11 @@
 [[vk::binding (3, 3)]] RWStructuredBuffer <uint> g_active_leaf_indices_count;
 [[vk::binding (4, 3)]] RWStructuredBuffer <uint> g_active_leaf_overflow_flag;
 
-[[vk::binding (0, 4)]] Sampler2D <float> depth_sampler;
+[[vk::binding (0, 4)]] ConstantBuffer <FrustumGeometry> frustum_geometry;
 
+[[vk::binding (0, 5)]] Sampler2D <float> depth_sampler;
+
+#include "frustum_culling.h"
 #include "flatshadable_voxel.h"
 
 static const float4 colors [MESH_WORKGROUP_SIZE] = {
@@ -46,42 +49,6 @@ static const float4 colors [MESH_WORKGROUP_SIZE] = {
     float4(0.5, 0.5, 1.0, 1.0),   // Светло-голубой
     float4(0.0, 0.0, 0.0, 1.0)    // Черный
 };
-
-bool is_node_frustum_culled (float3 min_corner, float voxel_size) {
-    float3 max_corner = min_corner + float3 (voxel_size, voxel_size, voxel_size);
-    float4 bbox_corners [8] = {
-        float4 (min_corner, 1.0f),
-        float4 (max_corner.x, min_corner.y, min_corner.z, 1.0f),
-        float4 (min_corner.x, max_corner.y, min_corner.z, 1.0f),
-        float4 (max_corner.x, max_corner.y, min_corner.z, 1.0f),
-        float4 (min_corner.x, min_corner.y, max_corner.z, 1.0f),
-        float4 (max_corner.x, min_corner.y, max_corner.z, 1.0f),
-        float4 (min_corner.x, max_corner.y, max_corner.z, 1.0f),
-        float4 (max_corner, 1.0f)
-    };
-
-    // for (int i = 0; i < 8; ++i) {
-    //     bbox_corners [i] = mul (pc.view_proj, bbox_corners [i]);
-    // }
-
-    for (int i = 0; i < 6; ++i) {
-        float4 plane = pc.frustum_planes [i];
-        bool all_outside_plane = true;
-
-        for (int j = 0; j < 8; ++j) {
-            if (dot (bbox_corners [j], plane) >= 0.0f) {
-                all_outside_plane = false;
-                break;
-            }
-        }
-
-        if (all_outside_plane) {
-            return true;
-        }
-    }
-
-    return false;
-}
 
 void process_voxel (uint3 group_id, NodeContext context, SdfOctreeNode leaf_node) {
     context.cube_index = 0;
@@ -145,9 +112,9 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
 
         float3 child_coord = coord_stack [level - 1] + child_corner_offset;
 
-        // if (is_node_frustum_culled (child_coord, child_voxel_size)) {
-        //     continue;
-        // }
+        if (!voxel_frustum_intersects (child_coord, child_voxel_size)) {
+            continue;
+        }
 
         if (child_node.offset == 0) { // leaf
             NodeContext context;

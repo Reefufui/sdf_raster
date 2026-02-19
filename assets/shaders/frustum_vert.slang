@@ -9,8 +9,8 @@ struct VertexStageOutput {
 };
 
 [shader ("vertex")]
-VertexStageOutput main (float3 position) {
+VertexStageOutput main (float4 position) {
     VertexStageOutput output;
-    output.sv_position = mul (pc.view_proj, float4 (position, 1.f));
+    output.sv_position = mul (pc.view_proj, position);
     return output;
 }

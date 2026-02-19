@@ -54,6 +54,18 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
         throw std::runtime_error ("Missing SDF OCTREE. Make sure './assets/sdf/lowpoly_bunny.octree' is present in launch location");
     }
     this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
+
+    VkPhysicalDeviceProperties device_properties;
+    vkGetPhysicalDeviceProperties (this->context->get_physical_device (), &device_properties);
+    uint32_t max_push_constant_size = device_properties.limits.maxPushConstantsSize;
+    uint32_t required_push_constant_size = sizeof (PushConstantsData);
+    std::cout << "Max Push Constants Size: " << max_push_constant_size << " bytes" << std::endl;
+    if (required_push_constant_size <= max_push_constant_size) {
+        std::cout << "PushConstants (" << required_push_constant_size << " bytes) fit within the maxPushConstantsSize." << std::endl;
+    } else {
+        std::cout << "WARNING: Your 3 matrices (" << required_push_constant_size << " bytes) EXCEED the maxPushConstantsSize (" << max_push_constant_size << " bytes)." << std::endl;
+    }
+
     this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
     std::cout << "[ComputeShaderRenderer::init] MAX_OCTREE_DEPTH: " << MAX_OCTREE_DEPTH << std::endl;
     std::cout << "[ComputeShaderRenderer::init] given sdf's depth: " << this->push_constants.max_octree_depth << std::endl;
@@ -88,6 +100,7 @@ void ComputeShaderRenderer::init_descriptor_sets () {
     vk_utils::DescriptorTypesVec ds_type_vec {};
     ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
     ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000);
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000);
     this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
 
 	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
@@ -133,6 +146,12 @@ void ComputeShaderRenderer::init_descriptor_sets () {
         , this->context->get_depth_textures ()
         , this->context->get_depth_sampler ()
         , this->context->get_total_frames ());
+
+    this->frustum_ds = create_frustum_descriptor_set (this->context->get_device ()
+        , this->context->get_physical_device ()
+        , *descriptor_maker
+        , VK_SHADER_STAGE_COMPUTE_BIT
+        , this->context->get_total_frames ());
 }
 
 void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
@@ -144,6 +163,7 @@ void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
             , this->mesh_ds.descriptor_set_layout
             , this->marching_cubes_lookup_table_ds.descriptor_set_layout
             , this->active_leafs_ds.descriptor_set_layout
+            , this->frustum_ds.descriptor_set_layout
             , this->depth_buffer_ds.descriptor_set_layout
         }, sizeof (PushConstantsData));
     this->compute_active_leafs_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
@@ -394,13 +414,13 @@ void ComputeShaderRenderer::init_graphics_frustum_pipeline () {
 
     VkVertexInputBindingDescription binding_desc {};
     binding_desc.binding = 0;
-    binding_desc.stride = sizeof (LiteMath::float3);
+    binding_desc.stride = sizeof (LiteMath::float4);
     binding_desc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     std::vector <VkVertexInputAttributeDescription> attributeDescriptions (1);
     attributeDescriptions [0].binding = 0;
     attributeDescriptions [0].location = 0;
-    attributeDescriptions [0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions [0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
     attributeDescriptions [0].offset = 0;
 
     VkPipelineVertexInputStateCreateInfo vertex_layout {};
@@ -513,13 +533,13 @@ void ComputeShaderRenderer::init_graphics_frustum_pipeline () {
 }
 
 void ComputeShaderRenderer::toggle_frustum_buffer (Camera& camera) {
-    if (this->frustum_buffer) {
-        camera = this->frustum_buffer->get_camera ();
-        this->frustum_buffer.reset ();
+    if (this->frustum_draw_buffer) {
+        camera = this->frustum_draw_buffer->get_camera ();
+        this->frustum_draw_buffer.reset ();
         return;
     }
 
-    this->frustum_buffer = FrustumBuffer::get_frustum_buffer (this->context->get_device ()
+    this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
         , this->context->get_physical_device ()
         , this->context->get_copy_helper ()
         , camera
@@ -527,6 +547,55 @@ void ComputeShaderRenderer::toggle_frustum_buffer (Camera& camera) {
         , this->height);
 }
 
+void ComputeShaderRenderer::update_push_constants (const Camera& camera) {
+    this->push_constants.view_proj = camera.get_view_projection_matrix ();
+    // this->push_constants.view_proj_normal = LiteMath::inverse4x4 (this->push_constants.view_proj);
+    this->push_constants.camera_pos = camera.get_position ();
+
+    uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->mesh_ds);
+    if (insufficent_mem_flag) {
+        vkDeviceWaitIdle (this->context->get_device ());
+        this->push_constants.max_octree_depth -= 1;
+        std::cout << "[ComputeShaderRenderer::update_push_constants]: insufficent_mem_flag : " << insufficent_mem_flag << ". Reducing octree depth from "
+            << this->push_constants.max_octree_depth + 1 << " to " << this->push_constants.max_octree_depth << std::endl;
+        if (this->push_constants.max_octree_depth == 0) {
+            throw std::runtime_error ("[ComputeShaderRenderer::update_push_constants]: bug. octree must not me 0 depth");
+        }
+    }
+}
+
+namespace {
+
+LiteMath::float3 face_normal (const LiteMath::float4& a, const LiteMath::float4& b, const LiteMath::float4& c) {
+    LiteMath::float3 ab = LiteMath::to_float3 (b - a);
+    LiteMath::float3 ac = LiteMath::to_float3 (c - a);
+    return LiteMath::normalize (LiteMath::cross (ab, ac));
+}
+
+}
+
+void ComputeShaderRenderer::update_frustum_buffer (const Camera& camera, size_t current_frame) {
+    FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [current_frame]);
+    const auto& vertices = camera.get_frustum_corners ();
+    std::memcpy (ptr, vertices.data (), vertices.size () * sizeof (float4));
+
+    ptr->normals [0] = LiteMath::to_float4 (face_normal (vertices [1], vertices [0], vertices [2]), 1.f); // Near
+    ptr->normals [1] = LiteMath::to_float4 (face_normal (vertices [4], vertices [5], vertices [7]), 1.f); // Far
+    ptr->normals [2] = LiteMath::to_float4 (face_normal (vertices [0], vertices [4], vertices [6]), 1.f); // Left
+    ptr->normals [3] = LiteMath::to_float4 (face_normal (vertices [5], vertices [1], vertices [3]), 1.f); // Right
+    ptr->normals [4] = LiteMath::to_float4 (face_normal (vertices [2], vertices [3], vertices [7]), 1.f); // Top
+    ptr->normals [5] = LiteMath::to_float4 (face_normal (vertices [4], vertices [0], vertices [1]), 1.f); // Bottom
+
+    static const int edge_indices [12][2] = {
+        {0,1}, {1,3}, {3,2}, {2,0}, // Near plane edges
+        {4,5}, {5,7}, {7,6}, {6,4}, // Far plane edges
+        {0,4}, {1,5}, {2,6}, {3,7}  // Side edges
+    };
+
+    for (int i = 0; i < 12; i++) {
+        ptr->edges [i] = LiteMath::to_float4 (normalize (LiteMath::to_float3 (vertices [edge_indices [i][1]] - vertices [edge_indices [i][0]])), 1.0f);
+    }
+}
 
 void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame) {
     vkCmdFillBuffer (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [current_frame], 0, VK_WHOLE_SIZE, 0x00000000);
@@ -585,11 +654,12 @@ void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff, size_t cur
 void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
-    std::array <VkDescriptorSet, 5> ds = {
+    std::array <VkDescriptorSet, 6> ds = {
         this->sdf_octree_ds.descriptor_set,
         this->mesh_ds.descriptor_sets [current_frame],
         this->marching_cubes_lookup_table_ds.descriptor_set,
         this->active_leafs_ds.descriptor_sets [current_frame],
+        this->frustum_ds.descriptor_sets [current_frame],
         this->depth_buffer_ds.descriptor_sets [current_frame]
     };
 
@@ -757,7 +827,7 @@ void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, size_t curr
     const auto extent = this->context->get_swapchain_extent ();
 
     std::array <VkClearValue, 2> clear_values {};
-    if (this->frustum_buffer) {
+    if (this->frustum_draw_buffer) {
         clear_values [0].color = {{0.0f, 0.1f, 0.1f, 1.0f}};
     } else {
         clear_values [0].color = {{0.2f, 0.3f, 0.3f, 1.0f}};
@@ -833,16 +903,17 @@ void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff, size_t curre
 
     vkCmdPushConstants (cmd_buff, this->graphics_frustum_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &push_constants);
 
-    VkBuffer vertex_buffers [] = {this->frustum_buffer->get_buffer ()};
+    VkBuffer vertex_buffers [] = { this->frustum_draw_buffer->get_vertex_buffer () };
     VkDeviceSize offsets [] = {0};
     vkCmdBindVertexBuffers (cmd_buff, 0, 1, vertex_buffers, offsets);
+    vkCmdBindIndexBuffer (cmd_buff, this->frustum_draw_buffer->get_index_buffer (), 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdDraw (cmd_buff, this->frustum_buffer->get_vertex_count (), 1, 0, 0);
+    vkCmdDrawIndexed (cmd_buff, this->frustum_draw_buffer->get_index_count (), 1, 0, 0, 0);
 
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void ComputeShaderRenderer::render (const Camera& a_camera) {
+void ComputeShaderRenderer::render (const Camera& camera) {
     if (!this->initialized) {
         std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
         return;
@@ -855,7 +926,10 @@ void ComputeShaderRenderer::render (const Camera& a_camera) {
 
     const auto current_frame = this->context->get_current_frame ();
 
-    this->update_push_constants (a_camera);
+    this->update_push_constants (camera);
+    if (!this->frustum_draw_buffer) {
+        this->update_frustum_buffer (camera, current_frame);
+    }
     this->reset_active_leafs_counter (cmd_buff, current_frame);
     this->clear_geometry (cmd_buff, current_frame);
     this->compute_active_leafs (cmd_buff, current_frame);
@@ -866,8 +940,8 @@ void ComputeShaderRenderer::render (const Camera& a_camera) {
     this->compute_geometry (cmd_buff, current_frame);
     this->geometry_barrier (cmd_buff, current_frame);
     this->draw_geometry (cmd_buff, current_frame);
-    if (this->frustum_buffer) {
-        draw_frustum (cmd_buff, current_frame);
+    if (this->frustum_draw_buffer) {
+        this->draw_frustum (cmd_buff, current_frame);
     }
 
     this->context->end_frame (cmd_buff);
@@ -927,10 +1001,11 @@ void ComputeShaderRenderer::shutdown () {
     cleanup_mesh_descriptor_set (this->context->get_device (), this->mesh_ds);
     cleanup_lookup_table_descriptor_set (this->context->get_device (), this->marching_cubes_lookup_table_ds);
     cleanup_active_leafs_descriptor_set (this->context->get_device (), this->active_leafs_ds);
+    cleanup_frustum_descriptor_set (this->context->get_device (), this->frustum_ds);
     cleanup_draw_indexed_indirect_command_descriptor_set (this->context->get_device (), this->draw_indexed_indirect_command_ds);
 
-    if (this->frustum_buffer) {
-        this->frustum_buffer.reset ();
+    if (this->frustum_draw_buffer) {
+        this->frustum_draw_buffer.reset ();
     }
     this->descriptor_maker.reset ();
 
@@ -944,29 +1019,6 @@ void ComputeShaderRenderer::shutdown () {
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_frustum_pipeline, this->graphics_frustum_pipeline_layout);
 
     this->initialized = false;
-}
-
-void ComputeShaderRenderer::update_push_constants (const Camera& a_camera) {
-    float aspect_ratio = static_cast <float> (this->width) / static_cast <float> (this->height);
-    this->push_constants.view_proj = a_camera.get_view_projection_matrix (aspect_ratio);
-    this->push_constants.camera_pos = LiteMath::to_float4 (a_camera.camera_position, 1.f);
-    this->push_constants.color = LiteMath::float4 (0.f, 1.f, 0.f, 1.f);
-
-    std::vector <LiteMath::float4> planes = Camera::extract_frustum_planes (push_constants.view_proj);
-    for (int i = 0; i < 6; ++i) {
-        this->push_constants.frustum_planes [i] = planes [i];
-    }
-
-    uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->mesh_ds);
-    if (insufficent_mem_flag) {
-        vkDeviceWaitIdle (this->context->get_device ());
-        this->push_constants.max_octree_depth -= 1;
-        std::cout << "[ComputeShaderRenderer::update_push_constants]: insufficent_mem_flag : " << insufficent_mem_flag << ". Reducing octree depth from "
-            << this->push_constants.max_octree_depth + 1 << " to " << this->push_constants.max_octree_depth << std::endl;
-        if (this->push_constants.max_octree_depth == 0) {
-            throw std::runtime_error ("[ComputeShaderRenderer::update_push_constants]: bug. octree must not me 0 depth");
-        }
-    }
 }
 
 } // namespace sdf_raster

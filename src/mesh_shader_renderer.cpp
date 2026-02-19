@@ -422,15 +422,8 @@ void MeshShaderRenderer::shutdown () {
 }
 
 void MeshShaderRenderer::update_push_constants (const Camera& a_camera) {
-    float aspect_ratio = static_cast <float> (this->width) / static_cast <float> (this->height);
-    this->push_constants.view_proj = a_camera.get_view_projection_matrix (aspect_ratio);
-    this->push_constants.camera_pos = LiteMath::to_float4 (a_camera.camera_position, 1.f);
-    this->push_constants.color = LiteMath::float4 (0.f, 1.f, 0.f, 1.f);
-
-    std::vector <LiteMath::float4> planes = Camera::extract_frustum_planes (push_constants.view_proj);
-    for (int i = 0; i < 6; ++i) {
-        this->push_constants.frustum_planes [i] = planes [i];
-    }
+    this->push_constants.view_proj = a_camera.get_view_projection_matrix ();
+    this->push_constants.camera_pos = a_camera.get_position ();
 
     uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->active_leafs_ds);
     if (insufficent_mem_flag) {

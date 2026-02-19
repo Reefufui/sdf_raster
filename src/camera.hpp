@@ -1,11 +1,12 @@
 #pragma once
 
-#include <vector>
+#include <array>
 #include <cmath>
 #include <memory>
 
-#include "vk_copy.h"
 #include "LiteMath.h"
+#include "vk_copy.h"
+#include "vk_descriptor_sets.h"
 
 namespace sdf_raster {
 
@@ -13,81 +14,101 @@ enum Camera_Movement {
     FORWARD, BACKWARD, LEFT, RIGHT, UP, DOWN
 };
 
-struct Camera {
-    Camera (LiteMath::float3 initial_position = LiteMath::float3 (2.0f, 0.5f, -1.0f)
-            , LiteMath::float3 initial_up = LiteMath::float3 (0.0f, -1.0f, 0.0f)
-            , float initial_yaw = -200.0f
-            , float initial_pitch = -15.0f);
+class Camera {
+public:
+    Camera ();
 
-    LiteMath::float4x4 get_view_projection_matrix (float aspect_ratio) const;
-
+    LiteMath::float4 get_position () const;
+    LiteMath::float4x4 get_view_projection_matrix () const;
     LiteMath::float4x4 get_view_matrix () const;
+    LiteMath::float4x4 get_projection_matrix () const;
+    const std::array <LiteMath::float4, 8>& get_frustum_corners () const;
 
-    LiteMath::float4x4 get_projection_matrix (float aspect_ratio) const;
+    void set_aspect_ratio (float aspect_ratio);
+    void set_far_plane (float far_plane);
 
     void process_keyboard_input (Camera_Movement direction, float delta_time);
-
     void process_mouse_movement (float x_offset, float y_offset, bool constrain_pitch = true);
-
-    void update_camera_vectors ();
-
-    static std::vector<LiteMath::float4> extract_frustum_planes (const LiteMath::float4x4& view_projection_matrix);
-
-    bool is_sphere_in_frustum (const LiteMath::float3& sphere_center , float sphere_radius , const std::vector <LiteMath::float4>& frustum_planes) const;
+    void process_scroll (float offset, bool constrain_fov = true);
 
     void dump (const std::string& filename) const;
-
     void load (const std::string& filename);
-
     void reset ();
 
-    LiteMath::float3 camera_position;
-    LiteMath::float3 camera_up;
+private:
+    void update_camera_vectors ();
+
+    LiteMath::float3 camera_position {2.0f, 0.5f, -1.0f};
+    LiteMath::float3 camera_up {0.0f, -1.0f, 0.0f};
+    LiteMath::float3 camera_front {0.f, 0.f, -1.f};
+
+    float yaw_angle {-200.0f};
+    float pitch_angle {-15.0f};
+
+    float movement_speed {2.5f};
+    float mouse_sensitivity {0.1f};
+
+    float fov_y {45.0f};
+    float near_plane {0.1f};
+    float far_plane {10.0f};
+    float aspect_ratio {1.0f};
+
+    std::array <LiteMath::float4, 8> frustum_corners;
+
+private:
     LiteMath::float3 camera_right;
-    LiteMath::float3 camera_front;
-
-    float yaw_angle;
-    float pitch_angle;
-
-    float movement_speed;
-    float mouse_sensitivity;
-
-    float fov_y;
-    float near_plane;
-    float far_plane;
 };
 
-class FrustumBuffer {
+class FrustumDrawBuffer {
 public:
-    static std::unique_ptr <FrustumBuffer> get_frustum_buffer (VkDevice device
+    static std::unique_ptr <FrustumDrawBuffer> get_frustum_buffer (VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , const Camera& camera
+        , Camera& camera
         , size_t image_width
         , size_t image_height);
 
     inline Camera get_camera () { return this->saved_camera; };
-    inline VkBuffer get_buffer () { return this->buffer; };
-    inline size_t get_vertex_count () { return this->vertex_count; };
+    inline VkBuffer get_vertex_buffer () { return this->vertex_buffer; };
+    inline VkBuffer get_index_buffer () { return this->index_buffer; };
+    inline size_t get_index_count () { return 24; };
 
-    ~FrustumBuffer ();
+    ~FrustumDrawBuffer ();
 
 private:
-    FrustumBuffer (VkDevice device
+    FrustumDrawBuffer (VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , const Camera& camera
+        , Camera& camera
         , size_t image_width
         , size_t image_height);
-
-    static constexpr size_t vertex_count = 24;
 
     VkDevice deletion_device;
     Camera saved_camera;
 
-    VkBuffer buffer = VK_NULL_HANDLE;
+    VkBuffer vertex_buffer = VK_NULL_HANDLE;
+    VkBuffer index_buffer = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
 };
+
+struct FrustumDescriptorSetInfo {
+    std::vector <VkDescriptorSet> descriptor_sets;
+    VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
+
+    std::vector <VkBuffer> frustum_geometry_buffers;
+    std::vector <VkDeviceMemory> frustum_geometry_memories;
+    std::vector <void*> frustum_geometry_memories_mapped;
+};
+
+FrustumDescriptorSetInfo create_frustum_descriptor_set (
+    VkDevice device
+    , VkPhysicalDevice physical_device
+    , vk_utils::DescriptorMaker& ds_maker
+    , VkShaderStageFlags shader_stage_flags
+    , size_t max_frames_in_flight);
+
+void cleanup_frustum_descriptor_set (VkDevice device, FrustumDescriptorSetInfo& info);
+
 
 }
 

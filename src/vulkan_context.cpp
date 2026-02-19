@@ -214,7 +214,7 @@ void VulkanContext::create_device (bool a_mesh_shader_support) {
         std::cout << "Physical device supports wideLines. Enabling it." << std::endl;
         requested_features.wideLines = VK_TRUE; // TODO:
     } else {
-        std::cerr << "Physical device does NOT support wideLines. Using lineWidth = 1.0." << std::endl;
+        std::cerr << "Physical device does NOT support wideLines. Defaulting to lineWidth = 1.0." << std::endl;
     }
 
     device_extensions.push_back (VK_KHR_SWAPCHAIN_EXTENSION_NAME);

@@ -1,69 +1,88 @@
 #include <fstream>
 #include <iostream>
+#include <vector>
 
-#include "nlohmann/json.hpp"
 #include "camera.hpp"
+#include "nlohmann/json.hpp"
+#include "shaders/common.h"
 #include "vk_buffers.h"
+#include "vk_utils.h"
 
 namespace sdf_raster {
 
-Camera::Camera (LiteMath::float3 initial_position , LiteMath::float3 initial_up , float initial_yaw , float initial_pitch)
-    : camera_position (initial_position)
-    , camera_up (initial_up)
-    , camera_front (LiteMath::float3 (0.0f, 0.0f, -1.0f))
-    , yaw_angle (initial_yaw)
-    , pitch_angle (initial_pitch)
-    , movement_speed (2.5f)
-    , mouse_sensitivity (0.1f)
-    , fov_y (60.0f)
-    , near_plane (0.1f)
-    , far_plane (100.0f) {
-    update_camera_vectors ();
+Camera::Camera () {
+    this->update_camera_vectors ();
 }
 
-LiteMath::float4x4 Camera::get_view_projection_matrix (float aspect_ratio) const {
-    return get_projection_matrix (aspect_ratio) * get_view_matrix ();
+LiteMath::float4 Camera::get_position () const {
+    return LiteMath::to_float4 (this->camera_position, 1.f);
+}
+
+LiteMath::float4x4 Camera::get_view_projection_matrix () const {
+    return get_projection_matrix () * get_view_matrix ();
 }
 
 LiteMath::float4x4 Camera::get_view_matrix () const {
-    return LiteMath::lookAt (camera_position, camera_position + camera_front, camera_up);
+    return LiteMath::lookAt (this->camera_position, this->camera_position + this->camera_front, this->camera_up);
 }
 
-LiteMath::float4x4 Camera::get_projection_matrix (float aspect_ratio) const {
-    return LiteMath::perspectiveMatrix (fov_y, aspect_ratio, near_plane, far_plane);
+LiteMath::float4x4 Camera::get_projection_matrix () const {
+    return LiteMath::perspectiveMatrix (fov_y, this->aspect_ratio, this->near_plane, this->far_plane);
+}
+
+const std::array <LiteMath::float4, 8>& Camera::get_frustum_corners () const {
+    return this->frustum_corners;
+}
+
+void Camera::set_aspect_ratio (float aspect_ratio) {
+    this->aspect_ratio = aspect_ratio;
+    this->update_camera_vectors ();
+}
+
+void Camera::set_far_plane (float far_plane) {
+    this->far_plane = far_plane;
+    this->update_camera_vectors ();
 }
 
 void Camera::process_keyboard_input (Camera_Movement direction, float delta_time) {
-    float velocity = movement_speed * delta_time;
+    float velocity = this->movement_speed * delta_time;
     if (direction == FORWARD)
-        camera_position += camera_front * velocity;
+        this->camera_position += camera_front * velocity;
     if (direction == BACKWARD)
-        camera_position -= camera_front * velocity;
+        this->camera_position -= camera_front * velocity;
     if (direction == LEFT)
-        camera_position -= camera_right * velocity;
+        this->camera_position -= camera_right * velocity;
     if (direction == RIGHT)
-        camera_position += camera_right * velocity;
+        this->camera_position += camera_right * velocity;
     if (direction == UP)
-        camera_position += LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
+        this->camera_position += LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
     if (direction == DOWN)
-        camera_position -= LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
+        this->camera_position -= LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
 }
 
 void Camera::process_mouse_movement (float x_offset, float y_offset, bool constrain_pitch) {
-    x_offset *= mouse_sensitivity;
-    y_offset *= mouse_sensitivity;
+    x_offset *= this->mouse_sensitivity;
+    y_offset *= this->mouse_sensitivity;
 
-    yaw_angle -= x_offset;
-    pitch_angle += y_offset;
+    this->yaw_angle -= x_offset;
+    this->pitch_angle += y_offset;
 
     if (constrain_pitch) {
-        if (pitch_angle > 89.0f)
-            pitch_angle = 89.0f;
-        if (pitch_angle < -89.0f)
-            pitch_angle = -89.0f;
+        if (this->pitch_angle > 89.9f) this->pitch_angle = 89.9f;
+        if (this->pitch_angle < -89.9f) this->pitch_angle = -89.9f;
     }
 
-    update_camera_vectors ();
+    this->update_camera_vectors ();
+}
+
+void Camera::process_scroll (float offset, bool constrain_fov) {
+    this->fov_y -= offset;
+    if (constrain_fov) {
+        if (this->fov_y < 1.0f) this->fov_y = 1.0f;
+        if (this->fov_y > 60.0f) this->fov_y = 60.0f;
+    }
+
+    this->update_camera_vectors ();
 }
 
 void Camera::update_camera_vectors () {
@@ -72,50 +91,25 @@ void Camera::update_camera_vectors () {
     new_front.y = std::sin (LiteMath::DEG_TO_RAD * pitch_angle);
     new_front.z = std::sin (LiteMath::DEG_TO_RAD * yaw_angle) * std::cos (LiteMath::DEG_TO_RAD * pitch_angle);
 
-    camera_front = LiteMath::normalize (new_front);
-    camera_right = LiteMath::normalize (LiteMath::cross (camera_front, LiteMath::float3 (0.0f, -1.0f, 0.0f)));
-    camera_up    = LiteMath::normalize (LiteMath::cross (camera_right, camera_front));
-}
+    this->camera_front = LiteMath::normalize (new_front);
+    this->camera_right = LiteMath::normalize (LiteMath::cross (this->camera_front, LiteMath::float3 (0.0f, -1.0f, 0.0f)));
+    this->camera_up    = LiteMath::normalize (LiteMath::cross (this->camera_right, this->camera_front));
 
-std::vector <LiteMath::float4> Camera::extract_frustum_planes (const LiteMath::float4x4& view_projection_matrix) {
-    std::vector <LiteMath::float4> planes (6);
+    static LiteMath::float4 clip_corners [8] = {
+        LiteMath::float4 (-1, -1, 0, 1), LiteMath::float4 (1, -1, 0, 1), // BL, BR Near
+        LiteMath::float4 (-1,  1, 0, 1), LiteMath::float4 (1,  1, 0, 1), // TL, TR Near
+        LiteMath::float4 (-1, -1, 1, 1), LiteMath::float4 (1, -1, 1, 1), // BL, BR Far
+        LiteMath::float4 (-1,  1, 1, 1), LiteMath::float4 (1,  1, 1, 1)  // TL, TR Far
+    };
 
-    LiteMath::float4 c0 = view_projection_matrix.col (0);
-    LiteMath::float4 c1 = view_projection_matrix.col (1);
-    LiteMath::float4 c2 = view_projection_matrix.col (2);
-    LiteMath::float4 c3 = view_projection_matrix.col (3);
+    const auto inv_view_proj = LiteMath::inverse4x4 (this->get_view_projection_matrix ());
 
-    planes[0] = c3 - c0; // Right Plane
-    planes[1] = c3 + c0; // Left Plane
-    planes[2] = c3 + c1; // Bottom Plane
-    planes[3] = c3 - c1; // Top Plane
-    planes[4] = c2;      // Near Plane (Z_clip >= 0)
-    planes[5] = c3 - c2; // Far Plane (Z_clip <= W_clip)
+    for (int i = 0; i < 8; ++i) {
+        LiteMath::float4 world_p = inv_view_proj * clip_corners [i];
+        world_p /= world_p.w;
 
-    for ( int i = 0; i < 6; ++i ) {
-        float length = LiteMath::length (LiteMath::float3 (planes[i].x, planes[i].y, planes[i].z));
-        if ( length < LiteMath::EPSILON ) {
-            continue; 
-        }
-        planes[i] = planes[i] / length;
+        this->frustum_corners [i] = LiteMath::float4 (world_p.x, world_p.y, world_p.z, 1.f);
     }
-    return planes;
-}
-
-bool Camera::is_sphere_in_frustum (const LiteMath::float3& sphere_center
-                           , float sphere_radius 
-                           , const std::vector <LiteMath::float4>& frustum_planes) const {
-    for (const auto& plane : frustum_planes) {
-        float distance = plane.x * sphere_center.x
-            + plane.y * sphere_center.y
-            + plane.z * sphere_center.z
-            + plane.w;
-
-        if (distance < -sphere_radius) {
-            return false;
-        }
-    }
-    return true;
 }
 
 inline nlohmann::json float3_to_json (const LiteMath::float3& vec) {
@@ -134,8 +128,6 @@ void Camera::dump (const std::string& filename) const {
     j ["fov_y"] = fov_y;
     j ["movement_speed"] = movement_speed;
     j ["mouse_sensitivity"] = mouse_sensitivity;
-    j ["near_plane"] = near_plane;
-    j ["far_plane"] = far_plane;
 
     std::ofstream o (filename);
     if (o.is_open ()) {
@@ -159,10 +151,8 @@ void Camera::load (const std::string& filename) {
             fov_y = j.at ("fov_y").get <float> ();
             movement_speed = j.at ("movement_speed").get <float> ();
             mouse_sensitivity = j.at ("mouse_sensitivity").get <float> ();
-            near_plane = j.at ("near_plane").get <float> ();
-            far_plane = j.at ("far_plane").get <float> ();
 
-            update_camera_vectors ();
+            this->update_camera_vectors ();
 
         } catch (const nlohmann::json::exception& e) {
             std::cerr << "Error parsing camera settings from JSON: " << e.what () << std::endl;
@@ -181,107 +171,146 @@ void Camera::reset () {
     this->camera_front = LiteMath::float3 (0.0f, 0.0f, -1.0f);
     this->yaw_angle = -200.0f;
     this->pitch_angle = -15.0f;
-    this->fov_y = 60.0f;
+    this->fov_y = 45.0f;
     this->movement_speed = 2.5f;
     this->mouse_sensitivity = 0.1f;
-    this->near_plane = 0.1f;
-    this->far_plane = 100.0f;
 
-    update_camera_vectors ();
+    this->update_camera_vectors ();
 }
 
 namespace {
 
-std::vector <LiteMath::float3> gen_vertices (const Camera& camera, size_t image_width, size_t image_height) {
-    std::vector <LiteMath::float3> corners_world;
-    corners_world.reserve (8);
-
-    static LiteMath::float4 clip_corners [8] = {
-        LiteMath::float4 (-1, -1, 0, 1), LiteMath::float4 (1, -1, 0, 1), // BL, BR Near
-        LiteMath::float4 (-1,  1, 0, 1), LiteMath::float4 (1,  1, 0, 1), // TL, TR Near
-        LiteMath::float4 (-1, -1, 1, 1), LiteMath::float4 (1, -1, 1, 1), // BL, BR Far
-        LiteMath::float4 (-1,  1, 1, 1), LiteMath::float4 (1,  1, 1, 1)  // TL, TR Far
-    };
-
-    const float aspect_ratio = static_cast <float> (image_width) / static_cast <float> (image_height);
-    const auto inv_view_proj = LiteMath::inverse4x4 (camera.get_view_projection_matrix (aspect_ratio));
-
-    for (int i = 0; i < 8; ++i) {
-        LiteMath::float4 world_p = inv_view_proj * clip_corners [i];
-        world_p /= world_p.w;
-
-        corners_world.push_back (LiteMath::float3 (world_p.x, world_p.y, world_p.z));
-    }
-
-    std::vector <LiteMath::float3> vertices (24);
-    int vertex_idx = 0;
+static const std::array <uint32_t, 24> s_frustum_edge_indices = {
     // Near Plane
-    vertices [vertex_idx++] = corners_world [0]; vertices [vertex_idx++] = corners_world [1]; // 0-1
-    vertices [vertex_idx++] = corners_world [1]; vertices [vertex_idx++] = corners_world [3]; // 1-3
-    vertices [vertex_idx++] = corners_world [3]; vertices [vertex_idx++] = corners_world [2]; // 3-2
-    vertices [vertex_idx++] = corners_world [2]; vertices [vertex_idx++] = corners_world [0]; // 2-0
+    0, 1,
+    1, 3,
+    3, 2,
+    2, 0,
 
     // Far Plane
-    vertices [vertex_idx++] = corners_world [4]; vertices [vertex_idx++] = corners_world [5]; // 4-5
-    vertices [vertex_idx++] = corners_world [5]; vertices [vertex_idx++] = corners_world [7]; // 5-7
-    vertices [vertex_idx++] = corners_world [7]; vertices [vertex_idx++] = corners_world [6]; // 7-6
-    vertices [vertex_idx++] = corners_world [6]; vertices [vertex_idx++] = corners_world [4]; // 6-4
+    4, 5,
+    5, 7,
+    7, 6,
+    6, 4,
 
     // Connecting Edges
-    vertices [vertex_idx++] = corners_world [0]; vertices [vertex_idx++] = corners_world [4]; // 0-4
-    vertices [vertex_idx++] = corners_world [1]; vertices [vertex_idx++] = corners_world [5]; // 1-5
-    vertices [vertex_idx++] = corners_world [2]; vertices [vertex_idx++] = corners_world [6]; // 2-6
-    vertices [vertex_idx++] = corners_world [3]; vertices [vertex_idx++] = corners_world [7]; // 3-7
-
-    return vertices;
-}
+    0, 4,
+    1, 5,
+    2, 6,
+    3, 7
+};
 
 }
 
-std::unique_ptr <FrustumBuffer> FrustumBuffer::get_frustum_buffer (
+std::unique_ptr <FrustumDrawBuffer> FrustumDrawBuffer::get_frustum_buffer (
         VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , const Camera& camera
+        , Camera& camera
         , size_t image_width
         , size_t image_height) {
-    return std::unique_ptr <FrustumBuffer> (new FrustumBuffer (device, physical_device, copy_helper, camera, image_width, image_height));
+    return std::unique_ptr <FrustumDrawBuffer> (new FrustumDrawBuffer (device, physical_device, copy_helper, camera, image_width, image_height));
 }
 
-FrustumBuffer::FrustumBuffer (
+FrustumDrawBuffer::FrustumDrawBuffer (
         VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , const Camera& camera
+        , Camera& camera
         , size_t image_width
         , size_t image_height) : deletion_device (device), saved_camera (camera) {
-    std::cout << "FrustumBuffer::FrustumBuffer: creating..." << std::endl;
+    std::cout << "FrustumDrawBuffer::FrustumDrawBuffer: creating..." << std::endl;
 
     if (!copy_helper) {
         throw std::runtime_error ("ICopyEngine shared_ptr cannot be null.");
     }
 
-    const auto& vertices = gen_vertices (camera, image_width, image_height);
-    const VkDeviceSize frustum_size = vertices.size () * sizeof (vertices [0]);
+    const auto& vertices = camera.get_frustum_corners ();
+    const VkDeviceSize vertices_size = vertices.size () * sizeof (vertices [0]);
+    const VkDeviceSize indices_size = s_frustum_edge_indices.size () * sizeof (s_frustum_edge_indices [0]);
 
-    this->buffer = vk_utils::createBuffer (device, frustum_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT, nullptr);
-    this->memory = vk_utils::allocateAndBindWithPadding (device, physical_device, { this->buffer });
+    this->vertex_buffer = vk_utils::createBuffer (device, vertices_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT, nullptr);
+    this->index_buffer = vk_utils::createBuffer (device, indices_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT, nullptr);
+    this->memory = vk_utils::allocateAndBindWithPadding (device, physical_device, { this->vertex_buffer, this->index_buffer });
 
-    copy_helper->UpdateBuffer (this->buffer, 0, vertices.data (), frustum_size);
+    copy_helper->UpdateBuffer (this->vertex_buffer, 0, vertices.data (), vertices_size);
+    copy_helper->UpdateBuffer (this->index_buffer, 0, s_frustum_edge_indices.data (), indices_size);
+
+    camera.set_far_plane (100.f); // to render frustum fully
 }
 
-FrustumBuffer::~FrustumBuffer () {
+FrustumDrawBuffer::~FrustumDrawBuffer () {
     vkDeviceWaitIdle (this->deletion_device);
 
-    if (this->buffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer (this->deletion_device, this->buffer, nullptr);
-        this->buffer = VK_NULL_HANDLE;
+    if (this->vertex_buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer (this->deletion_device, this->vertex_buffer, nullptr);
+        this->vertex_buffer = VK_NULL_HANDLE;
+    }
+    if (this->index_buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer (this->deletion_device, this->index_buffer, nullptr);
+        this->index_buffer = VK_NULL_HANDLE;
     }
 
     if (this->memory != VK_NULL_HANDLE) {
         vkFreeMemory (this->deletion_device, this->memory, nullptr);
         this->memory = VK_NULL_HANDLE;
     }
+}
+
+FrustumDescriptorSetInfo create_frustum_descriptor_set (
+    VkDevice device
+    , VkPhysicalDevice physical_device
+    , vk_utils::DescriptorMaker& ds_maker
+    , VkShaderStageFlags shader_stage_flags
+    , size_t max_frames_in_flight) {
+    std::cout << "create_frustum_descriptor_set: creating..." << std::endl;
+    FrustumDescriptorSetInfo info = {};
+
+    VkDeviceSize frustum_geometry_size = sizeof (FrustumGeometry);
+
+    info.frustum_geometry_buffers.resize (max_frames_in_flight);
+    info.frustum_geometry_memories.resize (max_frames_in_flight);
+    info.frustum_geometry_memories_mapped.resize (max_frames_in_flight);
+
+    for (int i = 0; i < max_frames_in_flight; ++i) {
+        VkMemoryRequirements mem_req;
+        info.frustum_geometry_buffers [i] = vk_utils::createBuffer (device, frustum_geometry_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &mem_req);
+
+        VkMemoryAllocateInfo allocInfo {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = mem_req.size;
+        allocInfo.memoryTypeIndex = vk_utils::findMemoryType (mem_req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, physical_device);
+
+        VK_CHECK_RESULT (vkAllocateMemory (device, &allocInfo, nullptr, &(info.frustum_geometry_memories [i])));
+
+        vkBindBufferMemory (device, info.frustum_geometry_buffers [i], info.frustum_geometry_memories [i], 0);
+
+        VK_CHECK_RESULT (vkMapMemory (device, info.frustum_geometry_memories [i], 0, frustum_geometry_size, 0, &(info.frustum_geometry_memories_mapped [i])));
+    }
+
+    info.descriptor_sets.resize (max_frames_in_flight);
+    for (int i = 0; i < max_frames_in_flight; ++i) {
+        ds_maker.BindBegin (shader_stage_flags);
+        ds_maker.BindBuffer (0, info.frustum_geometry_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
+    }
+
+    return info;
+}
+
+void cleanup_frustum_descriptor_set (VkDevice device, FrustumDescriptorSetInfo& info) {
+    for (int i = 0; i < info.frustum_geometry_buffers.size (); ++i) {
+        if (info.frustum_geometry_buffers [i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer (device, info.frustum_geometry_buffers [i], nullptr);
+            info.frustum_geometry_buffers [i] = VK_NULL_HANDLE;
+        }
+        if (info.frustum_geometry_memories [i] != VK_NULL_HANDLE) {
+            vkFreeMemory (device, info.frustum_geometry_memories [i], nullptr);
+            info.frustum_geometry_memories [i] = VK_NULL_HANDLE;
+        }
+    }
+
+    info = {};
 }
 
 }

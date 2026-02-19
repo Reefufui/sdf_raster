@@ -15,10 +15,10 @@
 namespace sdf_raster {
 
 Application::Application (int a_width, int a_height)
-    : width ((a_width == 0) ? 1800 : a_width)
+    : width ((a_width == 0) ? 1080 : a_width)
     , height ((a_height == 0) ? 900 : a_height)
-    , camera ()
     , user_data ({this}) {
+    camera.set_aspect_ratio (static_cast <float> (a_width) / static_cast <float> (a_height));
     // init_renderer ();
 }
 
@@ -26,13 +26,17 @@ Application::Application (int a_width, int a_height, const std::string& a_window
     : width (a_width)
     , height (a_height)
     , window_title (a_window_title)
-    , camera ()
     , user_data ({this}) {
     init_window ();
     init_vulkan (a_mesh_shader_support);
     init_renderer (a_leaf_memory_limit, a_mesh_shader_support);
-    last_x = static_cast <float> (width) / 2.0f;
-    last_y = static_cast <float> (height) / 2.0f;
+
+    float f_width = static_cast <float> (width);
+    float f_height = static_cast <float> (height);
+    this->last_x = f_width / 2.0f;
+    this->last_y = f_height / 2.0f;
+    this->camera = Camera ();
+    this->camera.set_aspect_ratio (f_width / f_height);
 }
 
 Application::~Application () {
@@ -115,6 +119,10 @@ void Application::init_window () {
         glfwGetWindowSize (this->window, &this->width, &this->height);
         std::cout << "Window dimensions: " << this->width << "x" << this->height << std::endl;
     }
+
+    float f_width = static_cast <float> (this->width);
+    float f_height = static_cast <float> (this->height);
+    this->camera.set_aspect_ratio (f_width / f_height);
 }
 
 void Application::init_vulkan (bool a_mesh_shader_support) {
@@ -199,9 +207,7 @@ void Application::mouse_callback (GLFWwindow* a_window, double xpos, double ypos
 void Application::scroll_callback (GLFWwindow* a_window, double, double yoffset) {
     auto app = get_app_ptr (a_window);
     if (app) {
-        app->camera.fov_y -= static_cast <float> (yoffset);
-        if (app->camera.fov_y < 1.0f) app->camera.fov_y = 1.0f;
-        if (app->camera.fov_y > 45.0f) app->camera.fov_y = 45.0f;
+        app->camera.process_scroll (static_cast <float> (yoffset));
     }
 }
 

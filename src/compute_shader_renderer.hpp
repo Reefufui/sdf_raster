@@ -28,7 +28,6 @@ public:
     void render (const Camera& a_camera) override;
     void resize (int a_width, int a_height) override;
     void shutdown () override;
-    void update_push_constants (const Camera& a_camera) override;
 
 private:
     void init_descriptor_sets ();
@@ -42,6 +41,8 @@ private:
     void init_graphics_frustum_pipeline ();
     void toggle_frustum_buffer (Camera& camera);
 
+    void update_push_constants (const Camera& camera);
+    void update_frustum_buffer (const Camera& camera, size_t current_frame);
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame);
     void clear_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
     void compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame);
@@ -63,6 +64,7 @@ private:
     ActiveLeafsDescriptorSetInfo active_leafs_ds {};
     DrawIndexedIndirectCommandDescriptorSetInfo draw_indexed_indirect_command_ds {};
     DepthBufferDescriptorSetInfo depth_buffer_ds {};
+    FrustumDescriptorSetInfo frustum_ds {};
 
     VkRenderPass render_pass {VK_NULL_HANDLE};
     VkPipelineLayout graphics_pipeline_layout {VK_NULL_HANDLE};
@@ -85,7 +87,7 @@ private:
     int height {};
     SdfOctree sdf_octree {};
     std::vector <NodeContext> subtrees {};
-    std::unique_ptr <FrustumBuffer> frustum_buffer {nullptr};
+    std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer {nullptr};
 
     PushConstantsData push_constants;
 

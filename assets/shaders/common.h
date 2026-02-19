@@ -64,16 +64,21 @@ struct TaskPayload {
 
 struct PushConstantsData {
     column_major float4x4 view_proj;
+    column_major float4x4 view_proj_normal;
     float4 camera_pos;
-    float4 color;
-    float4 frustum_planes [6];
     int max_octree_depth;
     uint active_leafs_max_count;
 };
 
 struct SdfOctreeNode {
-  float values [8];
-  uint offset; // offset for children (they are stored together). 0 offset means it's a leaf
+    float values [8];
+    uint offset; // offset for children (they are stored together). 0 offset means it's a leaf
+};
+
+struct FrustumGeometry {
+    float4 vertices [8];
+    float4 normals [6];
+    float4 edges [12];
 };
 
 #endif // COMMON_H

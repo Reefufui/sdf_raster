@@ -112,7 +112,8 @@ void Application::init_window () {
     glfwSetKeyCallback (this->window, key_callback);
     glfwSetMouseButtonCallback (this->window, mouse_button_callback);
 
-    this->camera_mode_active = false;
+    glfwSetInputMode (this->window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    this->camera_mode_active = true;
     this->first_mouse = true;
 
     if (this->width == 1 || this->height == 1) {
@@ -246,8 +247,14 @@ void Application::mouse_button_callback (GLFWwindow* a_window, int button, int a
     Application* app = get_app_ptr (a_window);
     if (!app) return;
 
-    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-        if (!app->camera_mode_active) {
+    if (app->camera_mode_active) {
+        if ((button == GLFW_MOUSE_BUTTON_RIGHT || button == GLFW_MOUSE_BUTTON_LEFT) && action == GLFW_PRESS) {
+            app->camera_mode_active = false;
+            glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            std::cout << "Exited camera mode (Right-click). Cursor NORMAL." << std::endl;
+        }
+    } else {
+        if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
             app->camera_mode_active = true;
             glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             app->first_mouse = true;

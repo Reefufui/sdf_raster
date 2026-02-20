@@ -1,6 +1,7 @@
 // task_generator.slang
 
 #include "common.h"
+#include "colors.h"
 
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 
@@ -27,31 +28,14 @@
 
 #define WORKGROUP_SIZE 256
 
-static const float4 colors [16] = {
-    float4 (1.0, 0.0, 0.0, 1.0),   // Красный
-    float4 (0.0, 1.0, 0.0, 1.0),   // Зеленый
-    float4 (0.0, 0.0, 1.0, 1.0),   // Синий
-    float4 (1.0, 1.0, 0.0, 1.0),   // Желтый
-    float4 (1.0, 0.0, 1.0, 1.0),   // Магента
-    float4 (0.0, 1.0, 1.0, 1.0),   // Циан
-    float4 (1.0, 1.0, 1.0, 1.0),   // Белый
-    float4 (0.5, 0.5, 0.5, 1.0),   // Серый
-    float4 (1.0, 0.5, 0.0, 1.0),   // Оранжевый
-    float4 (1.0, 0.0, 0.5, 1.0),   // Розовый
-    float4 (0.5, 1.0, 0.0, 1.0),   // Лайм
-    float4 (0.0, 0.5, 1.0, 1.0),   // Голубой
-    float4 (1.0, 0.5, 0.5, 1.0),   // Светло-розовый
-    float4 (0.5, 1.0, 0.5, 1.0),   // Светло-зеленый
-    float4 (0.5, 0.5, 1.0, 1.0),   // Светло-голубой
-    float4 (0.0, 0.0, 0.0, 1.0)    // Черный
-};
+static const float eps = 1e-6f;
 
 float3 interpolate (float3 p1, float3 p2, float valp1, float valp2) {
-    if (abs (0.f - valp1) < 0.00001)
+    if (abs (0.f - valp1) < eps)
         return (p1);
-    if (abs (0.f - valp2) < 0.00001)
+    if (abs (0.f - valp2) < eps)
         return (p2);
-    if (abs (valp1 - valp2) < 0.00001)
+    if (abs (valp1 - valp2) < eps)
         return (p1);
 
     float mu = (0.f - valp1) / (valp2 - valp1);
@@ -63,10 +47,54 @@ float3 interpolate (float3 p1, float3 p2, float valp1, float valp2) {
     return (p);
 }
 
+float sample_sdf (const float3 p) {
+    SdfOctreeNode node = g_octree_data [0];
+    float3 min_corner = {-1.0f, -1.0f, -1.0f};
+    float voxel_size = 2.0f;
+
+    while (node.offset != 0) {
+        float half = voxel_size * 0.5f;
+        uint child_index = 0;
+        if (p.x >= min_corner.x + half) {
+            child_index |= 1;
+            min_corner.x += half;
+        }
+        if (p.y >= min_corner.y + half) {
+            child_index |= 2;
+            min_corner.y += half;
+        }
+        if (p.z >= min_corner.z + half) {
+            child_index |= 4;
+            min_corner.z += half;
+        }
+        voxel_size = half;
+        node = g_octree_data [node.offset + child_index];
+    }
+
+    float3 local = (p - min_corner) / voxel_size;
+
+    float c00 = lerp (node.values [0], node.values [1], local.x);
+    float c01 = lerp (node.values [4], node.values [5], local.x);
+    float c10 = lerp (node.values [2], node.values [3], local.x);
+    float c11 = lerp (node.values [6], node.values [7], local.x);
+
+    float c0 = lerp (c00, c10, local.y);
+    float c1 = lerp (c01, c11, local.y);
+
+    return lerp (c0, c1, local.z);
+}
+
+float3 sample_normal (float3 p) {
+    float dx = sample_sdf (p + float3 (eps, 0, 0)) - sample_sdf (p - float3 (eps, 0, 0));
+    float dy = sample_sdf (p + float3 (0, eps, 0)) - sample_sdf (p - float3 (0, eps, 0));
+    float dz = sample_sdf (p + float3 (0, 0, eps)) - sample_sdf (p - float3 (0, 0, eps));
+    return normalize (float3 (dx, dy, dz) / (2 * eps));
+}
+
 void generate_geometry (uint active_leaf_index) {
 	NodeContext context = g_active_leafs [active_leaf_index];
-	// uint vertices_offset = g_active_leaf_vertices_offsets [active_leaf_index];
-	// uint indices_offset = g_active_leaf_indices_offsets [active_leaf_index];
+	// TODO: uint vertices_offset = g_active_leaf_vertices_offsets [active_leaf_index];
+	// TODO: uint indices_offset = g_active_leaf_indices_offsets [active_leaf_index];
 	uint vertices_offset = active_leaf_index * MAX_LEAF_VERTS;
 	uint indices_offset = active_leaf_index * MAX_LEAF_PRIMS * 3;
 
@@ -97,49 +125,6 @@ void generate_geometry (uint active_leaf_index) {
     const int edge_mask = cube_index_2_edge_mask [context.cube_index];
     int edge_bit = 1;
 
-    float3 normals = float3 (0.0f);
-    normals += float3 (
-        leaf_node.values [1] - leaf_node.values [0]
-        , leaf_node.values [2] - leaf_node.values [0]
-        , leaf_node.values [4] - leaf_node.values [0]
-    );
-    normals += float3 (
-        leaf_node.values [1] - leaf_node.values [0]
-        , leaf_node.values [3] - leaf_node.values [1]
-        , leaf_node.values [5] - leaf_node.values [1]
-    );
-    normals += float3 (
-        leaf_node.values [3] - leaf_node.values [2]
-        , leaf_node.values [2] - leaf_node.values [0]
-        , leaf_node.values [6] - leaf_node.values [2]
-    );
-    normals += float3 (
-        leaf_node.values [3] - leaf_node.values [2]
-        , leaf_node.values [3] - leaf_node.values [1]
-        , leaf_node.values [7] - leaf_node.values [3]
-    );
-    normals += float3 (
-        leaf_node.values [5] - leaf_node.values [4]
-        , leaf_node.values [6] - leaf_node.values [4]
-        , leaf_node.values [4] - leaf_node.values [0]
-    );
-    normals += float3 (
-        leaf_node.values [5] - leaf_node.values [4]
-        , leaf_node.values [7] - leaf_node.values [5]
-        , leaf_node.values [5] - leaf_node.values [1]
-    );
-    normals += float3 (
-        leaf_node.values [7] - leaf_node.values [6]
-        , leaf_node.values [6] - leaf_node.values [4]
-        , leaf_node.values [6] - leaf_node.values [2]
-    );
-    normals += float3 (
-        leaf_node.values [7] - leaf_node.values [6]
-        , leaf_node.values [7] - leaf_node.values [5]
-        , leaf_node.values [7] - leaf_node.values [3]
-    );
-    normals = normalize (normals);
-
     for (int i = 0; i < MAX_LEAF_VERTS; ++i) {
         if ((edge_mask & edge_bit) == 0) {
             edge_bit <<= 1;
@@ -147,14 +132,15 @@ void generate_geometry (uint active_leaf_index) {
         }
 
         const uint2 corner_indices = edge_corners [i];
+        float3 position = interpolate (corners [corner_indices.x]
+                     , corners [corner_indices.y]
+                     , leaf_node.values [corner_indices.x]
+                     , leaf_node.values [corner_indices.y]);
+
         Vertex vertex;
-        vertex.position = mul (pc.view_proj, float4 (interpolate (corners [corner_indices.x]
-                                                , corners [corner_indices.y]
-                                                , leaf_node.values [corner_indices.x]
-                                                , leaf_node.values [corner_indices.y]
-                                                ), 1.0f));
-        vertex.normal = float4 (normals, 1.0f);
-        vertex.color = float4 (0.0f, 1.0f, 0.0f, 1.0f);
+        vertex.position = mul (pc.view_proj, float4 (position, 1.0f));
+        vertex.normal = float4 (sample_normal (position), 1.0f);
+        vertex.color = colors [context.node_index % COLORS_COUNT];
         g_vertices [vertices_offset + i] = vertex;
 
         edge_bit <<= 1;

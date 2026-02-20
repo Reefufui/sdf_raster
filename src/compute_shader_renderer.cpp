@@ -549,7 +549,6 @@ void ComputeShaderRenderer::toggle_frustum_buffer (Camera& camera) {
 
 void ComputeShaderRenderer::update_push_constants (const Camera& camera) {
     this->push_constants.view_proj = camera.get_view_projection_matrix ();
-    // this->push_constants.view_proj_normal = LiteMath::inverse4x4 (this->push_constants.view_proj);
     this->push_constants.camera_pos = camera.get_position ();
 
     uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->mesh_ds);

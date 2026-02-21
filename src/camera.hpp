@@ -10,36 +10,40 @@
 
 namespace sdf_raster {
 
-enum Camera_Movement {
-    FORWARD, BACKWARD, LEFT, RIGHT, UP, DOWN
-};
-
 class Camera {
 public:
     Camera ();
 
-    LiteMath::float4 get_position () const;
-    LiteMath::float4x4 get_view_projection_matrix () const;
-    LiteMath::float4x4 get_view_matrix () const;
-    LiteMath::float4x4 get_projection_matrix () const;
+    const LiteMath::float3& get_position () const;
+    const LiteMath::float4x4& get_view_projection_matrix () const;
+    const LiteMath::float4x4& get_view_matrix () const;
+    const LiteMath::float4x4& get_projection_matrix () const;
     const std::array <LiteMath::float4, 8>& get_frustum_corners () const;
 
     void set_aspect_ratio (float aspect_ratio);
     void set_far_plane (float far_plane);
 
-    void process_keyboard_input (Camera_Movement direction, float delta_time);
+    enum class Movement {
+        FORWARD, BACKWARD, LEFT, RIGHT, UP, DOWN
+    };
+    void process_keyboard_input (Movement direction, float delta_time);
     void process_mouse_movement (float x_offset, float y_offset, bool constrain_pitch = true);
     void process_scroll (float offset, bool constrain_fov = true);
 
     void dump (const std::string& filename) const;
     void load (const std::string& filename);
     void reset ();
-    void update_camera_vectors ();
+    void update ();
 
 private:
     LiteMath::float3 camera_position {2.0f, 0.5f, -1.0f};
     LiteMath::float3 camera_up {0.0f, -1.0f, 0.0f};
     LiteMath::float3 camera_front {0.f, 0.f, -1.f};
+
+    LiteMath::float4x4 view_matrix;
+    LiteMath::float4x4 projection_matrix;
+    LiteMath::float4x4 view_projection_matrix;
+    LiteMath::float4x4 inv_view_projection_matrix;
 
     float yaw_angle {-200.0f};
     float pitch_angle {-15.0f};
@@ -63,9 +67,7 @@ public:
     static std::unique_ptr <FrustumDrawBuffer> get_frustum_buffer (VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , Camera& camera
-        , size_t image_width
-        , size_t image_height);
+        , Camera& camera);
 
     inline Camera get_camera () { return this->saved_camera; };
     inline VkBuffer get_vertex_buffer () { return this->vertex_buffer; };
@@ -78,9 +80,7 @@ private:
     FrustumDrawBuffer (VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , Camera& camera
-        , size_t image_width
-        , size_t image_height);
+        , Camera& camera);
 
     VkDevice deletion_device;
     Camera saved_camera;

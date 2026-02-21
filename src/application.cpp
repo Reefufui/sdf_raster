@@ -19,17 +19,16 @@ Application::Application (int a_width, int a_height)
     , height ((a_height == 0) ? 900 : a_height)
     , user_data ({this}) {
     camera.set_aspect_ratio (static_cast <float> (a_width) / static_cast <float> (a_height));
-    // init_renderer ();
 }
 
-Application::Application (int a_width, int a_height, const std::string& a_window_title, size_t a_leaf_memory_limit, bool a_mesh_shader_support)
+Application::Application (int a_width, int a_height, const std::string& a_window_title, bool a_mesh_shader_support)
     : width (a_width)
     , height (a_height)
     , window_title (a_window_title)
     , user_data ({this}) {
     init_window ();
     init_vulkan (a_mesh_shader_support);
-    init_renderer (a_leaf_memory_limit, a_mesh_shader_support);
+    init_renderer (a_mesh_shader_support);
 
     float f_width = static_cast <float> (width);
     float f_height = static_cast <float> (height);
@@ -87,7 +86,7 @@ void Application::run (bool single_frame) {
         this->delta_time = static_cast <float> (current_time - last_frame);
         this->last_frame = current_time;
 
-        this->camera.update_camera_vectors ();
+        this->camera.update ();
         this->renderer->render (this->camera);
     } while (!glfwWindowShouldClose (this->window) && !single_frame);
 }
@@ -132,7 +131,7 @@ void Application::init_vulkan (bool a_mesh_shader_support) {
     this->vulkan_context->init (this->window, this->width, this->height, a_mesh_shader_support);
 }
 
-void Application::init_renderer (size_t leaf_memory_limit, bool a_mesh_shader_support) {
+void Application::init_renderer (bool a_mesh_shader_support) {
     if (a_mesh_shader_support) {
         this->renderer = std::make_unique <MeshShaderRenderer> (this->vulkan_context);
     } else {
@@ -140,7 +139,7 @@ void Application::init_renderer (size_t leaf_memory_limit, bool a_mesh_shader_su
     }
     SdfOctree scene {};
     load_sdf_octree (scene, "./assets/sdf/lowpoly_bunny.octree");
-    this->renderer->init (this->width, this->height, std::move (scene), leaf_memory_limit);
+    this->renderer->init (this->width, this->height, std::move (scene));
 }
 
 void Application::cleanup () {
@@ -159,21 +158,19 @@ void Application::cleanup () {
 }
 
 void Application::process_input () {
-    auto app = get_app_ptr (this->window);
-
     if (this->camera_mode_active) {
         if (glfwGetKey (this->window, GLFW_KEY_W) == GLFW_PRESS)
-            this->camera.process_keyboard_input (FORWARD, this->delta_time);
+            this->camera.process_keyboard_input (Camera::Movement::FORWARD, this->delta_time);
         if (glfwGetKey (this->window, GLFW_KEY_S) == GLFW_PRESS)
-            this->camera.process_keyboard_input (BACKWARD, this->delta_time);
+            this->camera.process_keyboard_input (Camera::Movement::BACKWARD, this->delta_time);
         if (glfwGetKey (this->window, GLFW_KEY_A) == GLFW_PRESS)
-            this->camera.process_keyboard_input (LEFT, this->delta_time);
+            this->camera.process_keyboard_input (Camera::Movement::LEFT, this->delta_time);
         if (glfwGetKey (this->window, GLFW_KEY_D) == GLFW_PRESS)
-            this->camera.process_keyboard_input (RIGHT, this->delta_time);
+            this->camera.process_keyboard_input (Camera::Movement::RIGHT, this->delta_time);
         if (glfwGetKey (this->window, GLFW_KEY_SPACE) == GLFW_PRESS)
-            this->camera.process_keyboard_input (UP, this->delta_time);
+            this->camera.process_keyboard_input (Camera::Movement::UP, this->delta_time);
         if (glfwGetKey (this->window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
-            this->camera.process_keyboard_input (DOWN, this->delta_time);
+            this->camera.process_keyboard_input (Camera::Movement::DOWN, this->delta_time);
     }
 }
 
@@ -213,7 +210,7 @@ void Application::scroll_callback (GLFWwindow* a_window, double, double yoffset)
     }
 }
 
-void Application::key_callback (GLFWwindow* a_window, int key, int scancode, int action, int mods) {
+void Application::key_callback (GLFWwindow* a_window, int key, int, int action, int) {
     Application* app = get_app_ptr (a_window);
     if (!app) return;
 
@@ -243,7 +240,7 @@ void Application::key_callback (GLFWwindow* a_window, int key, int scancode, int
     }
 }
 
-void Application::mouse_button_callback (GLFWwindow* a_window, int button, int action, int mods) {
+void Application::mouse_button_callback (GLFWwindow* a_window, int button, int action, int) {
     Application* app = get_app_ptr (a_window);
     if (!app) return;
 

@@ -15,9 +15,7 @@ struct DepthBufferDescriptorSetInfo {
 };
 
 DepthBufferDescriptorSetInfo create_depth_buffer_descriptor_set (
-        VkDevice device
-        , VkPhysicalDevice physical_device
-        , vk_utils::DescriptorMaker& ds_maker
+        vk_utils::DescriptorMaker& ds_maker
         , VkShaderStageFlags shader_stage_flags
         , const std::vector <vk_utils::VulkanImageMem>& depth_textures
         , VkSampler detph_sampler

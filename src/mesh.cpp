@@ -23,7 +23,7 @@ void Mesh::clear() {
 }
 
 void Mesh::add_vertex_fast(Vertex v) {
-    int new_index = vertices.size();
+    uint32_t new_index = static_cast <uint32_t> (vertices.size ());
     this->indices.push_back(new_index);
     this->vertices.push_back(v);
 }
@@ -83,22 +83,19 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
         throw std::runtime_error ("ICopyEngine shared_ptr cannot be null.");
     }
 
-    // VkDeviceSize vertices_size = max_vertices_count * sizeof (Vertex);
-    // VkDeviceSize indices_size = max_vertices_count * sizeof (LiteMath::uint) * 3;
-    VkDeviceSize indices_size = 100000 * sizeof (uint32_t);
-    VkDeviceSize vertices_size = 100000 * sizeof (Vertex);
+    VkDeviceSize indices_size = max_vertices_count * sizeof (uint32_t);
+    VkDeviceSize vertices_size = max_vertices_count * sizeof (Vertex);
 
-    // if (max_vertices_count == 0) {
-    //     throw std::runtime_error ("create_mesh_descriptor_set: max_vertices_count is 0, cannot create descriptor set.");
-    // }
-    // std::cout << "create_mesh_descriptor_set: max_vertices_count = " << max_vertices_count << std::endl;
+    if (max_vertices_count == 0) {
+        throw std::runtime_error ("create_mesh_descriptor_set: max_vertices_count is 0, cannot create descriptor set.");
+    }
 
     std::vector <VkBuffer> buffers (1 + 2 * max_frames_in_flight);
     std::vector <VkMemoryRequirements> mem_reqs (1 + 2 * max_frames_in_flight);
 
     info.vertices_buffers.clear ();
     info.indices_buffers.clear ();
-    for (int i = 0; i < max_frames_in_flight; ++i) {
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
         buffers [i * 2 + 0] = vk_utils::createBuffer (device, vertices_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT, &mem_reqs [i * 2 + 0]);
         buffers [i * 2 + 1] = vk_utils::createBuffer (device, indices_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT, &mem_reqs [i * 2 + 1]);
         info.vertices_buffers.push_back (buffers [i * 2 + 0]);
@@ -115,7 +112,7 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
     copy_helper->UpdateBuffer (info.insufficent_mem_flag_buffer, 0, &insufficent_mem_flag, sizeof (LiteMath::uint));
 
     info.descriptor_sets.resize (max_frames_in_flight);
-    for (int i = 0; i < max_frames_in_flight; ++i) {
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
         ds_maker.BindBegin (shader_stage_flags);
         ds_maker.BindBuffer (0, info.vertices_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         ds_maker.BindBuffer (1, info.indices_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
@@ -127,14 +124,14 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
 }
 
 void cleanup_mesh_descriptor_set (VkDevice device, MeshDescriptorSetInfo& info) {
-    for (int i = 0; i < info.vertices_buffers.size (); ++i) {
+    for (size_t i = 0; i < info.vertices_buffers.size (); ++i) {
         if (info.vertices_buffers [i] != VK_NULL_HANDLE) {
             vkDestroyBuffer (device, info.vertices_buffers [i], nullptr);
             info.vertices_buffers [i] = VK_NULL_HANDLE;
         }
     }
 
-    for (int i = 0; i < info.indices_buffers.size (); ++i) {
+    for (size_t i = 0; i < info.indices_buffers.size (); ++i) {
         if (info.indices_buffers [i] != VK_NULL_HANDLE) {
             vkDestroyBuffer (device, info.indices_buffers [i], nullptr);
             info.indices_buffers [i] = VK_NULL_HANDLE;

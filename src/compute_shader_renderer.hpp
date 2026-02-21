@@ -24,7 +24,7 @@ public:
     explicit ComputeShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context);
     ~ComputeShaderRenderer ();
 
-    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_max_vertices_count) override;
+    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree) override;
     void render (const Camera& a_camera) override;
     void resize (int a_width, int a_height) override;
     void shutdown () override;
@@ -41,7 +41,7 @@ private:
     void init_graphics_frustum_pipeline ();
     void toggle_frustum_buffer (Camera& camera);
 
-    void update_push_constants (const Camera& camera);
+    void update_push_constants (const Camera& camera, size_t current_frame);
     void update_frustum_buffer (const Camera& camera, size_t current_frame);
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame);
     void clear_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
@@ -53,7 +53,7 @@ private:
     void compute_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
     void geometry_barrier (VkCommandBuffer cmd_buff, size_t current_frame);
     void draw_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
-    void draw_frustum (VkCommandBuffer cmd_buff, size_t current_frame);
+    void draw_frustum (VkCommandBuffer cmd_buff);
 
     std::shared_ptr <VulkanContext> context {nullptr};
 
@@ -88,6 +88,7 @@ private:
     SdfOctree sdf_octree {};
     std::vector <NodeContext> subtrees {};
     std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer {nullptr};
+    std::vector <LiteMath::float4x4> prev_frame_view_projection {};
 
     PushConstantsData push_constants;
 

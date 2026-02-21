@@ -13,20 +13,20 @@ namespace sdf_raster {
 Camera::Camera () {
 }
 
-LiteMath::float4 Camera::get_position () const {
-    return LiteMath::to_float4 (this->camera_position, 1.f);
+const LiteMath::float3& Camera::get_position () const {
+    return this->camera_position;
 }
 
-LiteMath::float4x4 Camera::get_view_projection_matrix () const {
-    return get_projection_matrix () * get_view_matrix ();
+const LiteMath::float4x4& Camera::get_view_projection_matrix () const {
+    return this->view_projection_matrix;
 }
 
-LiteMath::float4x4 Camera::get_view_matrix () const {
-    return LiteMath::lookAt (this->camera_position, this->camera_position + this->camera_front, this->camera_up);
+const LiteMath::float4x4& Camera::get_view_matrix () const {
+    return this->view_matrix;
 }
 
-LiteMath::float4x4 Camera::get_projection_matrix () const {
-    return LiteMath::perspectiveMatrix (fov_y, this->aspect_ratio, this->near_plane, this->far_plane);
+const LiteMath::float4x4& Camera::get_projection_matrix () const {
+    return this->projection_matrix;
 }
 
 const std::array <LiteMath::float4, 8>& Camera::get_frustum_corners () const {
@@ -41,19 +41,19 @@ void Camera::set_far_plane (float far_plane) {
     this->far_plane = far_plane;
 }
 
-void Camera::process_keyboard_input (Camera_Movement direction, float delta_time) {
+void Camera::process_keyboard_input (Camera::Movement direction, float delta_time) {
     float velocity = this->movement_speed * delta_time;
-    if (direction == FORWARD)
+    if (direction == Camera::Movement::FORWARD)
         this->camera_position += camera_front * velocity;
-    if (direction == BACKWARD)
+    if (direction == Camera::Movement::BACKWARD)
         this->camera_position -= camera_front * velocity;
-    if (direction == LEFT)
+    if (direction == Camera::Movement::LEFT)
         this->camera_position -= camera_right * velocity;
-    if (direction == RIGHT)
+    if (direction == Camera::Movement::RIGHT)
         this->camera_position += camera_right * velocity;
-    if (direction == UP)
+    if (direction == Camera::Movement::UP)
         this->camera_position += LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
-    if (direction == DOWN)
+    if (direction == Camera::Movement::DOWN)
         this->camera_position -= LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
 }
 
@@ -78,7 +78,7 @@ void Camera::process_scroll (float offset, bool constrain_fov) {
     }
 }
 
-void Camera::update_camera_vectors () {
+void Camera::update () {
     LiteMath::float3 new_front;
     new_front.x = std::cos (LiteMath::DEG_TO_RAD * yaw_angle) * std::cos (LiteMath::DEG_TO_RAD * pitch_angle);
     new_front.y = std::sin (LiteMath::DEG_TO_RAD * pitch_angle);
@@ -88,6 +88,11 @@ void Camera::update_camera_vectors () {
     this->camera_right = LiteMath::normalize (LiteMath::cross (this->camera_front, LiteMath::float3 (0.0f, -1.0f, 0.0f)));
     this->camera_up    = LiteMath::normalize (LiteMath::cross (this->camera_right, this->camera_front));
 
+    this->view_matrix = LiteMath::lookAt (this->camera_position, this->camera_position + this->camera_front, this->camera_up);
+    this->projection_matrix = LiteMath::perspectiveMatrix (this->fov_y, this->aspect_ratio, this->near_plane, this->far_plane);
+    this->view_projection_matrix = this->projection_matrix * this->view_matrix;
+    this->inv_view_projection_matrix = LiteMath::inverse4x4 (this->view_projection_matrix);
+
     static LiteMath::float4 clip_corners [8] = {
         LiteMath::float4 (-1, -1, 0, 1), LiteMath::float4 (1, -1, 0, 1), // BL, BR Near
         LiteMath::float4 (-1,  1, 0, 1), LiteMath::float4 (1,  1, 0, 1), // TL, TR Near
@@ -95,12 +100,9 @@ void Camera::update_camera_vectors () {
         LiteMath::float4 (-1,  1, 1, 1), LiteMath::float4 (1,  1, 1, 1)  // TL, TR Far
     };
 
-    const auto inv_view_proj = LiteMath::inverse4x4 (this->get_view_projection_matrix ());
-
-    for (int i = 0; i < 8; ++i) {
-        LiteMath::float4 world_p = inv_view_proj * clip_corners [i];
+    for (size_t i = 0; i < 8; ++i) {
+        LiteMath::float4 world_p = this->inv_view_projection_matrix * clip_corners [i];
         world_p /= world_p.w;
-
         this->frustum_corners [i] = LiteMath::float4 (world_p.x, world_p.y, world_p.z, 1.f);
     }
 }
@@ -194,19 +196,15 @@ std::unique_ptr <FrustumDrawBuffer> FrustumDrawBuffer::get_frustum_buffer (
         VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , Camera& camera
-        , size_t image_width
-        , size_t image_height) {
-    return std::unique_ptr <FrustumDrawBuffer> (new FrustumDrawBuffer (device, physical_device, copy_helper, camera, image_width, image_height));
+        , Camera& camera) {
+    return std::unique_ptr <FrustumDrawBuffer> (new FrustumDrawBuffer (device, physical_device, copy_helper, camera));
 }
 
 FrustumDrawBuffer::FrustumDrawBuffer (
         VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , Camera& camera
-        , size_t image_width
-        , size_t image_height) : deletion_device (device), saved_camera (camera) {
+        , Camera& camera) : deletion_device (device), saved_camera (camera) {
     std::cout << "FrustumDrawBuffer::FrustumDrawBuffer: creating..." << std::endl;
 
     if (!copy_helper) {
@@ -260,7 +258,7 @@ FrustumDescriptorSetInfo create_frustum_descriptor_set (
     info.frustum_geometry_memories.resize (max_frames_in_flight);
     info.frustum_geometry_memories_mapped.resize (max_frames_in_flight);
 
-    for (int i = 0; i < max_frames_in_flight; ++i) {
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
         VkMemoryRequirements mem_req;
         info.frustum_geometry_buffers [i] = vk_utils::createBuffer (device, frustum_geometry_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &mem_req);
 
@@ -277,7 +275,7 @@ FrustumDescriptorSetInfo create_frustum_descriptor_set (
     }
 
     info.descriptor_sets.resize (max_frames_in_flight);
-    for (int i = 0; i < max_frames_in_flight; ++i) {
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
         ds_maker.BindBegin (shader_stage_flags);
         ds_maker.BindBuffer (0, info.frustum_geometry_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
         ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
@@ -287,7 +285,7 @@ FrustumDescriptorSetInfo create_frustum_descriptor_set (
 }
 
 void cleanup_frustum_descriptor_set (VkDevice device, FrustumDescriptorSetInfo& info) {
-    for (int i = 0; i < info.frustum_geometry_buffers.size (); ++i) {
+    for (size_t i = 0; i < info.frustum_geometry_buffers.size (); ++i) {
         if (info.frustum_geometry_buffers [i] != VK_NULL_HANDLE) {
             vkDestroyBuffer (device, info.frustum_geometry_buffers [i], nullptr);
             info.frustum_geometry_buffers [i] = VK_NULL_HANDLE;

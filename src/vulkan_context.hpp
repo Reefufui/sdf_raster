@@ -94,7 +94,7 @@ private:
     VkFormat depth_format;
     VkSampler depth_sampler = VK_NULL_HANDLE;
 
-    const int max_frames_in_flight = 3;
+    const size_t max_frames_in_flight = 3;
     uint32_t current_frame = 0;
     uint32_t current_image_index;
     struct FrameResources {

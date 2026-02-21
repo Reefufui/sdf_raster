@@ -29,26 +29,8 @@
 [[vk::binding (0, 5)]] Sampler2D <float> depth_sampler;
 
 #include "frustum_culling.h"
+#include "occlusion_culling.h"
 #include "flatshadable_voxel.h"
-
-static const float4 colors [MESH_WORKGROUP_SIZE] = {
-    float4(1.0, 0.0, 0.0, 1.0),   // Красный
-    float4(0.0, 1.0, 0.0, 1.0),   // Зеленый
-    float4(0.0, 0.0, 1.0, 1.0),   // Синий
-    float4(1.0, 1.0, 0.0, 1.0),   // Желтый
-    float4(1.0, 0.0, 1.0, 1.0),   // Магента
-    float4(0.0, 1.0, 1.0, 1.0),   // Циан
-    float4(1.0, 1.0, 1.0, 1.0),   // Белый
-    float4(0.5, 0.5, 0.5, 1.0),   // Серый
-    float4(1.0, 0.5, 0.0, 1.0),   // Оранжевый
-    float4(1.0, 0.0, 0.5, 1.0),   // Розовый
-    float4(0.5, 1.0, 0.0, 1.0),   // Лайм
-    float4(0.0, 0.5, 1.0, 1.0),   // Голубой
-    float4(1.0, 0.5, 0.5, 1.0),   // Светло-розовый
-    float4(0.5, 1.0, 0.5, 1.0),   // Светло-зеленый
-    float4(0.5, 0.5, 1.0, 1.0),   // Светло-голубой
-    float4(0.0, 0.0, 0.0, 1.0)    // Черный
-};
 
 void process_voxel (uint3 group_id, NodeContext context, SdfOctreeNode leaf_node) {
     context.cube_index = 0;
@@ -116,6 +98,10 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
             continue;
         }
 
+        if (voxel_occluded (child_coord, child_voxel_size)) {
+            continue;
+        }
+
         if (child_node.offset == 0) { // leaf
             NodeContext context;
             context.voxel_size = child_voxel_size;
@@ -138,7 +124,6 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
 [numthreads (1, 1, 1)]
 void main (uint3 thread_id : SV_DispatchThreadID) {
     if (thread_id.x == 0) {
-        // g_active_leaf_counter [0].x = 1;
         g_active_leaf_counter [0].y = 1;
         g_active_leaf_counter [0].z = 1;
     }

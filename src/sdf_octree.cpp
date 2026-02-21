@@ -161,7 +161,7 @@ ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
     info.active_leaf_vertices_count_buffers.clear ();
     info.active_leaf_indices_count_buffers.clear ();
 
-    for (int i = 0; i < max_frames_in_flight; ++i) {
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
         buffers [i * 4 + 0] = vk_utils::createBuffer (device, active_leafs_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 0]);
         buffers [i * 4 + 1] = vk_utils::createBuffer (device, active_leaf_counter_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 1]);
         buffers [i * 4 + 2] = vk_utils::createBuffer (device, active_leaf_vertices_count_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i * 4 + 2]);
@@ -183,7 +183,7 @@ ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
     copy_helper->UpdateBuffer (info.active_leaf_overflow_flag_buffer, 0, &overflow_flag, active_leaf_overflow_flag_size);
 
     info.descriptor_sets.resize (max_frames_in_flight);
-    for (int i = 0; i < max_frames_in_flight; ++i) {
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
         ds_maker.BindBegin (shader_stage_flags);
         ds_maker.BindBuffer (0, info.active_leafs_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         ds_maker.BindBuffer (1, info.active_leaf_counter_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
@@ -212,7 +212,7 @@ DrawIndexedIndirectCommandDescriptorSetInfo create_draw_indexed_indirect_command
 
     info.draw_indexed_indirect_command_buffers.clear ();
 
-    for (int i = 0; i < max_frames_in_flight; ++i) {
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
         buffers [i] = vk_utils::createBuffer (device, draw_indexed_indirect_command_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i]);
 
         info.draw_indexed_indirect_command_buffers.push_back (buffers [i]);
@@ -221,7 +221,7 @@ DrawIndexedIndirectCommandDescriptorSetInfo create_draw_indexed_indirect_command
     info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
 
     info.descriptor_sets.resize (max_frames_in_flight);
-    for (int i = 0; i < max_frames_in_flight; ++i) {
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
         ds_maker.BindBegin (shader_stage_flags);
         ds_maker.BindBuffer (0, info.draw_indexed_indirect_command_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
@@ -250,7 +250,7 @@ void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetI
 }
 
 void cleanup_active_leafs_descriptor_set (VkDevice device, ActiveLeafsDescriptorSetInfo& info) {
-    for (int i = 0; i < info.active_leafs_buffers.size (); ++i) {
+    for (size_t i = 0; i < info.active_leafs_buffers.size (); ++i) {
         if (info.active_leafs_buffers [i] != VK_NULL_HANDLE) {
             vkDestroyBuffer (device, info.active_leafs_buffers [i], nullptr);
             info.active_leafs_buffers [i] = VK_NULL_HANDLE;
@@ -283,7 +283,7 @@ void cleanup_active_leafs_descriptor_set (VkDevice device, ActiveLeafsDescriptor
 }
 
 void cleanup_draw_indexed_indirect_command_descriptor_set (VkDevice device, DrawIndexedIndirectCommandDescriptorSetInfo& info) {
-    for (int i = 0; i < info.draw_indexed_indirect_command_buffers.size (); ++i) {
+    for (size_t i = 0; i < info.draw_indexed_indirect_command_buffers.size (); ++i) {
         if (info.draw_indexed_indirect_command_buffers [i] != VK_NULL_HANDLE) {
             vkDestroyBuffer (device, info.draw_indexed_indirect_command_buffers [i], nullptr);
             info.draw_indexed_indirect_command_buffers [i] = VK_NULL_HANDLE;

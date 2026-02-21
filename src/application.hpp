@@ -15,7 +15,7 @@ namespace sdf_raster {
 class Application {
 public:
     Application (int a_width, int a_height);
-    Application (int width, int height, const std::string& title, size_t leaf_memory_limit, bool a_mesh_shader_support);
+    Application (int width, int height, const std::string& title, bool a_mesh_shader_support);
     ~Application ();
 
     void run (bool single_frame);
@@ -23,7 +23,7 @@ public:
 
 private:
     void cleanup ();
-    void init_renderer (size_t leaf_memory_limit, bool a_mesh_shader_suppport);
+    void init_renderer (bool a_mesh_shader_suppport);
     void init_vulkan (bool a_mesh_shader_suppport);
     void init_window ();
     void process_input ();

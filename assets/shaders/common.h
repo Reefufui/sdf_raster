@@ -64,6 +64,7 @@ struct TaskPayload {
 
 struct PushConstantsData {
     column_major float4x4 view_proj;
+    column_major float4x4 prev_view_proj;
     float4 camera_pos;
     int max_octree_depth;
     uint active_leafs_max_count;

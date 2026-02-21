@@ -39,7 +39,7 @@ ComputeShaderRenderer::~ComputeShaderRenderer () {
     std::cout << "ComputeShaderRenderer destroyed." << std::endl;
 }
 
-void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_max_vertices_count) {
+void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree) {
     std::cout << "ComputeShaderRenderer initializing..." << std::endl;
 
     if (!this->context || !this->context->is_initialized ()) {
@@ -73,6 +73,7 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
         std::cout << "[ComputeShaderRenderer::init] given octree is too deep. Reducing it to MAX_OCTREE_DEPTH" << std::endl;
         this->push_constants.max_octree_depth = MAX_OCTREE_DEPTH;
     }
+    this->prev_frame_view_projection.resize (this->context->get_total_frames ());
 
     std::cout << "[ComputeShaderRenderer::init] sizeof (PushConstantsData): " << sizeof (PushConstantsData) << std::endl;
 
@@ -139,9 +140,7 @@ void ComputeShaderRenderer::init_descriptor_sets () {
         , VK_SHADER_STAGE_COMPUTE_BIT
         , this->context->get_total_frames ());
 
-    this->depth_buffer_ds = create_depth_buffer_descriptor_set (this->context->get_device ()
-        , this->context->get_physical_device ()
-        , *descriptor_maker
+    this->depth_buffer_ds = create_depth_buffer_descriptor_set (*descriptor_maker
         , VK_SHADER_STAGE_COMPUTE_BIT
         , this->context->get_depth_textures ()
         , this->context->get_depth_sampler ()
@@ -542,14 +541,15 @@ void ComputeShaderRenderer::toggle_frustum_buffer (Camera& camera) {
     this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
         , this->context->get_physical_device ()
         , this->context->get_copy_helper ()
-        , camera
-        , this->width
-        , this->height);
+        , camera);
 }
 
-void ComputeShaderRenderer::update_push_constants (const Camera& camera) {
+void ComputeShaderRenderer::update_push_constants (const Camera& camera, size_t current_frame) {
     this->push_constants.view_proj = camera.get_view_projection_matrix ();
-    this->push_constants.camera_pos = camera.get_position ();
+    this->push_constants.camera_pos = LiteMath::to_float4 (camera.get_position (), 1.0f);
+
+    this->push_constants.prev_view_proj = this->prev_frame_view_projection [current_frame];
+    this->prev_frame_view_projection [current_frame] = this->push_constants.view_proj;
 
     uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->mesh_ds);
     if (insufficent_mem_flag) {
@@ -575,8 +575,9 @@ LiteMath::float3 face_normal (const LiteMath::float4& a, const LiteMath::float4&
 
 void ComputeShaderRenderer::update_frustum_buffer (const Camera& camera, size_t current_frame) {
     FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [current_frame]);
+
     const auto& vertices = camera.get_frustum_corners ();
-    std::memcpy (ptr, vertices.data (), vertices.size () * sizeof (float4));
+    std::copy (vertices.begin (), vertices.end (), ptr->vertices);
 
     ptr->normals [0] = LiteMath::to_float4 (face_normal (vertices [1], vertices [0], vertices [2]), 1.f); // Near
     ptr->normals [1] = LiteMath::to_float4 (face_normal (vertices [4], vertices [5], vertices [7]), 1.f); // Far
@@ -747,10 +748,12 @@ void ComputeShaderRenderer::prefix_sum_pass1 (VkCommandBuffer cmd_buff, size_t c
     // vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
 }
 
-void ComputeShaderRenderer::prefix_sum_pass2 (VkCommandBuffer cmd_buff, size_t current_frame) {
+void ComputeShaderRenderer::prefix_sum_pass2 (VkCommandBuffer, size_t) {
+    // TODO
 }
 
-void ComputeShaderRenderer::prefix_sum_pass3 (VkCommandBuffer cmd_buff, size_t current_frame) {
+void ComputeShaderRenderer::prefix_sum_pass3 (VkCommandBuffer, size_t) {
+    // TODO
 }
 
 void ComputeShaderRenderer::compute_geometry (VkCommandBuffer cmd_buff, size_t current_frame) {
@@ -872,7 +875,7 @@ void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, size_t curr
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff, size_t current_frame) {
+void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff) {
     const auto extent = this->context->get_swapchain_extent ();
 
     VkRenderPassBeginInfo render_pass_info {};
@@ -925,7 +928,7 @@ void ComputeShaderRenderer::render (const Camera& camera) {
 
     const auto current_frame = this->context->get_current_frame ();
 
-    this->update_push_constants (camera);
+    this->update_push_constants (camera, current_frame);
     if (!this->frustum_draw_buffer) {
         this->update_frustum_buffer (camera, current_frame);
     }
@@ -940,7 +943,7 @@ void ComputeShaderRenderer::render (const Camera& camera) {
     this->geometry_barrier (cmd_buff, current_frame);
     this->draw_geometry (cmd_buff, current_frame);
     if (this->frustum_draw_buffer) {
-        this->draw_frustum (cmd_buff, current_frame);
+        this->draw_frustum (cmd_buff);
     }
 
     this->context->end_frame (cmd_buff);

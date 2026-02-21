@@ -10,8 +10,6 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fmax-errors=1 -Wno-deprecated-copy")
-
 if (NOT DEFINED ENV{VULKAN_SDK})
     message(FATAL_ERROR "VULKAN_SDK environment variable not set. Please set it before running cmake (e.g., source /etc/profile.d/vulkan_sdk.sh).")
 endif()
@@ -107,6 +105,22 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(imgui)
 message(STATUS "imgui is available (SOURCE_DIR: ${imgui_SOURCE_DIR})")
 
+message(STATUS "Checking for spdlog...")
+FetchContent_Declare(
+    spdlog_project
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.17.0
+    GIT_SHALLOW    TRUE
+    CMAKE_ARGS
+        -DSPDLOG_BUILD_SHARED=OFF
+        -DSPDLOG_BUILD_EXAMPLE=OFF
+        -DSPDLOG_BUILD_TESTS=OFF
+        -DSPDLOG_INSTALL=OFF
+        -DSPDLOG_COMPILED_LIB_ASYNC=ON
+)
+FetchContent_MakeAvailable(spdlog_project)
+message(STATUS "spdlog_project is available (SOURCE_DIR: ${spdlog_project_SOURCE_DIR})")
+
 find_package(Vulkan REQUIRED)
 message(STATUS "Vulkan found: ${Vulkan_FOUND}")
 message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
@@ -175,6 +189,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
     nlohmann_json
     ${Vulkan_LOADER_LIBRARY}
+    spdlog
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -197,6 +212,8 @@ elseif(CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
     target_compile_options(${PROJECT_NAME} PRIVATE -O2 -g -DNDEBUG -Wall -Wextra)
     target_link_options(${PROJECT_NAME} PRIVATE -O2 -g)
 endif()
+
+target_compile_options(${PROJECT_NAME} PRIVATE -fmax-errors=1 -Wno-deprecated-copy)
 
 set(SLANGC "$ENV{VULKAN_SDK}/bin/slangc")
 message(STATUS "Found slang: ${SLANGC}.")

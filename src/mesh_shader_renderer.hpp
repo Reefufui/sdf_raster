@@ -23,7 +23,7 @@ public:
     explicit MeshShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context);
     ~MeshShaderRenderer ();
 
-    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree, size_t a_leaf_memory_limit) override;
+    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree) override;
     void render (const Camera& a_camera) override;
     void resize (int a_width, int a_height) override;
     void shutdown () override;

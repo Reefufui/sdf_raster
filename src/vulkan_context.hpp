@@ -18,7 +18,6 @@ public:
     void init (int a_width, int a_height, bool a_mesh_shader_support);
     void init (GLFWwindow* window, int width, int height, bool a_mesh_shader_support);
     void shutdown ();
-    void resize (int width, int height);
 
     // getters
     inline bool is_initialized () const { return this->initialized; };
@@ -63,6 +62,8 @@ private:
     void create_depth_resources ();
     void create_framebuffers ();
     void destroy_depth_resources ();
+
+    void resize (int width, int height);
 
 private:
     VkInstance instance = VK_NULL_HANDLE;

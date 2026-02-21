@@ -82,7 +82,7 @@ void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetI
 void cleanup_active_leafs_descriptor_set (VkDevice device, ActiveLeafsDescriptorSetInfo& info);
 void cleanup_draw_indexed_indirect_command_descriptor_set (VkDevice device, DrawIndexedIndirectCommandDescriptorSetInfo& info);
 
-std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend);
+std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend, bool verbose = false);
 int get_octree_max_depth (const SdfOctree& scene, int max_level_to_descend);
 void dump_octree_subtree_pretty (const SdfOctree& scene, uint32_t subtree_root_node_idx, int max_display_depth, const std::string& prefix, int current_display_depth);
 
@@ -90,7 +90,7 @@ std::vector <NodeContext> fetch_active_leafs (std::shared_ptr <vk_utils::ICopyEn
 size_t fetch_active_leaf_counter (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t frame);
 std::vector <uint> fetch_vertices_count (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t active_leafs_count, size_t frame);
 std::vector <uint> fetch_indices_count (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t active_leafs_count, size_t frame);
-LiteMath::uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info);
+LiteMath::uint fetch_active_leaf_overflow_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info);
 
 }
 

@@ -40,7 +40,7 @@ The goal of this **master degree diploma** project is to develop accelerated imp
     *   `LiteMath` (linear algebra)
     *   `nlohmann/json` (for configuration/data parsing)
     *   `dear ImGui` (for debug GUI/interface)
-    *   `stb_image` (for texture/image loading, if used)
+    *   `stb_image` (for texture/image loading)
 *   **Shader Language:** `Slang`
 
 ## Building the Project

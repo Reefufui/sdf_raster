@@ -1,6 +1,5 @@
 #include <chrono>
 #include <fstream>
-#include <iostream>
 #include <stdexcept>
 #include <chrono>
 #include <thread>
@@ -8,6 +7,7 @@
 #include "application.hpp"
 #include "compute_shader_renderer.hpp"
 #include "cpu_sandbox/cpu_sandbox.h"
+#include "logger.hpp"
 #include "marching_cubes.hpp"
 #include "mesh_shader_renderer.hpp"
 #include "sdf_octree.hpp"
@@ -18,6 +18,7 @@ Application::Application (int a_width, int a_height)
     : width ((a_width == 0) ? 1080 : a_width)
     , height ((a_height == 0) ? 900 : a_height)
     , user_data ({this}) {
+    init_logging ();
     camera.set_aspect_ratio (static_cast <float> (a_width) / static_cast <float> (a_height));
 }
 
@@ -26,16 +27,22 @@ Application::Application (int a_width, int a_height, const std::string& a_window
     , height (a_height)
     , window_title (a_window_title)
     , user_data ({this}) {
-    init_window ();
-    init_vulkan (a_mesh_shader_support);
-    init_renderer (a_mesh_shader_support);
+    try {
+        init_logging ();
+        init_window ();
+        init_vulkan (a_mesh_shader_support);
+        init_renderer (a_mesh_shader_support);
 
-    float f_width = static_cast <float> (width);
-    float f_height = static_cast <float> (height);
-    this->last_x = f_width / 2.0f;
-    this->last_y = f_height / 2.0f;
-    this->camera = Camera ();
-    this->camera.set_aspect_ratio (f_width / f_height);
+        float f_width = static_cast <float> (width);
+        float f_height = static_cast <float> (height);
+        this->last_x = f_width / 2.0f;
+        this->last_y = f_height / 2.0f;
+        this->camera = Camera ();
+        this->camera.set_aspect_ratio (f_width / f_height);
+    } catch (...) {
+        cleanup ();
+        throw;
+    }
 }
 
 Application::~Application () {
@@ -68,27 +75,33 @@ void Application::marching_cubes_cpu (const std::string& a_octree_filename, cons
 
 void Application::run (bool single_frame) {
     if (!this->renderer) {
+        cleanup ();
         throw std::logic_error ("[Application::run] renderer is not inited");
     }
 
-    this->camera.load ("/tmp/cached_camera.json");
-    this->last_frame = glfwGetTime ();
+    try {
+        this->camera.load ("/tmp/cached_camera.json");
+        this->last_frame = glfwGetTime ();
 
-    do {
-        float current_frame = glfwGetTime ();
-        this->delta_time = current_frame - last_frame;
-        this->last_frame = current_frame;
+        do {
+            float current_frame = glfwGetTime ();
+            this->delta_time = current_frame - last_frame;
+            this->last_frame = current_frame;
 
-        glfwPollEvents ();
-        this->process_input ();
+            glfwPollEvents ();
+            this->process_input ();
 
-        double current_time = glfwGetTime ();
-        this->delta_time = static_cast <float> (current_time - last_frame);
-        this->last_frame = current_time;
+            double current_time = glfwGetTime ();
+            this->delta_time = static_cast <float> (current_time - last_frame);
+            this->last_frame = current_time;
 
-        this->camera.update ();
-        this->renderer->render (this->camera);
-    } while (!glfwWindowShouldClose (this->window) && !single_frame);
+            this->camera.update ();
+            this->renderer->render (this->camera);
+        } while (!glfwWindowShouldClose (this->window) && !single_frame);
+    } catch (...) {
+        cleanup ();
+        throw;
+    }
 }
 
 void Application::init_window () {
@@ -118,7 +131,7 @@ void Application::init_window () {
     if (this->width == 1 || this->height == 1) {
         glfwMaximizeWindow (this->window);
         glfwGetWindowSize (this->window, &this->width, &this->height);
-        std::cout << "Window dimensions: " << this->width << "x" << this->height << std::endl;
+        LOG_INFO ("maximized window dimensions: {}x{}", this->width, this->height);
     }
 
     float f_width = static_cast <float> (this->width);
@@ -155,6 +168,8 @@ void Application::cleanup () {
         glfwDestroyWindow (this->window);
     }
     glfwTerminate ();
+
+    shutdown_logging ();
 }
 
 void Application::process_input () {
@@ -180,6 +195,7 @@ void Application::framebuffer_resize_callback (GLFWwindow* a_window, int a_width
         app->width = a_width;
         app->height = a_height;
         app->renderer->resize (a_width, a_height);
+        app->camera.set_aspect_ratio (static_cast <float> (a_width) / static_cast <float> (a_height));
     }
 }
 
@@ -218,7 +234,7 @@ void Application::key_callback (GLFWwindow* a_window, int key, int, int action, 
         if (app->camera_mode_active) {
             app->camera_mode_active = false;
             glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            std::cout << "Exited camera mode (ESC). Cursor NORMAL." << std::endl;
+            LOG_INFO ("Exited camera mode (ESC). Cursor NORMAL.");
         }
     }
 
@@ -233,7 +249,7 @@ void Application::key_callback (GLFWwindow* a_window, int key, int, int action, 
         } else if (action == GLFW_RELEASE) {
             if (app->c_key_pressed_this_frame) {
                 app->renderer->toggle_frustum_buffer (app->camera);
-                std::cout << "Toggled frustum buffer visibility." << std::endl;
+                LOG_INFO ("Toggled frustum buffer visibility (C).");
                 app->c_key_pressed_this_frame = false;
             }
         }
@@ -248,14 +264,14 @@ void Application::mouse_button_callback (GLFWwindow* a_window, int button, int a
         if ((button == GLFW_MOUSE_BUTTON_RIGHT || button == GLFW_MOUSE_BUTTON_LEFT) && action == GLFW_PRESS) {
             app->camera_mode_active = false;
             glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            std::cout << "Exited camera mode (Right-click). Cursor NORMAL." << std::endl;
+            LOG_INFO ("Exited camera mode (Right-click). Cursor NORMAL.");
         }
     } else {
         if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
             app->camera_mode_active = true;
             glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             app->first_mouse = true;
-            std::cout << "Entered camera mode (Mouse Click). Cursor DISABLED." << std::endl;
+            LOG_INFO ("Entered camera mode (Mouse Click). Cursor DISABLED.");
         }
     }
 }

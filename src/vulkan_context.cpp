@@ -445,13 +445,14 @@ void VulkanContext::shutdown () {
     std::cout << "[VulkanContext::shutdown] VulkanContext shut down successfully." << std::endl;
 }
 
-void VulkanContext::resize(int a_width, int a_height) {
+void VulkanContext::resize (int a_width, int a_height) {
     if (a_width == 0 || a_height == 0) {
         return;
     }
     vkDeviceWaitIdle (this->get_device ());
 
     this->destroy_depth_resources ();
+    // this->destroy_frame_resources ();
 
     for (auto framebuffer : this->swapchain_framebuffers) {
         if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer (this->get_device (), framebuffer, nullptr);
@@ -459,8 +460,8 @@ void VulkanContext::resize(int a_width, int a_height) {
     this->swapchain_framebuffers.clear ();
     this->swapchain.Cleanup ();
 
-    uint32_t width = a_width;
-    uint32_t height = a_height;
+    uint32_t width = static_cast <int> (a_width);
+    uint32_t height = static_cast <int> (a_height);
     this->swapchain.CreateSwapChain (this->get_physical_device ()
                                      , this->get_device ()
                                      , this->surface
@@ -646,7 +647,7 @@ VkCommandBuffer VulkanContext::begin_frame () {
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         int width, height;
         glfwGetFramebufferSize (this->window, &width, &height);
-        resize (width, height);
+        this->resize (width, height);
         return VK_NULL_HANDLE;
     } else if (result != VK_SUCCESS) {
         throw std::runtime_error ("failed to acquire swap chain image!");
@@ -696,7 +697,7 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         int width, height;
         glfwGetFramebufferSize (this->window, &width, &height);
-        resize (width, height);
+        this->resize (width, height);
     } else if (result != VK_SUCCESS) {
         throw std::runtime_error ("failed to present swap chain image!");
     }

@@ -7,6 +7,7 @@
 #include "compute_shader_renderer.hpp"
 #include "application.hpp"
 #include "cpu_sandbox/cpu_sandbox.h"
+#include "logger.hpp"
 
 namespace {
 
@@ -32,16 +33,12 @@ ComputeShaderRenderer::ComputeShaderRenderer (std::shared_ptr <VulkanContext> vu
     if (!this->context) {
         throw std::invalid_argument("VulkanContext cannot be null.");
     }
-    std::cout << "ComputeShaderRenderer created." << std::endl;
 }
 
 ComputeShaderRenderer::~ComputeShaderRenderer () {
-    std::cout << "ComputeShaderRenderer destroyed." << std::endl;
 }
 
 void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree) {
-    std::cout << "ComputeShaderRenderer initializing..." << std::endl;
-
     if (!this->context || !this->context->is_initialized ()) {
         throw std::runtime_error ("[ComputeShaderRenderer::init] VulkanContext is not initialized before renderer init.");
     }
@@ -53,36 +50,10 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
     } else {
         throw std::runtime_error ("Missing SDF OCTREE. Make sure './assets/sdf/lowpoly_bunny.octree' is present in launch location");
     }
-    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
 
-    VkPhysicalDeviceProperties device_properties;
-    vkGetPhysicalDeviceProperties (this->context->get_physical_device (), &device_properties);
-    uint32_t max_push_constant_size = device_properties.limits.maxPushConstantsSize;
-    uint32_t required_push_constant_size = sizeof (PushConstantsData);
-    std::cout << "Max Push Constants Size: " << max_push_constant_size << " bytes" << std::endl;
-    if (required_push_constant_size <= max_push_constant_size) {
-        std::cout << "PushConstants (" << required_push_constant_size << " bytes) fit within the maxPushConstantsSize." << std::endl;
-    } else {
-        std::cout << "WARNING: Your 3 matrices (" << required_push_constant_size << " bytes) EXCEED the maxPushConstantsSize (" << max_push_constant_size << " bytes)." << std::endl;
-    }
+    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3); // TODO: rebuild each frame
 
-    this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
-    std::cout << "[ComputeShaderRenderer::init] MAX_OCTREE_DEPTH: " << MAX_OCTREE_DEPTH << std::endl;
-    std::cout << "[ComputeShaderRenderer::init] given sdf's depth: " << this->push_constants.max_octree_depth << std::endl;
-    if (this->push_constants.max_octree_depth > MAX_OCTREE_DEPTH) {
-        std::cout << "[ComputeShaderRenderer::init] given octree is too deep. Reducing it to MAX_OCTREE_DEPTH" << std::endl;
-        this->push_constants.max_octree_depth = MAX_OCTREE_DEPTH;
-    }
-    this->prev_frame_view_projection.resize (this->context->get_total_frames ());
-
-    std::cout << "[ComputeShaderRenderer::init] sizeof (PushConstantsData): " << sizeof (PushConstantsData) << std::endl;
-
-    const int tasks_count = this->subtrees.size ();
-    std::cout << "[ComputeShaderRenderer::init] Subtree count: " << tasks_count << std::endl;
-    assert (tasks_count);
-
-    this->push_constants.active_leafs_max_count = 778240;
-
+    this->init_push_constants ();
     this->init_descriptor_sets ();
     this->init_compute_active_leafs_pipeline ();
     this->init_compute_prefix_sum_pass1_pipeline ();
@@ -95,6 +66,24 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
 
     this->initialized = true;
     std::cout << "ComputeShaderRenderer initialized successfully." << std::endl;
+}
+
+void ComputeShaderRenderer::init_push_constants () {
+    VkPhysicalDeviceProperties device_properties;
+    vkGetPhysicalDeviceProperties (this->context->get_physical_device (), &device_properties);
+    uint32_t max_push_constant_size = device_properties.limits.maxPushConstantsSize;
+    LOG_TRACE ("VkPhysicalDeviceProperties::maxPushConstantsSize: {} bytes", max_push_constant_size);
+    if (uint32_t {PUSH_CONSTANTS_DATA_SIZE} > max_push_constant_size) {
+        LOG_CRITICAL ("required PUSH_CONSTANTS_DATA_SIZE={} exceeds VkPhysicalDeviceProperties::maxPushConstantsSize={}"
+            , uint32_t {PUSH_CONSTANTS_DATA_SIZE}, max_push_constant_size);
+        this->shutdown ();
+        throw std::runtime_error ("required PUSH_CONSTANTS_DATA_SIZE exceeds VkPhysicalDeviceProperties::maxPushConstantsSize");
+    }
+
+    this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
+    this->push_constants.active_leafs_max_count = 78240; // TODO: settings
+
+    this->prev_frame_view_projection.resize (this->context->get_total_frames ()); // PC for occlusion culling
 }
 
 void ComputeShaderRenderer::init_descriptor_sets () {
@@ -154,7 +143,6 @@ void ComputeShaderRenderer::init_descriptor_sets () {
 }
 
 void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
-    std::cout << "ComputeShaderRenderer::init_compute_active_leafs_pipeline called." << std::endl;
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/compute.slang.spv");
     this->compute_active_leafs_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
@@ -169,7 +157,6 @@ void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
 }
 
 void ComputeShaderRenderer::init_compute_prefix_sum_pass1_pipeline () {
-    std::cout << "ComputeShaderRenderer::init_compute_prefix_sum_pass1 pipeline called." << std::endl;
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/prefix_sum_pass1.slang.spv");
     this->compute_prefix_sum_pass1_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
@@ -179,7 +166,6 @@ void ComputeShaderRenderer::init_compute_prefix_sum_pass1_pipeline () {
 }
 
 void ComputeShaderRenderer::init_compute_prefix_sum_pass2_pipeline () {
-    std::cout << "ComputeShaderRenderer::init_compute_prefix_sum_pass2_pipeline pipeline called." << std::endl;
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/prefix_sum_pass2.slang.spv");
     this->compute_prefix_sum_pass2_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
@@ -189,7 +175,6 @@ void ComputeShaderRenderer::init_compute_prefix_sum_pass2_pipeline () {
 }
 
 void ComputeShaderRenderer::init_compute_prefix_sum_pass3_pipeline () {
-    std::cout << "ComputeShaderRenderer::init_compute_prefix_sum_pass3_pipeline called." << std::endl;
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/prefix_sum_pass3.slang.spv");
     this->compute_prefix_sum_pass3_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
@@ -199,7 +184,6 @@ void ComputeShaderRenderer::init_compute_prefix_sum_pass3_pipeline () {
 }
 
 void ComputeShaderRenderer::init_compute_geometry_pipeline () {
-    std::cout << "ComputeShaderRenderer::init_compute_prefix_sum_pipeline called." << std::endl;
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/triangles_gen.slang.spv");
     this->compute_geometry_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
@@ -213,8 +197,6 @@ void ComputeShaderRenderer::init_compute_geometry_pipeline () {
 }
 
 void ComputeShaderRenderer::init_graphics_shading_pipeline () {
-    std::cout << "ComputeShaderRenderer::init_graphics_shading_pipeline called." << std::endl;
-
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
@@ -381,8 +363,6 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
 }
 
 void ComputeShaderRenderer::init_graphics_frustum_pipeline () {
-    std::cout << "ComputeShaderRenderer::init_graphics_frustum_pipeline called." << std::endl;
-
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
@@ -551,14 +531,13 @@ void ComputeShaderRenderer::update_push_constants (const Camera& camera, size_t 
     this->push_constants.prev_view_proj = this->prev_frame_view_projection [current_frame];
     this->prev_frame_view_projection [current_frame] = this->push_constants.view_proj;
 
-    uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->mesh_ds);
-    if (insufficent_mem_flag) {
+    if (fetch_active_leaf_overflow_flag (this->context->get_copy_helper (), this->active_leafs_ds)) {
         vkDeviceWaitIdle (this->context->get_device ());
         this->push_constants.max_octree_depth -= 1;
-        std::cout << "[ComputeShaderRenderer::update_push_constants]: insufficent_mem_flag : " << insufficent_mem_flag << ". Reducing octree depth from "
-            << this->push_constants.max_octree_depth + 1 << " to " << this->push_constants.max_octree_depth << std::endl;
+        LOG_WARN ("acitve leaf overflow (exceeds {}).", this->push_constants.active_leafs_max_count);
+        LOG_INFO ("sdf-octree's depth permanently reduced: {}->{}", this->push_constants.max_octree_depth + 1, this->push_constants.max_octree_depth);
         if (this->push_constants.max_octree_depth == 0) {
-            throw std::runtime_error ("[ComputeShaderRenderer::update_push_constants]: bug. octree must not me 0 depth");
+            throw std::runtime_error ("sdf-octree's depth must be greater than zero.");
         }
     }
 }
@@ -976,15 +955,6 @@ void ComputeShaderRenderer::render (const Camera& camera) {
 }
 
 void ComputeShaderRenderer::resize (int a_width, int a_height) {
-    if (!this->initialized) {
-        std::cerr << "Warning: ComputeShaderRenderer::resize called before init()." << std::endl;
-        this->width = a_width;
-        this->height = a_height;
-        return;
-    }
-
-    std::cout << "ComputeShaderRenderer resizing to " << a_width << "x" << a_height << "..." << std::endl;
-
     this->width = a_width;
     this->height = a_height;
 }

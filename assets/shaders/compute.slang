@@ -45,6 +45,10 @@ void process_voxel (uint3 group_id, NodeContext context, SdfOctreeNode leaf_node
         return;
     }
 
+    if (g_active_leaf_overflow_flag [0] > 0) {
+        return;
+    }
+
     uint active_leaf_offset = 0;
     InterlockedAdd (g_active_leaf_counter [0].x, 1, active_leaf_offset);
 

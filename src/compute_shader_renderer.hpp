@@ -30,6 +30,7 @@ public:
     void shutdown () override;
 
 private:
+    void init_push_constants ();
     void init_descriptor_sets ();
     void init_compute_active_leafs_pipeline ();
     void init_compute_prefix_sum_pass1_pipeline ();

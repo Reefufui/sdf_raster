@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
 
-project(TriangleRasterizer LANGUAGES CXX)
+project(sdf_raster LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -148,6 +148,7 @@ add_executable(${PROJECT_NAME}
     src/application.cpp
     src/camera.cpp
     src/compute_shader_renderer.cpp
+    src/logger.cpp
     src/main.cpp
     src/marching_cubes_lookup_table.cpp
     src/marching_cubes.cpp
@@ -203,14 +204,17 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
     message(STATUS "Configuring for Debug build...")
     target_compile_options(${PROJECT_NAME} PRIVATE -g -O0 -Wall -Wextra)
     target_link_options(${PROJECT_NAME} PRIVATE -g)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE)
 elseif(CMAKE_BUILD_TYPE MATCHES Release)
     message(STATUS "Configuring for Release build...")
     target_compile_options(${PROJECT_NAME} PRIVATE -O3 -DNDEBUG -Wall -Wextra)
     target_link_options(${PROJECT_NAME} PRIVATE -O3)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 elseif(CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
     message(STATUS "Configuring for Release with Debug Info build...")
     target_compile_options(${PROJECT_NAME} PRIVATE -O2 -g -DNDEBUG -Wall -Wextra)
     target_link_options(${PROJECT_NAME} PRIVATE -O2 -g)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO)
 endif()
 
 target_compile_options(${PROJECT_NAME} PRIVATE -fmax-errors=1 -Wno-deprecated-copy)

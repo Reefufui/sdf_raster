@@ -62,6 +62,7 @@ struct TaskPayload {
     uint triangles_count;
 };
 
+#define PUSH_CONSTANTS_DATA_SIZE 160
 struct PushConstantsData {
     column_major float4x4 view_proj;
     column_major float4x4 prev_view_proj;

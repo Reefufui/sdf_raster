@@ -3,10 +3,11 @@
 #include <iostream>
 #include <stack>
 
+#include "cpu_sandbox/cpu_sandbox.h"
+#include "logger.hpp"
 #include "sdf_octree.hpp"
 #include "shaders/common.h" // NodeContext
 #include "vk_buffers.h"
-#include "cpu_sandbox/cpu_sandbox.h"
 
 namespace sdf_raster {
 
@@ -312,7 +313,7 @@ std::ostream& operator<< (std::ostream& os, const NodeContext& context) {
 
 }
 
-std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend) {
+std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend, bool verbose) {
     std::vector <NodeContext> payloads;
 
     if (scene.nodes.empty ()) {
@@ -387,8 +388,10 @@ std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, 
         }
     }
 
-    for (size_t i = 0; i < payloads.size (); ++i) {
-        std::cout << "Subtree LVL=" << max_level_to_descend << " ["<< i << "] = " << payloads [i] << std::endl;
+    if (verbose) {
+        for (size_t i = 0; i < payloads.size (); ++i) {
+            std::cout << "Subtree LVL=" << max_level_to_descend << " ["<< i << "] = " << payloads [i] << std::endl;
+        }
     }
     return payloads;
 }
@@ -425,6 +428,13 @@ int get_octree_max_depth (const SdfOctree& scene, int max_level_to_descend) {
             uint32_t child_node_idx = node.offset + i;
             s.push ({ child_node_idx, current.level + 1 });
         }
+    }
+
+    LOG_TRACE ("MAX_OCTREE_DEPTH={} levels", uint32_t {MAX_OCTREE_DEPTH});
+    LOG_INFO ("given sdf-octree's depth: {} levels", max_overall_depth);
+    if (max_overall_depth > MAX_OCTREE_DEPTH) {
+        LOG_WARN ("given octree is too deep. Reducing it to MAX_OCTREE_DEPTH");
+        max_overall_depth = MAX_OCTREE_DEPTH;
     }
 
     return max_overall_depth;
@@ -498,9 +508,13 @@ std::vector <uint> fetch_indices_count (std::shared_ptr <vk_utils::ICopyEngine> 
     return indices_count;
 }
 
-uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info) {
+uint fetch_active_leaf_overflow_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info) {
     uint data;
     copy_helper->ReadBuffer (info.active_leaf_overflow_flag_buffer, 0, &data, sizeof (uint));
+
+    const uint overflow_flag = 0;
+    copy_helper->UpdateBuffer (info.active_leaf_overflow_flag_buffer, 0, &overflow_flag, sizeof (uint));
+
     return data;
 }
 

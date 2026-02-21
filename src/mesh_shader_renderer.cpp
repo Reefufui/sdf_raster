@@ -426,16 +426,16 @@ void MeshShaderRenderer::update_push_constants (const Camera& a_camera) {
     this->push_constants.prev_view_proj = a_camera.get_view_projection_matrix ();
     this->push_constants.camera_pos = LiteMath::to_float4 (a_camera.get_position (), 1.0f);
 
-    uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->active_leafs_ds);
-    if (insufficent_mem_flag) {
-        vkDeviceWaitIdle (this->context->get_device ());
-        this->push_constants.max_octree_depth -= 1;
-        std::cout << "[MeshShaderRenderer::update_push_constants]: insufficent_mem_flag : " << insufficent_mem_flag << ". Reducing octree depth from "
-            << this->push_constants.max_octree_depth + 1 << " to " << this->push_constants.max_octree_depth << std::endl;
-        if (this->push_constants.max_octree_depth == 0) {
-            throw std::runtime_error ("[MeshShaderRenderer::update_push_constants]: bug. octree must not me 0 depth");
-        }
-    }
+    // uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->active_leafs_ds);
+    // if (insufficent_mem_flag) {
+    //     vkDeviceWaitIdle (this->context->get_device ());
+    //     this->push_constants.max_octree_depth -= 1;
+    //     std::cout << "[MeshShaderRenderer::update_push_constants]: insufficent_mem_flag : " << insufficent_mem_flag << ". Reducing octree depth from "
+    //         << this->push_constants.max_octree_depth + 1 << " to " << this->push_constants.max_octree_depth << std::endl;
+    //     if (this->push_constants.max_octree_depth == 0) {
+    //         throw std::runtime_error ("[MeshShaderRenderer::update_push_constants]: bug. octree must not me 0 depth");
+    //     }
+    // }
 }
 
 void MeshShaderRenderer::toggle_frustum_buffer (Camera&) {

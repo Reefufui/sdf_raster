@@ -54,6 +54,7 @@ private:
     void geometry_barrier (VkCommandBuffer cmd_buff, size_t current_frame);
     void draw_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
     void draw_frustum (VkCommandBuffer cmd_buff);
+    void copy_depth (VkCommandBuffer cmd_buff);
 
     std::shared_ptr <VulkanContext> context {nullptr};
 

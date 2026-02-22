@@ -38,6 +38,19 @@ DepthBufferDescriptorSetInfo create_depth_buffer_descriptor_set (
     ds_maker.BindImage (0, info.hz_buffer.view, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
     ds_maker.BindEnd (&info.descriptor_set, &info.descriptor_set_layout);
 
+    // TODO: change layout to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    // VkImageSubresourceRange subresourceRange = {};
+    // subresourceRange.baseMipLevel = i;
+    // subresourceRange.aspectMask              = VK_IMAGE_ASPECT_COLOR_BIT;
+    // subresourceRange.levelCount              = 1;
+    // subresourceRange.layerCount              = 1;
+    // vk_utils::setImageLayout(
+    //     a_cmdBuf,
+    //     a_image,
+    //     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+    //     a_targetLayout,
+    //     subresourceRange);
+
     return info;
 }
 

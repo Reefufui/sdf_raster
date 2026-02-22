@@ -130,11 +130,11 @@ void ComputeShaderRenderer::init_descriptor_sets () {
         , VK_SHADER_STAGE_COMPUTE_BIT
         , this->context->get_total_frames ());
 
-    this->depth_buffer_ds = create_depth_buffer_descriptor_set (this->context->get_device ()
-        , this->context->get_physical_device ()
-        , *descriptor_maker
-        , VK_SHADER_STAGE_COMPUTE_BIT
-        , this->context->get_swapchain_extent ());
+    // this->depth_buffer_ds = create_depth_buffer_descriptor_set (this->context->get_device ()
+    //     , this->context->get_physical_device ()
+    //     , *descriptor_maker
+    //     , VK_SHADER_STAGE_COMPUTE_BIT
+    //     , this->context->get_swapchain_extent ());
 
     this->frustum_ds = create_frustum_descriptor_set (this->context->get_device ()
         , this->context->get_physical_device ()
@@ -152,7 +152,7 @@ void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
             , this->marching_cubes_lookup_table_ds.descriptor_set_layout
             , this->active_leafs_ds.descriptor_set_layout
             , this->frustum_ds.descriptor_set_layout
-            , this->depth_buffer_ds.descriptor_set_layout
+            // , this->depth_buffer_ds.descriptor_set_layout
         }, sizeof (PushConstantsData));
     this->compute_active_leafs_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
@@ -634,13 +634,13 @@ void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff, size_t cur
 void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
-    std::array <VkDescriptorSet, 6> ds = {
+    std::array <VkDescriptorSet, 5> ds = {
         this->sdf_octree_ds.descriptor_set, // TODO: sepparate subtree roots buffer for all frames
         this->mesh_ds.descriptor_sets [current_frame], // TODO: reuse one buffer for all in-flight frames
         this->marching_cubes_lookup_table_ds.descriptor_set,
         this->active_leafs_ds.descriptor_sets [current_frame], //TODO: reuse one buffer for all in-flight frames
-        this->frustum_ds.descriptor_sets [current_frame],
-        this->depth_buffer_ds.descriptor_set
+        this->frustum_ds.descriptor_sets [current_frame]
+        // TODO: this->depth_buffer_ds.descriptor_set
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline_layout,
@@ -895,6 +895,77 @@ void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
+void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
+    const auto extent = this->context->get_swapchain_extent ();
+    auto from = this->context->get_depth_buffer ().image;
+    auto to = this->depth_buffer_ds.hz_buffer.image;
+
+    VkImageMemoryBarrier depth_to_src = {};
+    depth_to_src.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    depth_to_src.pNext = nullptr;
+    depth_to_src.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    depth_to_src.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    depth_to_src.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depth_to_src.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    depth_to_src.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    depth_to_src.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    depth_to_src.image = from;
+    depth_to_src.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    depth_to_src.subresourceRange.baseMipLevel = 0;
+    depth_to_src.subresourceRange.levelCount = 1;
+    depth_to_src.subresourceRange.baseArrayLayer = 0;
+    depth_to_src.subresourceRange.layerCount = 1;
+
+    VkImageMemoryBarrier hz_buffer_to_dst = {};
+    hz_buffer_to_dst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    hz_buffer_to_dst.pNext = nullptr;
+    hz_buffer_to_dst.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    hz_buffer_to_dst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    // TODO: hz_buffer_to_dst.oldLayout = VK_IMAGE_LAYOUT_;
+    hz_buffer_to_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    hz_buffer_to_dst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    hz_buffer_to_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    hz_buffer_to_dst.image = to;
+    hz_buffer_to_dst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    hz_buffer_to_dst.subresourceRange.baseMipLevel = 0;
+    hz_buffer_to_dst.subresourceRange.levelCount = 1;
+    hz_buffer_to_dst.subresourceRange.baseArrayLayer = 0;
+    hz_buffer_to_dst.subresourceRange.layerCount = 1;
+
+    vkCmdPipelineBarrier (cmd_buff
+        , VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
+        , VK_PIPELINE_STAGE_TRANSFER_BIT
+        , 0
+        , 0, nullptr
+        , 0, nullptr
+        , 1, &depth_to_src
+    );
+
+    VkOffset3D whole_image { static_cast <int32_t> (extent.width), static_cast <int32_t> (extent.height), 0 };
+
+    VkImageBlit blitRegion {};
+    blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    blitRegion.srcSubresource.mipLevel = 0;
+    blitRegion.srcSubresource.baseArrayLayer = 0;
+    blitRegion.srcSubresource.layerCount = 1;
+    blitRegion.srcOffsets [0] = { 0, 0, 0 };
+    blitRegion.srcOffsets [1] = whole_image;
+
+    blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blitRegion.dstSubresource.mipLevel = 0;
+    blitRegion.dstSubresource.baseArrayLayer = 0;
+    blitRegion.dstSubresource.layerCount = 1;
+    blitRegion.dstOffsets [0] = { 0, 0, 0 };
+    blitRegion.dstOffsets [1] = whole_image;
+
+    vkCmdBlitImage (cmd_buff
+        , from, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+        , to, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+        , 1, &blitRegion
+        , VK_FILTER_NEAREST
+    );
+}
+
 void ComputeShaderRenderer::render (const Camera& camera) {
     if (!this->initialized) {
         LOG_ERROR ("render called before initialization");
@@ -925,6 +996,7 @@ void ComputeShaderRenderer::render (const Camera& camera) {
     if (this->frustum_draw_buffer) {
         this->draw_frustum (cmd_buff);
     }
+    // this->copy_depth (cmd_buff);
 
     this->context->end_frame (cmd_buff);
 

@@ -41,6 +41,7 @@ public:
     inline VkRenderPass get_render_pass_after () const { return this->after.render_pass; }
     inline VkFramebuffer get_swapchain_framebuffer () const { return this->main.framebuffer [this->acquired_image_index]; }
     inline VkFramebuffer get_swapchain_framebuffer_after () const { return this->after.framebuffer [this->acquired_image_index]; }
+    inline const vk_utils::VulkanImageMem& get_depth_buffer () const { return this->depth_buffer; }
 
     VkCommandBuffer begin_frame ();
     void end_frame (VkCommandBuffer command_buffer);
@@ -101,6 +102,7 @@ private:
 
     uint32_t acquired_image_index;
 
+    const size_t max_frames_in_swapchain = 5;
     const size_t max_frames_in_flight = 3;
     uint32_t current_frame = 2;
     struct FrameResources {

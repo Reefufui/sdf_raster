@@ -79,7 +79,7 @@ void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support)
             , this->surface
             , width
             , height
-            , this->max_frames_in_flight
+            , this->max_frames_in_swapchain
             , true);
 
     if (!vk_utils::getSupportedDepthFormat (this->get_physical_device (), {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &this->depth_buffer.format)) {
@@ -551,27 +551,27 @@ void VulkanContext::resize (int a_width, int a_height) {
         LOG_ERROR ("Width or height can't be zero.");
         return;
     }
+    uint32_t width = static_cast <int> (a_width);
+    uint32_t height = static_cast <int> (a_height);
+    const auto extent = this->swapchain.GetExtent ();
+    LOG_INFO ("Waiting for the GPU to go idle to resize: ({}, {}) -> ({}, {})", extent.width, extent.height, width, height);
+
     vkDeviceWaitIdle (this->get_device ());
     LOG_INFO ("Recreating frame resources.");
 
-    this->destroy_depth_buffer ();
-
-    this->destroy_framebuffers ();
     this->swapchain.Cleanup ();
-
-    uint32_t width = static_cast <int> (a_width);
-    uint32_t height = static_cast <int> (a_height);
     this->swapchain.CreateSwapChain (this->get_physical_device ()
                                      , this->get_device ()
                                      , this->surface
                                      , width
                                      , height
-                                     , this->max_frames_in_flight
+                                     , this->max_frames_in_swapchain
                                      , true);
     this->create_depth_buffer ();
+    this->destroy_framebuffers ();
     this->main.framebuffer = this->create_framebuffers (this->main.render_pass);
     this->after.framebuffer = this->create_framebuffers (this->after.render_pass);
-    // this->create_frame_resources ();
+    this->create_frame_resources ();
 
     this->current_frame = 0;
 }
@@ -601,7 +601,7 @@ VkRenderPass VulkanContext::create_render_pass (VkAttachmentLoadOp load_op) {
     depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depth_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference depth_attachment_ref {};
     depth_attachment_ref.attachment = 1;
@@ -615,21 +615,21 @@ VkRenderPass VulkanContext::create_render_pass (VkAttachmentLoadOp load_op) {
 
     std::array <VkSubpassDependency, 2> dependencies;
 
-    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[0].dstSubpass = 0;
-    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencies[0].srcAccessMask = 0;
-    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencies[0].dependencyFlags = 0;
+    dependencies [0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies [0].dstSubpass = 0;
+    dependencies [0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencies [0].srcAccessMask = 0;
+    dependencies [0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencies [0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies [0].dependencyFlags = 0;
 
-    dependencies[1].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[1].dstSubpass = 0;
-    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencies[1].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    dependencies[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencies[1].dependencyFlags = 0;
+    dependencies [1].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies [1].dstSubpass = 0;
+    dependencies [1].srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencies [1].srcAccessMask = 0;
+    dependencies [1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencies [1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies [1].dependencyFlags = 0;
 
     std::array <VkAttachmentDescription, 2> attachments = {color_attachment, depth_attachment};
 
@@ -648,6 +648,10 @@ VkRenderPass VulkanContext::create_render_pass (VkAttachmentLoadOp load_op) {
 }
 
 void VulkanContext::create_frame_resources () {
+    if (this->frame_resources.size ()) {
+        this->destroy_frame_resources ();
+    }
+
     this->frame_resources.resize (this->max_frames_in_flight);
 
     VkSemaphoreCreateInfo semaphore_info {};
@@ -771,6 +775,13 @@ void VulkanContext::create_depth_buffer () {
 
     const uint32_t width = this->swapchain.GetExtent ().width;
     const uint32_t height = this->swapchain.GetExtent ().height;
+    assert (width > 0 && height > 0);
+
+    bool recreated = false;
+    if (this->depth_buffer.image != VK_NULL_HANDLE) {
+        recreated = true;
+        this->destroy_depth_buffer ();
+    }
 
     const VkImageUsageFlags usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     VkImageCreateInfo create_info = vk_utils::defaultImageCreateInfo (width, height, this->depth_buffer.format, usage, 1);
@@ -786,6 +797,8 @@ void VulkanContext::create_depth_buffer () {
 
     VkImageViewCreateInfo depth_attachment = vk_utils::defaultImageViewCreateInfo (this->depth_buffer.image, this->depth_buffer.format, 1, VK_IMAGE_ASPECT_DEPTH_BIT);
     VK_CHECK_RESULT (vkCreateImageView (this->get_device (), &depth_attachment, nullptr, &this->depth_buffer.view));
+
+    LOG_INFO ("{} depth image with size ({}, {})", (recreated) ? "Recreated" : "Created", width, height);
 }
 
 void VulkanContext::destroy_depth_buffer () {
@@ -812,6 +825,7 @@ void VulkanContext::destroy_frame_resources () {
         vkDestroySemaphore (this->device, this->frame_resources [i].ready_to_render, nullptr);
         vkDestroyFence (this->device, this->frame_resources [i].ready_to_record, nullptr);
     }
+    this->frame_resources.clear ();
 }
 
 }

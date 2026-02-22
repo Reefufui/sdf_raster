@@ -37,8 +37,6 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
         this->push_constants.max_octree_depth = MAX_OCTREE_DEPTH;
     }
 
-    const int tasks_count = this->subtrees.size ();
-
     // std::cout << "[MeshShaderRenderer::init] active leafs byte size (MAX, user-input): " << a_leaf_memory_limit << std::endl;
 
     // auto make_divisable = [] (size_t value, size_t by) -> size_t {

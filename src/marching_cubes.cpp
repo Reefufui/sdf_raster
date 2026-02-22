@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include "omp.h"
 
 #include "marching_cubes_lookup_table.hpp"
@@ -122,13 +120,6 @@ LiteMath::float3 interpolate_vertex (float isolevel, LiteMath::float3 p1, LiteMa
     p.x = p1.x + mu * (p2.x - p1.x);
     p.y = p1.y + mu * (p2.y - p1.y);
     p.z = p1.z + mu * (p2.z - p1.z);
-    std::cout << "LOG:interpolate_vertex"
-        << " P1=[" << p1.x << "," << p1.y << "," << p1.z << "]"
-        << " P2=[" << p2.x << "," << p2.y << "," << p2.z << "]"
-        << " ValP1=" << valp1
-        << " ValP2=" << valp2
-        << " Result=[" << p.x << "," << p.y << "," << p.z << "]"
-        << std::endl;
     return (p);
 }
 

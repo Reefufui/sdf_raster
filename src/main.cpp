@@ -1,10 +1,13 @@
-#include <iostream>
 #include <string>
 #include <vector>
 
 #include "application.hpp"
+#include "logger.hpp"
 
 int main (int argc, char* argv[]) {
+    sdf_raster::log_app_start ();
+    int exit_code = EXIT_SUCCESS;
+
     try {
         int width = 0;
         int height = 0;
@@ -38,14 +41,16 @@ int main (int argc, char* argv[]) {
             sdf_raster::Application app (width, height);
             app.marching_cubes_cpu ("./assets/sdf/lowpoly_bunny.octree", filename);
         } else {
-            sdf_raster::Application app (width, height, "sdf_raster", mesh_shader_support);
+            sdf_raster::Application app (width, height, mesh_shader_support);
             app.run (single_frame);
         }
     } catch (const std::exception& e) {
-        std::cerr << "Application error: " << e.what() << std::endl;
-        return EXIT_FAILURE;
+        LOG_CRITICAL ("exception: {}", e.what ());
+        exit_code = EXIT_FAILURE;
     }
 
-    return EXIT_SUCCESS;
+    sdf_raster::log_app_exit (exit_code);
+
+    return exit_code;
 }
 

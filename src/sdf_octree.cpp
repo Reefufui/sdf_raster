@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <fstream>
-#include <iostream>
 #include <stack>
 
 #include "cpu_sandbox/cpu_sandbox.h"
@@ -32,7 +31,7 @@ void save_sdf_octree (const SdfOctree &scene, const std::string &path) {
 void dump_sdf_octree_text (const SdfOctree &scene, const std::string &path_to_dump) {
     std::ofstream dump_file (path_to_dump);
     if (!dump_file.is_open()) {
-        std::cerr << "Error: Could not open file for dumping: " << path_to_dump << std::endl;
+        LOG_ERROR ("could not open file {} for dumping octree", path_to_dump);
         return;
     }
 
@@ -58,7 +57,7 @@ void dump_sdf_octree_text (const SdfOctree &scene, const std::string &path_to_du
     }
 
     dump_file.close();
-    std::cout << "SDF Octree successfully dumped to: " << path_to_dump << std::endl;
+    LOG_INFO ("SDF Octree successfully dumped to '{}'", path_to_dump);
 }
 
 float sample_sdf (const SdfOctree& scene, const LiteMath::float3& p) {
@@ -98,7 +97,6 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
         , VkShaderStageFlags shader_stage_flags
         , const sdf_raster::SdfOctree& octree
         , const std::vector <NodeContext>& subtrees) {
-    std::cout << "create_sdf_octree_descriptor_set: creating..." << std::endl;
     SdfOctreeDescriptorSetInfo info = {};
 
     if (!copy_helper) {
@@ -141,7 +139,6 @@ ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
         , VkShaderStageFlags shader_stage_flags
         , size_t active_leafs_count
         , size_t max_frames_in_flight) {
-    std::cout << "create_active_leafs_descriptor_set: creating..." << std::endl;
     ActiveLeafsDescriptorSetInfo info = {};
 
     if (!copy_helper) {
@@ -203,7 +200,6 @@ DrawIndexedIndirectCommandDescriptorSetInfo create_draw_indexed_indirect_command
         , vk_utils::DescriptorMaker& ds_maker
         , VkShaderStageFlags shader_stage_flags
         , size_t max_frames_in_flight) {
-    std::cout << "create_draw_indexed_indirect_command_descriptor_set: creating..." << std::endl;
     DrawIndexedIndirectCommandDescriptorSetInfo info = {};
 
     const VkDeviceSize draw_indexed_indirect_command_size = sizeof (VkDrawIndexedIndirectCommand);
@@ -390,7 +386,7 @@ std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, 
 
     if (verbose) {
         for (size_t i = 0; i < payloads.size (); ++i) {
-            std::cout << "Subtree LVL=" << max_level_to_descend << " ["<< i << "] = " << payloads [i] << std::endl;
+            // std::cout << "Subtree LVL=" << max_level_to_descend << " ["<< i << "] = " << payloads [i] << std::endl;
         }
     }
     return payloads;
@@ -441,47 +437,47 @@ int get_octree_max_depth (const SdfOctree& scene, int max_level_to_descend) {
 }
 
 void dump_octree_subtree_pretty (const SdfOctree& scene, uint32_t subtree_root_node_idx, int max_display_depth, const std::string& prefix, int current_display_depth) {
-    if (subtree_root_node_idx >= scene.nodes.size()) {
-        std::cerr << prefix << "Error: Node index " << subtree_root_node_idx << " is out of bounds." << std::endl;
-        return;
-    }
-
-    if (max_display_depth != -1 && current_display_depth > max_display_depth) {
-        return;
-    }
-
-    const SdfOctreeNode& node = scene.nodes [subtree_root_node_idx];
-
-    std::cout << prefix << (current_display_depth == 0 ? "" : "|-- ")
-              << "Node [" << subtree_root_node_idx << "], Display Depth: " << current_display_depth;
-    if (node.offset == 0) {
-        std::cout << ", Type: Leaf\n";
-        for (int i = 0; i < 8; ++i) {
-            std::cout << prefix << "|-- |-- "
-                << "value [" << i << "] = " << node.values [i] << std::endl;
-        }
-    } else {
-        std::cout << ", Type: Internal (children offset: " << node.offset << ")";
-    }
-    std::cout << std::endl;
-
-    if (node.offset != 0 && (max_display_depth == -1 || current_display_depth < max_display_depth)) {
-        std::string child_prefix = prefix + (current_display_depth == 0 ? "" : "|   ");
-
-        for (int i = 0; i < 8; ++i) {
-            uint32_t child_node_idx = node.offset + i;
-
-            std::string branch_prefix = child_prefix + (i == 7 ? "    " : "|   ");
-
-            dump_octree_subtree_pretty (
-                scene,
-                child_node_idx,
-                max_display_depth,
-                branch_prefix,
-                current_display_depth + 1
-            );
-        }
-    }
+    // if (subtree_root_node_idx >= scene.nodes.size()) {
+    //     LOG_ERROR ("node index {} is out of bounds", subtree_root_node_idx);
+    //     return;
+    // }
+    //
+    // if (max_display_depth != -1 && current_display_depth > max_display_depth) {
+    //     return;
+    // }
+    //
+    // const SdfOctreeNode& node = scene.nodes [subtree_root_node_idx];
+    //
+    // std::cout << prefix << (current_display_depth == 0 ? "" : "|-- ")
+    //           << "Node [" << subtree_root_node_idx << "], Display Depth: " << current_display_depth;
+    // if (node.offset == 0) {
+    //     std::cout << ", Type: Leaf\n";
+    //     for (int i = 0; i < 8; ++i) {
+    //         std::cout << prefix << "|-- |-- "
+    //             << "value [" << i << "] = " << node.values [i] << std::endl;
+    //     }
+    // } else {
+    //     std::cout << ", Type: Internal (children offset: " << node.offset << ")";
+    // }
+    // std::cout << std::endl;
+    //
+    // if (node.offset != 0 && (max_display_depth == -1 || current_display_depth < max_display_depth)) {
+    //     std::string child_prefix = prefix + (current_display_depth == 0 ? "" : "|   ");
+    //
+    //     for (int i = 0; i < 8; ++i) {
+    //         uint32_t child_node_idx = node.offset + i;
+    //
+    //         std::string branch_prefix = child_prefix + (i == 7 ? "    " : "|   ");
+    //
+    //         dump_octree_subtree_pretty (
+    //             scene,
+    //             child_node_idx,
+    //             max_display_depth,
+    //             branch_prefix,
+    //             current_display_depth + 1
+    //         );
+    //     }
+    // }
 }
 
 std::vector <NodeContext> fetch_active_leafs (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t active_leafs_count, size_t frame) {

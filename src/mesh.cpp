@@ -1,5 +1,4 @@
 #include <fstream>
-#include <iostream>
 
 #include "vk_buffers.h"
 #include "mesh.hpp"
@@ -76,7 +75,6 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
     , VkShaderStageFlags shader_stage_flags
     , size_t max_vertices_count
     , size_t max_frames_in_flight) {
-    std::cout << "create_mesh_descriptor_set: creating..." << std::endl;
     MeshDescriptorSetInfo info = {};
 
     if (!copy_helper) {

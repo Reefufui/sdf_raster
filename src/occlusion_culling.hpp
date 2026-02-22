@@ -10,16 +10,19 @@
 namespace sdf_raster {
 
 struct DepthBufferDescriptorSetInfo {
-    std::vector <VkDescriptorSet> descriptor_sets;
+    VkDescriptorSet descriptor_set;
+
+    vk_utils::VulkanImageMem hz_buffer;
+
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 };
 
 DepthBufferDescriptorSetInfo create_depth_buffer_descriptor_set (
-        vk_utils::DescriptorMaker& ds_maker
+        VkDevice device
+        , VkPhysicalDevice physical_device
+        , vk_utils::DescriptorMaker& ds_maker
         , VkShaderStageFlags shader_stage_flags
-        , const std::vector <vk_utils::VulkanImageMem>& depth_textures
-        , VkSampler detph_sampler
-        , size_t max_frames_in_flight);
+        , VkExtent2D swapchain_extent);
 
 }
 

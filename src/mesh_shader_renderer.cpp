@@ -3,9 +3,10 @@
 #include <iomanip>
 #include <stdexcept>
 
-#include "mesh_shader_renderer.hpp"
 #include "application.hpp"
 #include "cpu_sandbox/cpu_sandbox.h"
+#include "logger.hpp"
+#include "mesh_shader_renderer.hpp"
 
 namespace sdf_raster {
 
@@ -17,16 +18,12 @@ MeshShaderRenderer::MeshShaderRenderer (std::shared_ptr <VulkanContext> vulkan_c
     if (!this->context) {
         throw std::invalid_argument("VulkanContext cannot be null.");
     }
-    std::cout << "MeshShaderRenderer created." << std::endl;
 }
 
 MeshShaderRenderer::~MeshShaderRenderer () {
-    std::cout << "MeshShaderRenderer destroyed." << std::endl;
 }
 
 void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree) {
-    std::cout << "MeshShaderRenderer initializing..." << std::endl;
-
     if (!this->context || !this->context->is_initialized ()) {
         throw std::runtime_error ("[MeshShaderRenderer::init] VulkanContext is not initialized before renderer init.");
     }
@@ -36,18 +33,12 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     this->sdf_octree = std::move (a_sdf_octree);
     this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
     this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
-    std::cout << "[MeshShaderRenderer::init] MAX_OCTREE_DEPTH: " << MAX_OCTREE_DEPTH << std::endl;
-    std::cout << "[MeshShaderRenderer::init] given sdf's depth: " << this->push_constants.max_octree_depth << std::endl;
     if (this->push_constants.max_octree_depth > MAX_OCTREE_DEPTH) {
-        std::cout << "[MeshShaderRenderer::init] given octree is too deep. Reducing it to MAX_OCTREE_DEPTH" << std::endl;
         this->push_constants.max_octree_depth = MAX_OCTREE_DEPTH;
     }
 
-    std::cout << "[MeshShaderRenderer::init] sizeof (PushConstantsData): " << sizeof (PushConstantsData) << std::endl;
-
     const int tasks_count = this->subtrees.size ();
 
-    std::cout << "[MeshShaderRenderer::init] subtrees (tasks) count: " << tasks_count << std::endl;
     // std::cout << "[MeshShaderRenderer::init] active leafs byte size (MAX, user-input): " << a_leaf_memory_limit << std::endl;
 
     // auto make_divisable = [] (size_t value, size_t by) -> size_t {
@@ -73,12 +64,9 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
 
     this->init_mesh_shading_pipeline ();
     this->initialized = true;
-    std::cout << "MeshShaderRenderer initialized successfully." << std::endl;
 }
 
 void MeshShaderRenderer::init_mesh_shading_pipeline () {
-    std::cout << "MeshShaderRenderer::init_mesh_shading_pipeline called." << std::endl;
-
     const size_t shaders_count = 3;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
@@ -251,7 +239,7 @@ void MeshShaderRenderer::init_mesh_shading_pipeline () {
 
 void MeshShaderRenderer::render (const Camera& a_camera) {
     if (!this->initialized) {
-        std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
+        LOG_ERROR ("render called before initialization");
         return;
     }
 
@@ -265,7 +253,7 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
     VkRenderPassBeginInfo render_pass_info {};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     render_pass_info.renderPass = this->context->get_render_pass ();
-    render_pass_info.framebuffer = this->context->get_swapchain_framebuffer (this->context->get_current_image_index ());
+    // FIXME:render_pass_info.framebuffer = this->context->get_swapchain_framebuffer (this->context->get_current_frame ());
     render_pass_info.renderArea.offset = {0, 0};
     render_pass_info.renderArea.extent = extent;
 
@@ -317,89 +305,17 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
 }
 
 void MeshShaderRenderer::resize (int a_width, int a_height) {
-    if (!this->initialized) {
-        std::cerr << "Warning: MeshShaderRenderer::resize called before init()." << std::endl;
-        this->width = a_width;
-        this->height = a_height;
-        return;
-    }
-
-    std::cout << "MeshShaderRenderer resizing to " << a_width << "x" << a_height << "..." << std::endl;
-
     this->width = a_width;
     this->height = a_height;
 }
-
-// void dump_active_leafs (const std::vector <LeafContext>& contexts, const std::string& base_filename, size_t chunk_size) {
-//     if (contexts.empty ()) {
-//         std::cerr << "Вектор пустой" << std::endl;
-//         return;
-//     }
-//
-//     std::cout << "Сохранение " << contexts.size () << " листьев по " 
-//               << chunk_size << " в чанк..." << std::endl;
-//
-//     size_t num_chunks = (contexts.size () + chunk_size - 1) / chunk_size;
-//
-//     for (size_t chunk_idx = 0; chunk_idx < num_chunks; ++chunk_idx) {
-//         size_t start_idx = chunk_idx * chunk_size;
-//         size_t end_idx = std::min (start_idx + chunk_size, contexts.size ());
-//
-//         std::stringstream ss;
-//         ss << std::setfill ('0') << std::setw (3) << chunk_idx;
-//         std::string filename = base_filename + std::string (1, '_') + ss.str () + ".txt";
-//
-//         std::ofstream file (filename);
-//         if (!file.is_open ()) {
-//             std::cerr << "Ошибка открытия файла: " << filename << std::endl;
-//             continue;
-//         }
-//
-//         file << std::fixed << std::setprecision (6);
-//         file << "# Leaf Contexts chunk #" << chunk_idx 
-//              << " (листья " << start_idx << ".." << (end_idx-1) << ")\n";
-//         file << "# Total in chunk: " << (end_idx - start_idx) << "\n\n";
-//
-//         for (size_t leaf_idx = start_idx; leaf_idx < end_idx; ++leaf_idx) {
-//             const auto& leaf = contexts [leaf_idx];
-//             const auto& node = leaf.node_context;
-//             if (!node.node_index) {
-//                 continue;
-//             }
-//
-//             file << "=== Leaf #" << leaf_idx << " ===\n";
-//             file << "Node Index:     " << node.node_index << "\n";
-//             file << "Cube Index:     " << node.cube_index << "\n";
-//             file << "Voxel Size:     " << node.voxel_size << "\n";
-//             file << "Min Corner:     (" 
-//                  << node.min_corner_x << ", "
-//                  << node.min_corner_y << ", "
-//                  << node.min_corner_z << ")\n";
-//             file << "Verts Offset:   " << leaf.vertices << "\n";
-//             file << "Tris Offset:    " << leaf.triangles << "\n\n";
-//         }
-//
-//         file.close ();
-//         std::cout << "Чанк " << chunk_idx << " сохранён: " << filename 
-//                   << " (" << (end_idx - start_idx) << " листьев)" << std::endl;
-//     }
-//
-//     std::cout << "Всего создано файлов: " << num_chunks << std::endl;
-// }
 
 void MeshShaderRenderer::shutdown () {
     vkDeviceWaitIdle (this->context->get_device ());
 
     if (!this->context || !this->context->is_initialized ()) {
-        std::cerr << "[MeshShaderRenderer::shutdown] Warning: Vulkan context is already missing." << std::endl;
+        LOG_ERROR ("Vulkan context is already missing");
         return;
     }
-
-    std::cout << "[MeshShaderRenderer::shutdown] MeshShaderRenderer shutting down..." << std::endl;
-
-    // std::cout << "[MeshShaderRenderer::shutdown] Fetching last frame leaf contexts..." << std::endl;
-    // std::vector <LeafContext> leaf_contexts = fetch_leaf_contexts (this->context->get_copy_helper (), this->sdf_octree_ds, this->active_leafs_size, this->context->get_current_frame ());
-    // dump_active_leafs (leaf_contexts, "contexts.txt", this->active_leafs_size / sizeof (LeafContext) / this->subtrees.size ());
 
     cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
     cleanup_active_leafs_descriptor_set (this->context->get_device (), this->active_leafs_ds);
@@ -425,17 +341,6 @@ void MeshShaderRenderer::update_push_constants (const Camera& a_camera) {
     this->push_constants.view_proj = a_camera.get_view_projection_matrix ();
     this->push_constants.prev_view_proj = a_camera.get_view_projection_matrix ();
     this->push_constants.camera_pos = LiteMath::to_float4 (a_camera.get_position (), 1.0f);
-
-    // uint insufficent_mem_flag = fetch_insufficent_mem_flag (this->context->get_copy_helper (), this->active_leafs_ds);
-    // if (insufficent_mem_flag) {
-    //     vkDeviceWaitIdle (this->context->get_device ());
-    //     this->push_constants.max_octree_depth -= 1;
-    //     std::cout << "[MeshShaderRenderer::update_push_constants]: insufficent_mem_flag : " << insufficent_mem_flag << ". Reducing octree depth from "
-    //         << this->push_constants.max_octree_depth + 1 << " to " << this->push_constants.max_octree_depth << std::endl;
-    //     if (this->push_constants.max_octree_depth == 0) {
-    //         throw std::runtime_error ("[MeshShaderRenderer::update_push_constants]: bug. octree must not me 0 depth");
-    //     }
-    // }
 }
 
 void MeshShaderRenderer::toggle_frustum_buffer (Camera&) {

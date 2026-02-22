@@ -1,8 +1,8 @@
 #include <fstream>
-#include <iostream>
 #include <vector>
 
 #include "camera.hpp"
+#include "logger.hpp"
 #include "nlohmann/json.hpp"
 #include "shaders/common.h"
 #include "vk_buffers.h"
@@ -128,8 +128,9 @@ void Camera::dump (const std::string& filename) const {
     if (o.is_open ()) {
         o << std::setw (4) << j << std::endl;
         o.close();
+        LOG_INFO ("cached camera settings to '{}' file for future use", filename);
     } else {
-        std::cerr << "Error: Could not open file for dumping camera settings: " << filename << std::endl;
+        LOG_ERROR ("couldn't open file '{}' for dumping camera settings", filename);
     }
 }
 
@@ -147,13 +148,13 @@ void Camera::load (const std::string& filename) {
             movement_speed = j.at ("movement_speed").get <float> ();
             mouse_sensitivity = j.at ("mouse_sensitivity").get <float> ();
         } catch (const nlohmann::json::exception& e) {
-            std::cerr << "Error parsing camera settings from JSON: " << e.what () << std::endl;
+            LOG_ERROR ("failed to parse camera settings from JSON '{}': {}", filename, e.what ());
         } catch (const std::exception& e) {
-            std::cerr << "General error loading camera settings: " << e.what () << std::endl;
+            LOG_ERROR ("failed to load camera settings: {}", e.what ());
         }
         i.close ();
     } else {
-        std::cerr << "Warning: Could not open file for loading camera settings: " << filename << ". Using default camera settings." << std::endl;
+        LOG_WARN ("failed to open camera settings file '{}'. using defaults", filename);
     }
 }
 
@@ -205,8 +206,6 @@ FrustumDrawBuffer::FrustumDrawBuffer (
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
         , Camera& camera) : deletion_device (device), saved_camera (camera) {
-    std::cout << "FrustumDrawBuffer::FrustumDrawBuffer: creating..." << std::endl;
-
     if (!copy_helper) {
         throw std::runtime_error ("ICopyEngine shared_ptr cannot be null.");
     }
@@ -249,7 +248,6 @@ FrustumDescriptorSetInfo create_frustum_descriptor_set (
     , vk_utils::DescriptorMaker& ds_maker
     , VkShaderStageFlags shader_stage_flags
     , size_t max_frames_in_flight) {
-    std::cout << "create_frustum_descriptor_set: creating..." << std::endl;
     FrustumDescriptorSetInfo info = {};
 
     VkDeviceSize frustum_geometry_size = sizeof (FrustumGeometry);

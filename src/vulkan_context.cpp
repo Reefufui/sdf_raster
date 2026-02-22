@@ -4,44 +4,58 @@
 #include <set>
 #include <stdexcept>
 #include <vector>
+// #include <iostream> // TODO: remove
 
 #include "vulkan_context.hpp"
+#include "logger.hpp"
 
 namespace sdf_raster {
 
+#ifdef VULKAN_VALIDATION_LAYERS
+
 VKAPI_ATTR VkBool32 VKAPI_CALL debug_utils_message_callback (
-    VkDebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT             messageType,
-    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+    VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
+    VkDebugUtilsMessageTypeFlagsEXT             message_type,
+    const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
     void *) {
-    std::cerr << "Validation Layer ";
-    if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-        std::cerr << "ERROR: ";
-    } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        std::cerr << "WARNING: ";
-    } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
-        std::cerr << "INFO: ";
-    } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
-        std::cerr << "VERBOSE: ";
+    auto logger = spdlog::get ("VK_LAYER_KHRONOS");
+    if (!logger) {
+        logger = spdlog::default_logger ();
     }
 
-    if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) {
-        std::cerr << "GENERAL ";
+    std::string type_str;
+    if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) {
+        type_str += "GENERAL ";
     }
-    if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) {
-        std::cerr << "VALIDATION ";
+    if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) {
+        type_str += "VALIDATION ";
     }
-    if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
-        std::cerr << "PERFORMANCE ";
+    if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
+        type_str += "PERFORMANCE ";
     }
-    std::cerr << ": " << pCallbackData->pMessage << std::endl;
+    if (!type_str.empty ()) {
+        type_str.pop_back ();
+    }
+
+    const char* message = callback_data->pMessage;
+    if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        logger->error ("[{}] {}", type_str, message);
+    } else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+        logger->warn ("[{}] {}", type_str, message);
+    } else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+        logger->info ("[{}] {}", type_str, message);
+    } else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
+        logger->trace ("[{}] {}", type_str, message);
+    }
+
     return VK_FALSE;
 }
+
+#endif
 
 void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support) {
     VK_CHECK_RESULT (volkInitialize ());
     this->create_instance ();
-    this->setup_debug_utils_messenger ();
     this->physical_device = vk_utils::findPhysicalDevice (this->get_instance (), true, 0, {});
     this->create_device (a_mesh_shader_support);
     this->create_command_pools ();
@@ -55,7 +69,7 @@ void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support)
     if (this->window) {
         VK_CHECK_RESULT (glfwCreateWindowSurface (this->get_instance (), this->window, nullptr, &this->surface));
     } else {
-        std::cout << "[init] launched in headless mode." << std::endl;
+        LOG_INFO ("launched in headless mode. skipped window creation");
     }
 
     uint32_t width = a_width;
@@ -68,10 +82,17 @@ void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support)
             , this->max_frames_in_flight
             , true);
 
-    this->create_depth_resources ();
-    this->create_render_pass ();
-    this->create_render_pass_after ();
-    this->create_framebuffers ();
+    if (!vk_utils::getSupportedDepthFormat (this->get_physical_device (), {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &this->depth_buffer.format)) {
+        throw std::runtime_error ("couldn't find supported depth format");
+    }
+
+    this->main.render_pass = this->create_render_pass (VK_ATTACHMENT_LOAD_OP_CLEAR);
+    this->after.render_pass = this->create_render_pass (VK_ATTACHMENT_LOAD_OP_NONE);
+
+    this->create_depth_buffer ();
+    this->main.framebuffer = this->create_framebuffers (this->main.render_pass);
+    this->after.framebuffer = this->create_framebuffers (this->after.render_pass);
+
     this->create_frame_resources ();
 
     this->initialized = true;
@@ -85,13 +106,13 @@ void VulkanContext::init (GLFWwindow* a_window, int a_width, int a_height, bool 
 void VulkanContext::create_instance () {
     VkApplicationInfo app_info {};
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    app_info.pApplicationName = "sdf_raster";
-    app_info.applicationVersion = 0;
-    app_info.pEngineName = "vk_utils";
+    app_info.pApplicationName = APP_NAME;
+    app_info.applicationVersion = VK_MAKE_VERSION (APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_VERSION_PATCH);
+    app_info.pEngineName = nullptr;
     app_info.engineVersion = 0;
     app_info.apiVersion = VK_API_VERSION_1_4;
 
-    bool enable_validation_layers = true;
+    bool enable_validation_layers = false;
     std::vector <const char *> instance_layers {};
     std::vector <const char *> instance_extensions {};
 
@@ -104,28 +125,30 @@ void VulkanContext::create_instance () {
         }
     }
 
+#ifdef VULKAN_VALIDATION_LAYERS
+    instance_extensions.push_back (VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#endif
 #ifdef __APPLE__
     instance_extensions.push_back (VK_EXT_METAL_SURFACE_EXTENSION_NAME);
     instance_extensions.push_back (VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
 #endif
 
-    instance_layers.push_back("VK_LAYER_KHRONOS_validation");
+    void* pNext = nullptr;
+#ifdef VULKAN_VALIDATION_LAYERS
+    enable_validation_layers = true;
+    instance_layers.push_back ("VK_LAYER_KHRONOS_validation");
+
+    VkDebugUtilsMessengerCreateInfoEXT debug_messenger_create_info {};
+    debug_messenger_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    debug_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    debug_messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    debug_messenger_create_info.pfnUserCallback = debug_utils_message_callback;
+    pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debug_messenger_create_info;
+#endif
 
     VkInstanceCreateFlagBits flags {};
 #ifdef __APPLE__
     flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-#endif
-
-    void* pNext = nullptr;
-#ifdef __APPLE__
-    VkDebugUtilsMessengerCreateInfoEXT debug_messenger_create_info {};
-    if (enable_validation_layers) {
-        debug_messenger_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        debug_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        debug_messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        debug_messenger_create_info.pfnUserCallback = debug_utils_message_callback;
-        pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debug_messenger_create_info;
-    }
 #endif
 
     this->instance = vk_utils::createInstance (enable_validation_layers
@@ -136,8 +159,13 @@ void VulkanContext::create_instance () {
             , pNext);
 
     volkLoadInstance (this->get_instance ());
+
+#ifdef VULKAN_VALIDATION_LAYERS
+    this->setup_debug_utils_messenger ();
+#endif
 }
 
+#ifdef VULKAN_VALIDATION_LAYERS
 void VulkanContext::setup_debug_utils_messenger () {
     if (vkCreateDebugUtilsMessengerEXT == nullptr) {
         vkCreateDebugUtilsMessengerEXT = reinterpret_cast <PFN_vkCreateDebugUtilsMessengerEXT> (vkGetInstanceProcAddr (
@@ -146,133 +174,212 @@ void VulkanContext::setup_debug_utils_messenger () {
     if (vkCreateDebugUtilsMessengerEXT != nullptr) { 
         VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info {};
 	    debug_utils_messenger_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-	    debug_utils_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
-	    debug_utils_messenger_create_info.messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
+	    debug_utils_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
+            | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT
+            | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
+            | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        debug_utils_messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
+            | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
+            | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 	    debug_utils_messenger_create_info.pfnUserCallback = debug_utils_message_callback;
 	    auto debugEnabled = vkCreateDebugUtilsMessengerEXT (this->get_instance (), &debug_utils_messenger_create_info, nullptr, &debug_utils_messenger);
         if (debugEnabled != VK_SUCCESS) {
-            std::runtime_error {"[setup_debug_utils_messenger] vkCreateDebugUtilsMessengerEXT failed"};
+            throw std::runtime_error {"[setup_debug_utils_messenger] vkCreateDebugUtilsMessengerEXT failed"};
         }
     } else {
-        std::runtime_error {"[setup_debug_utils_messenger] vkCreateDebugUtilsMessengerEXT not found"};
+        throw std::runtime_error {"[setup_debug_utils_messenger] vkCreateDebugUtilsMessengerEXT not found"};
     }
 }
+#endif
 
 void VulkanContext::dump_mesh_shader_properties () const {
-    std::cout << "\n--- VkPhysicalDeviceMeshShaderPropertiesEXT ---" << std::endl;
-    std::cout << "  maxTaskWorkGroupTotalCount: " << mesh_shader_properties.maxTaskWorkGroupTotalCount << std::endl;
-    std::cout << "  maxTaskWorkGroupCount: ["
-              << mesh_shader_properties.maxTaskWorkGroupCount[0] << ", "
-              << mesh_shader_properties.maxTaskWorkGroupCount[1] << ", "
-              << mesh_shader_properties.maxTaskWorkGroupCount[2] << "]" << std::endl;
-    std::cout << "  maxTaskWorkGroupInvocations: " << mesh_shader_properties.maxTaskWorkGroupInvocations << std::endl;
-    std::cout << "  maxTaskWorkGroupSize: ["
-              << mesh_shader_properties.maxTaskWorkGroupSize[0] << ", "
-              << mesh_shader_properties.maxTaskWorkGroupSize[1] << ", "
-              << mesh_shader_properties.maxTaskWorkGroupSize[2] << "]" << std::endl;
-    std::cout << "  maxTaskPayloadSize: " << mesh_shader_properties.maxTaskPayloadSize << std::endl;
-    std::cout << "  maxTaskSharedMemorySize: " << mesh_shader_properties.maxTaskSharedMemorySize << std::endl;
-    std::cout << "  maxTaskPayloadAndSharedMemorySize: " << mesh_shader_properties.maxTaskPayloadAndSharedMemorySize << std::endl;
-    std::cout << "  maxMeshWorkGroupTotalCount: " << mesh_shader_properties.maxMeshWorkGroupTotalCount << std::endl;
-    std::cout << "  maxMeshWorkGroupCount: ["
-              << mesh_shader_properties.maxMeshWorkGroupCount[0] << ", "
-              << mesh_shader_properties.maxMeshWorkGroupCount[1] << ", "
-              << mesh_shader_properties.maxMeshWorkGroupCount[2] << "]" << std::endl;
-    std::cout << "  maxMeshWorkGroupInvocations: " << mesh_shader_properties.maxMeshWorkGroupInvocations << std::endl;
-    std::cout << "  maxMeshWorkGroupSize: ["
-              << mesh_shader_properties.maxMeshWorkGroupSize[0] << ", "
-              << mesh_shader_properties.maxMeshWorkGroupSize[1] << ", "
-              << mesh_shader_properties.maxMeshWorkGroupSize[2] << "]" << std::endl;
-    std::cout << "  maxMeshSharedMemorySize: " << mesh_shader_properties.maxMeshSharedMemorySize << std::endl;
-    std::cout << "  maxMeshPayloadAndSharedMemorySize: " << mesh_shader_properties.maxMeshPayloadAndSharedMemorySize << std::endl;
-    std::cout << "  maxMeshOutputMemorySize: " << mesh_shader_properties.maxMeshOutputMemorySize << std::endl;
-    std::cout << "  maxMeshPayloadAndOutputMemorySize: " << mesh_shader_properties.maxMeshPayloadAndOutputMemorySize << std::endl;
-    std::cout << "  maxMeshOutputComponents: " << mesh_shader_properties.maxMeshOutputComponents << std::endl;
-    std::cout << "  maxMeshOutputVertices: " << mesh_shader_properties.maxMeshOutputVertices << std::endl;
-    std::cout << "  maxMeshOutputPrimitives: " << mesh_shader_properties.maxMeshOutputPrimitives << std::endl;
-    std::cout << "  maxMeshOutputLayers: " << mesh_shader_properties.maxMeshOutputLayers << std::endl;
-    std::cout << "  maxMeshMultiviewViewCount: " << mesh_shader_properties.maxMeshMultiviewViewCount << std::endl;
-    std::cout << "  meshOutputPerVertexGranularity: " << mesh_shader_properties.meshOutputPerVertexGranularity << std::endl;
-    std::cout << "  meshOutputPerPrimitiveGranularity: " << mesh_shader_properties.meshOutputPerPrimitiveGranularity << std::endl;
-    std::cout << "  maxPreferredTaskWorkGroupInvocations: " << mesh_shader_properties.maxPreferredTaskWorkGroupInvocations << std::endl;
-    std::cout << "  maxPreferredMeshWorkGroupInvocations: " << mesh_shader_properties.maxPreferredMeshWorkGroupInvocations << std::endl;
-    std::cout << "  prefersLocalInvocationVertexOutput: " << (mesh_shader_properties.prefersLocalInvocationVertexOutput ? "true" : "false") << std::endl;
-    std::cout << "  prefersLocalInvocationPrimitiveOutput: " << (mesh_shader_properties.prefersLocalInvocationPrimitiveOutput ? "true" : "false") << std::endl;
-    std::cout << "  prefersCompactVertexOutput: " << (mesh_shader_properties.prefersCompactVertexOutput ? "true" : "false") << std::endl;
-    std::cout << "  prefersCompactPrimitiveOutput: " << (mesh_shader_properties.prefersCompactPrimitiveOutput ? "true" : "false") << std::endl;
-    std::cout << "-------------------------------------------\n" << std::endl;
+    LOG_INFO("\n--- VkPhysicalDeviceMeshShaderPropertiesEXT ---");
+    LOG_INFO("  maxTaskWorkGroupTotalCount: {}", mesh_shader_properties.maxTaskWorkGroupTotalCount);
+    LOG_INFO("  maxTaskWorkGroupCount: [{}, {}, {}]",
+             mesh_shader_properties.maxTaskWorkGroupCount[0],
+             mesh_shader_properties.maxTaskWorkGroupCount[1],
+             mesh_shader_properties.maxTaskWorkGroupCount[2]);
+    LOG_INFO("  maxTaskWorkGroupInvocations: {}", mesh_shader_properties.maxTaskWorkGroupInvocations);
+    LOG_INFO("  maxTaskWorkGroupSize: [{}, {}, {}]",
+             mesh_shader_properties.maxTaskWorkGroupSize[0],
+             mesh_shader_properties.maxTaskWorkGroupSize[1],
+             mesh_shader_properties.maxTaskWorkGroupSize[2]);
+    LOG_INFO("  maxTaskPayloadSize: {}", mesh_shader_properties.maxTaskPayloadSize);
+    LOG_INFO("  maxTaskSharedMemorySize: {}", mesh_shader_properties.maxTaskSharedMemorySize);
+    LOG_INFO("  maxTaskPayloadAndSharedMemorySize: {}", mesh_shader_properties.maxTaskPayloadAndSharedMemorySize);
+    LOG_INFO("  maxMeshWorkGroupTotalCount: {}", mesh_shader_properties.maxMeshWorkGroupTotalCount);
+    LOG_INFO("  maxMeshWorkGroupCount: [{}, {}, {}]",
+             mesh_shader_properties.maxMeshWorkGroupCount[0],
+             mesh_shader_properties.maxMeshWorkGroupCount[1],
+             mesh_shader_properties.maxMeshWorkGroupCount[2]);
+    LOG_INFO("  maxMeshWorkGroupInvocations: {}", mesh_shader_properties.maxMeshWorkGroupInvocations);
+    LOG_INFO("  maxMeshWorkGroupSize: [{}, {}, {}]",
+             mesh_shader_properties.maxMeshWorkGroupSize[0],
+             mesh_shader_properties.maxMeshWorkGroupSize[1],
+             mesh_shader_properties.maxMeshWorkGroupSize[2]);
+    LOG_INFO("  maxMeshSharedMemorySize: {}", mesh_shader_properties.maxMeshSharedMemorySize);
+    LOG_INFO("  maxMeshPayloadAndSharedMemorySize: {}", mesh_shader_properties.maxMeshPayloadAndSharedMemorySize);
+    LOG_INFO("  maxMeshOutputMemorySize: {}", mesh_shader_properties.maxMeshOutputMemorySize);
+    LOG_INFO("  maxMeshPayloadAndOutputMemorySize: {}", mesh_shader_properties.maxMeshPayloadAndOutputMemorySize);
+    LOG_INFO("  maxMeshOutputComponents: {}", mesh_shader_properties.maxMeshOutputComponents);
+    LOG_INFO("  maxMeshOutputVertices: {}", mesh_shader_properties.maxMeshOutputVertices);
+    LOG_INFO("  maxMeshOutputPrimitives: {}", mesh_shader_properties.maxMeshOutputPrimitives);
+    LOG_INFO("  maxMeshOutputLayers: {}", mesh_shader_properties.maxMeshOutputLayers);
+    LOG_INFO("  maxMeshMultiviewViewCount: {}", mesh_shader_properties.maxMeshMultiviewViewCount);
+    LOG_INFO("  meshOutputPerVertexGranularity: {}", mesh_shader_properties.meshOutputPerVertexGranularity);
+    LOG_INFO("  meshOutputPerPrimitiveGranularity: {}", mesh_shader_properties.meshOutputPerPrimitiveGranularity);
+    LOG_INFO("  maxPreferredTaskWorkGroupInvocations: {}", mesh_shader_properties.maxPreferredTaskWorkGroupInvocations);
+    LOG_INFO("  maxPreferredMeshWorkGroupInvocations: {}", mesh_shader_properties.maxPreferredMeshWorkGroupInvocations);
+    LOG_INFO("  prefersLocalInvocationVertexOutput: {}", mesh_shader_properties.prefersLocalInvocationVertexOutput ? "true" : "false");
+    LOG_INFO("  prefersLocalInvocationPrimitiveOutput: {}", mesh_shader_properties.prefersLocalInvocationPrimitiveOutput ? "true" : "false");
+    LOG_INFO("  prefersCompactVertexOutput: {}", mesh_shader_properties.prefersCompactVertexOutput ? "true" : "false");
+    LOG_INFO("  prefersCompactPrimitiveOutput: {}", mesh_shader_properties.prefersCompactPrimitiveOutput ? "true" : "false");
+    LOG_INFO("-------------------------------------------\n");
 }
 
 void VulkanContext::create_device (bool a_mesh_shader_support) {
-    std::vector <const char*> validation_layers {};
-    std::vector <const char*> device_extensions {};
-    VkPhysicalDeviceFeatures enabled_device_featurues {};
-    // VkPhysicalDeviceFeatures requested_features = {};
+    std::vector <const char*> validation_layers_to_enable {}; // validation layers already enabled on instance level
+    std::vector <const char*> device_extensions_to_enable {};
 
-    vkGetPhysicalDeviceFeatures (this->get_physical_device (), &enabled_device_featurues);
-    if (enabled_device_featurues.wideLines) {
-        std::cout << "Physical device supports wideLines. Enabling it." << std::endl;
-        // requested_features.wideLines = VK_TRUE; // TODO:
-    } else {
-        std::cerr << "Physical device does NOT support wideLines. Defaulting to lineWidth = 1.0." << std::endl;
-    }
-
-    device_extensions.push_back (VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    device_extensions_to_enable.push_back (VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 #ifdef __APPLE__
-    device_extensions.push_back (VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+    device_extensions_to_enable.push_back (VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
 #endif
 
-    void* pNextFeatures {nullptr};
-    VkPhysicalDeviceMeshShaderFeaturesEXT requestedMeshShaderFeatures {};
+    VkPhysicalDeviceFeatures2 device_features_2 {};
+    device_features_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+
+    void* pNext_query_chain = nullptr;
+    void* pNext_create_chain = nullptr;
+
+    VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features_query {};
+    timeline_semaphore_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+    timeline_semaphore_features_query.pNext = pNext_query_chain;
+    pNext_query_chain = &timeline_semaphore_features_query;
+
+    VkPhysicalDeviceVulkanMemoryModelFeatures vulkan_memory_model_features_query {};
+    vulkan_memory_model_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES;
+    vulkan_memory_model_features_query.pNext = pNext_query_chain;
+    pNext_query_chain = &vulkan_memory_model_features_query;
+
+    VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features_query {};
+    buffer_device_address_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+    buffer_device_address_features_query.pNext = pNext_query_chain;
+    pNext_query_chain = &buffer_device_address_features_query;
+
+    VkPhysicalDeviceScalarBlockLayoutFeatures scalar_block_layout_features_query {};
+    scalar_block_layout_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES;
+    scalar_block_layout_features_query.pNext = pNext_query_chain;
+    pNext_query_chain = &scalar_block_layout_features_query;
+
+    VkPhysicalDevice8BitStorageFeatures eight_bit_storage_features_query {};
+    eight_bit_storage_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES;
+    eight_bit_storage_features_query.pNext = pNext_query_chain;
+    pNext_query_chain = &eight_bit_storage_features_query;
+
+    VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shader_features_query {};
+    VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties_query {};
+
     if (a_mesh_shader_support) {
-        device_extensions.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
+        device_extensions_to_enable.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
 
-        VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures {};
-        meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
-        meshShaderFeatures.pNext = nullptr;
+        mesh_shader_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+        mesh_shader_features_query.pNext = pNext_query_chain;
+        pNext_query_chain = &mesh_shader_features_query;
 
-        VkPhysicalDeviceFeatures2 features2 {};
-        features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        features2.pNext = &meshShaderFeatures;
-
-        vkGetPhysicalDeviceFeatures2 (this->get_physical_device (), &features2);
-
-        VkPhysicalDeviceMeshShaderPropertiesEXT meshShaderProperties {};
-        meshShaderProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
-        meshShaderProperties.pNext = nullptr;
-
-        VkPhysicalDeviceProperties2 properties2 {};
-        properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-        properties2.pNext = &meshShaderProperties;
-
-        vkGetPhysicalDeviceProperties2 (this->get_physical_device (), &properties2);
-
-        if (!meshShaderFeatures.meshShader) {
-            throw std::runtime_error ("Mesh Shaders are NOT supported.");
-        }
-
-        this->mesh_shader_properties = meshShaderProperties;
-
-        requestedMeshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
-        requestedMeshShaderFeatures.pNext = nullptr;
-        requestedMeshShaderFeatures.taskShader = VK_TRUE;
-        requestedMeshShaderFeatures.meshShader = VK_TRUE;
-
-        pNextFeatures = &requestedMeshShaderFeatures;
+        mesh_shader_properties_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
+        mesh_shader_properties_query.pNext = nullptr;
     }
 
-    this->device = vk_utils::createLogicalDevice (this->get_physical_device ()
-            , validation_layers
-            , device_extensions
-            , enabled_device_featurues
-            , this->device_queue_ids
-            , VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT
-            , pNextFeatures);
+    device_features_2.pNext = pNext_query_chain;
 
-    volkLoadDevice (this->get_device ());                                            
+    vkGetPhysicalDeviceFeatures2 (this->get_physical_device (), &device_features_2);
 
     if (a_mesh_shader_support) {
-        this->dump_mesh_shader_properties ();
+        VkPhysicalDeviceProperties2 properties_2 {};
+        properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        properties_2.pNext = &mesh_shader_properties_query;
+        vkGetPhysicalDeviceProperties2 (this->get_physical_device (), &properties_2);
+    }
+
+    if (!device_features_2.features.wideLines) {
+        LOG_WARN ("Physical device does NOT support wideLines. Defaulting to lineWidth = 1.0.");
+    }
+
+    VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features_enable {};
+    if (timeline_semaphore_features_query.timelineSemaphore) {
+        timeline_semaphore_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+        timeline_semaphore_features_enable.timelineSemaphore = VK_TRUE;
+        timeline_semaphore_features_enable.pNext = pNext_create_chain;
+        pNext_create_chain = &timeline_semaphore_features_enable;
+    }
+
+    VkPhysicalDeviceVulkanMemoryModelFeatures vulkan_memory_model_features_enable {};
+    if (vulkan_memory_model_features_query.vulkanMemoryModel) {
+        vulkan_memory_model_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES;
+        vulkan_memory_model_features_enable.vulkanMemoryModel = VK_TRUE;
+        vulkan_memory_model_features_enable.vulkanMemoryModelDeviceScope = vulkan_memory_model_features_query.vulkanMemoryModelDeviceScope; // если вы хотите и deviceScope
+        vulkan_memory_model_features_enable.pNext = pNext_create_chain;
+        pNext_create_chain = &vulkan_memory_model_features_enable;
+    }
+
+    VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features_enable {};
+    if (buffer_device_address_features_query.bufferDeviceAddress) {
+        buffer_device_address_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+        buffer_device_address_features_enable.bufferDeviceAddress = VK_TRUE;
+        buffer_device_address_features_enable.pNext = pNext_create_chain;
+        pNext_create_chain = &buffer_device_address_features_enable;
+    }
+
+    VkPhysicalDeviceScalarBlockLayoutFeatures scalar_block_layout_features_enable {};
+    if (scalar_block_layout_features_query.scalarBlockLayout) {
+        scalar_block_layout_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES;
+        scalar_block_layout_features_enable.scalarBlockLayout = VK_TRUE;
+        scalar_block_layout_features_enable.pNext = pNext_create_chain;
+        pNext_create_chain = &scalar_block_layout_features_enable;
+    }
+
+    VkPhysicalDevice8BitStorageFeatures eight_bit_storage_features_enable {};
+    if (eight_bit_storage_features_query.storageBuffer8BitAccess) {
+        eight_bit_storage_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES;
+        eight_bit_storage_features_enable.storageBuffer8BitAccess = VK_TRUE;
+        eight_bit_storage_features_enable.pNext = pNext_create_chain;
+        pNext_create_chain = &eight_bit_storage_features_enable;
+    }
+
+    VkPhysicalDeviceMeshShaderFeaturesEXT requested_mesh_shader_features_enable {};
+    if (a_mesh_shader_support) {
+        if (!mesh_shader_features_query.meshShader) {
+            throw std::runtime_error("Mesh Shaders are NOT supported on this physical device.");
+        }
+
+        requested_mesh_shader_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+        requested_mesh_shader_features_enable.taskShader = VK_TRUE;
+        requested_mesh_shader_features_enable.meshShader = VK_TRUE;
+        requested_mesh_shader_features_enable.pNext = pNext_create_chain;
+        pNext_create_chain = &requested_mesh_shader_features_enable;
+
+        this->mesh_shader_properties = mesh_shader_properties_query;
+    }
+
+    VkPhysicalDeviceFeatures features_to_enable_in_base_struct = device_features_2.features;
+#ifdef __APPLE__
+    features_to_enable_in_base_struct.robustBufferAccess = VK_FALSE; // unsupported on Metal
+#endif
+
+    this->device = vk_utils::createLogicalDevice (this->get_physical_device ()
+        , validation_layers_to_enable
+        , device_extensions_to_enable
+        , features_to_enable_in_base_struct
+        , this->device_queue_ids
+        , VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT
+        , pNext_create_chain
+    );
+
+    volkLoadDevice (this->get_device ());
+
+    if (a_mesh_shader_support) {
+        this->dump_mesh_shader_properties();
     }
 }
 
@@ -317,6 +424,7 @@ SwapChainSupportDetails query_swap_chain_support (VkPhysicalDevice device, VkSur
     return details;
 }
 
+// TODO: use this function
 VkSurfaceFormatKHR choose_swap_surface_format (const std::vector<VkSurfaceFormatKHR>& available_formats) {
     for (const auto& available_format : available_formats) {
         if (available_format.format == VK_FORMAT_B8G8R8A8_SRGB && available_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
@@ -326,6 +434,7 @@ VkSurfaceFormatKHR choose_swap_surface_format (const std::vector<VkSurfaceFormat
     return available_formats [0];
 }
 
+// TODO: use this function
 VkPresentModeKHR choose_swap_present_mode (const std::vector<VkPresentModeKHR>& available_present_modes) {
     for (const auto& available_present_mode : available_present_modes) {
         if (available_present_mode == VK_PRESENT_MODE_MAILBOX_KHR) {
@@ -335,6 +444,7 @@ VkPresentModeKHR choose_swap_present_mode (const std::vector<VkPresentModeKHR>& 
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
+// TODO: use this function
 VkExtent2D choose_swap_extent (const VkSurfaceCapabilitiesKHR& capabilities, int width, int height) {
     if (capabilities.currentExtent.width != UINT32_MAX) {
         return capabilities.currentExtent;
@@ -351,40 +461,29 @@ VkExtent2D choose_swap_extent (const VkSurfaceCapabilitiesKHR& capabilities, int
 
 void VulkanContext::shutdown () {
     if (!this->initialized) {
-        std::cerr << "[VulkanContext::shutdown] Warning: Attempted to shut down an uninitialized or already shut down VulkanContext." << std::endl;
+        LOG_WARN ("attempted to shutdown an uninitialized or already shut down VulkanContext");
         return;
     }
 
     if (this->get_device() == VK_NULL_HANDLE) {
-        std::cerr << "[VulkanContext::shutdown] Warning: Vulkan device was VK_NULL_HANDLE during shutdown. Resources might not have been created." << std::endl;
+        LOG_WARN ("Vulkan device was VK_NULL_HANDLE during shutdown. Resources might not have been created");
     } else {
         vkDeviceWaitIdle (this->get_device ());
     }
 
-    this->destroy_depth_resources ();
-
+    this->destroy_depth_buffer ();
+    this->destroy_framebuffers ();
     this->swapchain.Cleanup ();
-    for (auto framebuffer : this->swapchain_framebuffers) {
-        if (framebuffer != VK_NULL_HANDLE) {
-            vkDestroyFramebuffer (this->get_device (), framebuffer, nullptr);
+    this->destroy_frame_resources ();
+
+    auto destroy_render_pass_resources = [&](RenderPassResources& r) {
+        if (r.render_pass != VK_NULL_HANDLE) {
+            vkDestroyRenderPass (this->device, r.render_pass, nullptr);
+            r.render_pass = VK_NULL_HANDLE;
         }
-    }
-    this->swapchain_framebuffers.clear ();
-
-    for (size_t i = 0; i < this->max_frames_in_flight; i++) {
-        vkDestroySemaphore (this->get_device (), this->frame_resources [i].ready_to_present, nullptr);
-        vkDestroySemaphore (this->get_device (), this->frame_resources [i].ready_to_render, nullptr);
-        vkDestroyFence (this->get_device (), this->frame_resources [i].ready_to_record, nullptr);
-    }
-
-    if (this->render_pass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass (this->get_device (), this->render_pass, nullptr);
-        this->render_pass = VK_NULL_HANDLE;
-    }
-    if (this->render_pass_after != VK_NULL_HANDLE) {
-        vkDestroyRenderPass (this->get_device (), this->render_pass_after, nullptr);
-        this->render_pass_after = VK_NULL_HANDLE;
-    }
+    };
+    destroy_render_pass_resources (main);
+    destroy_render_pass_resources (after);
 
     if (this->compute_command_pool_reset != VK_NULL_HANDLE) {
         vkDestroyCommandPool (this->get_device (), this->compute_command_pool_reset, nullptr);
@@ -422,19 +521,21 @@ void VulkanContext::shutdown () {
         if (this->get_instance () != VK_NULL_HANDLE) {
             vkDestroySurfaceKHR (this->get_instance(), this->surface, nullptr);
         } else {
-            std::cerr << "[VulkanContext::shutdown] Warning: VkInstance was VK_NULL_HANDLE while destroying VkSurfaceKHR." << std::endl;
+            LOG_ERROR ("VkInstance was VK_NULL_HANDLE while destroying VkSurfaceKHR");
         }
         this->surface = VK_NULL_HANDLE;
     }
 
+#ifdef VULKAN_VALIDATION_LAYERS
     if (this->debug_utils_messenger != VK_NULL_HANDLE) {
         if (vkDestroyDebugUtilsMessengerEXT != nullptr && this->get_instance () != VK_NULL_HANDLE) {
             vkDestroyDebugUtilsMessengerEXT (this->get_instance (), this->debug_utils_messenger, nullptr);
         } else {
-            std::cerr << "[VulkanContext::shutdown] Warning: Could not destroy debug messenger (PFN or Instance was NULL)." << std::endl;
+            LOG_ERROR ("could not destroy debug messenger (PFN or Instance was NULL)");
         }
         this->debug_utils_messenger = VK_NULL_HANDLE;
     }
+#endif
 
     if (this->instance != VK_NULL_HANDLE) {
         vkDestroyInstance (this->instance, nullptr);
@@ -442,22 +543,20 @@ void VulkanContext::shutdown () {
     }
 
     this->initialized = false;
-    std::cout << "[VulkanContext::shutdown] VulkanContext shut down successfully." << std::endl;
+    LOG_INFO ("VulkanContext shut down successfully");
 }
 
 void VulkanContext::resize (int a_width, int a_height) {
     if (a_width == 0 || a_height == 0) {
+        LOG_ERROR ("Width or height can't be zero.");
         return;
     }
     vkDeviceWaitIdle (this->get_device ());
+    LOG_INFO ("Recreating frame resources.");
 
-    this->destroy_depth_resources ();
-    // this->destroy_frame_resources ();
+    this->destroy_depth_buffer ();
 
-    for (auto framebuffer : this->swapchain_framebuffers) {
-        if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer (this->get_device (), framebuffer, nullptr);
-    }
-    this->swapchain_framebuffers.clear ();
+    this->destroy_framebuffers ();
     this->swapchain.Cleanup ();
 
     uint32_t width = static_cast <int> (a_width);
@@ -469,19 +568,19 @@ void VulkanContext::resize (int a_width, int a_height) {
                                      , height
                                      , this->max_frames_in_flight
                                      , true);
-    this->create_depth_resources ();
-    this->create_framebuffers ();
-    this->create_frame_resources ();
+    this->create_depth_buffer ();
+    this->main.framebuffer = this->create_framebuffers (this->main.render_pass);
+    this->after.framebuffer = this->create_framebuffers (this->after.render_pass);
+    // this->create_frame_resources ();
 
     this->current_frame = 0;
-    this->current_image_index = 0;
 }
 
-void VulkanContext::create_render_pass () {
+VkRenderPass VulkanContext::create_render_pass (VkAttachmentLoadOp load_op) {
     VkAttachmentDescription color_attachment {};
     color_attachment.format = this->swapchain.GetFormat ();
     color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    color_attachment.loadOp = load_op;
     color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -492,10 +591,12 @@ void VulkanContext::create_render_pass () {
     color_attachment_ref.attachment = 0;
     color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    assert (this->depth_buffer.format != VK_FORMAT_UNDEFINED);
+
     VkAttachmentDescription depth_attachment {};
-    depth_attachment.format = this->depth_format;
+    depth_attachment.format = this->depth_buffer.format;
     depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depth_attachment.loadOp = load_op;
     depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -541,76 +642,10 @@ void VulkanContext::create_render_pass () {
     render_pass_info.dependencyCount = static_cast <uint32_t> (dependencies.size ());
     render_pass_info.pDependencies = dependencies.data ();
 
-    VK_CHECK_RESULT (vkCreateRenderPass (this->get_device (), &render_pass_info, nullptr, &this->render_pass));
+    VkRenderPass created_render_pass;
+    VK_CHECK_RESULT (vkCreateRenderPass (this->get_device (), &render_pass_info, nullptr, &created_render_pass));
+    return created_render_pass;
 }
-
-void VulkanContext::create_render_pass_after () {
-    VkAttachmentDescription color_attachment {};
-    color_attachment.format = this->swapchain.GetFormat ();
-    color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_NONE;
-    color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference color_attachment_ref {};
-    color_attachment_ref.attachment = 0;
-    color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentDescription depth_attachment {};
-    depth_attachment.format = this->depth_format;
-    depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_NONE;
-    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depth_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkAttachmentReference depth_attachment_ref {};
-    depth_attachment_ref.attachment = 1;
-    depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass {};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &color_attachment_ref;
-    subpass.pDepthStencilAttachment = &depth_attachment_ref;
-
-    std::array <VkSubpassDependency, 2> dependencies;
-
-    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[0].dstSubpass = 0;
-    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencies[0].srcAccessMask = 0;
-    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencies[0].dependencyFlags = 0;
-
-    dependencies[1].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[1].dstSubpass = 0;
-    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencies[1].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    dependencies[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencies[1].dependencyFlags = 0;
-
-    std::array <VkAttachmentDescription, 2> attachments = {color_attachment, depth_attachment};
-
-    VkRenderPassCreateInfo render_pass_info {};
-    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    render_pass_info.attachmentCount = static_cast <uint32_t> (attachments.size ());
-    render_pass_info.pAttachments = attachments.data ();
-    render_pass_info.subpassCount = 1;
-    render_pass_info.pSubpasses = &subpass;
-    render_pass_info.dependencyCount = static_cast <uint32_t> (dependencies.size ());
-    render_pass_info.pDependencies = dependencies.data ();
-
-    VK_CHECK_RESULT (vkCreateRenderPass (this->get_device (), &render_pass_info, nullptr, &this->render_pass_after));
-}
-
 
 void VulkanContext::create_frame_resources () {
     this->frame_resources.resize (this->max_frames_in_flight);
@@ -629,20 +664,22 @@ void VulkanContext::create_frame_resources () {
     alloc_info.commandBufferCount = 1;
 
     for (size_t i = 0; i < max_frames_in_flight; i++) {
-        if (vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->frame_resources[i].ready_to_render) != VK_SUCCESS ||
-            vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->frame_resources[i].ready_to_present) != VK_SUCCESS ||
-            vkCreateFence (this->get_device (), &fence_info, nullptr, &this->frame_resources[i].ready_to_record) != VK_SUCCESS) {
+        if (vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->frame_resources [i].ready_to_render) != VK_SUCCESS ||
+            vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->frame_resources [i].ready_to_present) != VK_SUCCESS ||
+            vkCreateFence (this->get_device (), &fence_info, nullptr, &this->frame_resources [i].ready_to_record) != VK_SUCCESS) {
             throw std::runtime_error ("Failed to create semaphores or fences for a frame!");
         }
 
-        VK_CHECK_RESULT (vkAllocateCommandBuffers (this->get_device (), &alloc_info, &this->frame_resources[i].command_buffer));
+        VK_CHECK_RESULT (vkAllocateCommandBuffers (this->get_device (), &alloc_info, &this->frame_resources [i].command_buffer));
     }
 }
 
 VkCommandBuffer VulkanContext::begin_frame () {
-    vkWaitForFences (this->get_device (), 1, &this->frame_resources [this->current_frame].ready_to_record, VK_TRUE, UINT64_MAX);
+    this->current_frame = (this->current_frame + 1) % this->max_frames_in_flight;
 
-    VkResult result = this->swapchain.AcquireNextImage (this->frame_resources [this->current_frame].ready_to_render, &this->current_image_index);
+    vkWaitForFences (this->get_device (), 1, &this->frame_resources [this->current_frame].ready_to_record, VK_TRUE, UINT64_MAX);
+    VkResult result = this->swapchain.AcquireNextImage (this->frame_resources [this->current_frame].ready_to_render, &this->acquired_image_index);
+    // assert (next_frame == this->current_frame);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         int width, height;
@@ -692,7 +729,7 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
 
     VK_CHECK_RESULT (vkQueueSubmit (graphics_queue, 1, &submit_info, this->frame_resources [this->current_frame].ready_to_record));
 
-    VkResult result = this->swapchain.QueuePresent (this->present_queue, this->current_image_index, this->frame_resources [this->current_frame].ready_to_present);
+    VkResult result = this->swapchain.QueuePresent (this->present_queue, this->acquired_image_index, this->frame_resources [this->current_frame].ready_to_present);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         int width, height;
@@ -701,65 +738,79 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
     } else if (result != VK_SUCCESS) {
         throw std::runtime_error ("failed to present swap chain image!");
     }
-
-    this->current_frame = (this->current_frame + 1) % this->max_frames_in_flight;
 }
 
-void VulkanContext::create_framebuffers () {
-    this->swapchain_framebuffers.resize (this->swapchain.GetImageCount ());
+std::vector <VkFramebuffer> VulkanContext::create_framebuffers (VkRenderPass a_render_pass) {
+    std::array <VkImageView, 2> attachments;
 
-    for (uint32_t i = 0; i < swapchain_framebuffers.size (); i++) {
-        std::vector <VkImageView> attachments;
-        attachments.push_back (this->swapchain.GetAttachment (i).view);
-        attachments.push_back (this->depth_textures [i].view);
+    VkFramebufferCreateInfo framebuffer_info = {};
+    framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebuffer_info.renderPass = a_render_pass;
+    framebuffer_info.width = this->swapchain.GetExtent ().width;
+    framebuffer_info.height = this->swapchain.GetExtent ().height;
+    framebuffer_info.layers = 1;
+    framebuffer_info.attachmentCount = static_cast <uint32_t> (attachments.size ());
+    framebuffer_info.pAttachments = attachments.data ();
 
-        VkFramebufferCreateInfo framebufferInfo = {};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = this->render_pass;
-        framebufferInfo.attachmentCount = static_cast <uint32_t> (attachments.size ());
-        framebufferInfo.pAttachments = attachments.data ();
-        framebufferInfo.width = this->swapchain.GetExtent ().width;
-        framebufferInfo.height = this->swapchain.GetExtent ().height;
-        framebufferInfo.layers = 1;
+    uint32_t framebuffers_count = this->swapchain.GetImageCount ();
+    std::vector <VkFramebuffer> framebuffers (framebuffers_count);
 
-        VK_CHECK_RESULT (vkCreateFramebuffer (this->device, &framebufferInfo, nullptr, &this->swapchain_framebuffers [i]));
+    for (uint32_t i = 0; i < framebuffers_count; i++) {
+        assert (this->swapchain.GetAttachment (i).view != VK_NULL_HANDLE);
+        assert (this->depth_buffer.view != VK_NULL_HANDLE);
+        attachments [0] = this->swapchain.GetAttachment (i).view;
+        attachments [1] = this->depth_buffer.view;
+        VK_CHECK_RESULT (vkCreateFramebuffer (this->device, &framebuffer_info, nullptr, &framebuffers [i]));
     }
+
+    return framebuffers;
 }
 
-void VulkanContext::create_depth_resources () {
-    if (!vk_utils::getSupportedDepthFormat (this->get_physical_device (), {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &this->depth_format)) {
-        throw std::runtime_error ("create_render_pass: couldn't find supported depth format");
-    }
+void VulkanContext::create_depth_buffer () {
+    assert (this->depth_buffer.format != VK_FORMAT_UNDEFINED);
 
-    VkExtent2D swapChainExtent = this->swapchain.GetExtent ();
+    const uint32_t width = this->swapchain.GetExtent ().width;
+    const uint32_t height = this->swapchain.GetExtent ().height;
 
-    this->depth_textures.resize (max_frames_in_flight);
+    const VkImageUsageFlags usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    VkImageCreateInfo create_info = vk_utils::defaultImageCreateInfo (width, height, this->depth_buffer.format, usage, 1);
+    VK_CHECK_RESULT (vkCreateImage (this->get_device (), &create_info, nullptr, &this->depth_buffer.image));
+    vkGetImageMemoryRequirements (this->get_device (), this->depth_buffer.image, &this->depth_buffer.memReq);
 
-    VkCommandBuffer cmd = vk_utils::createCommandBuffer (this->device, this->transfer_command_pool_transistent);
-    VkCommandBufferBeginInfo cmd_buff_info = {};
-    cmd_buff_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    VK_CHECK_RESULT (vkBeginCommandBuffer (cmd, &cmd_buff_info));
+    VkMemoryAllocateInfo mem_alloc {};
+    mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    mem_alloc.allocationSize = this->depth_buffer.memReq.size;
+    mem_alloc.memoryTypeIndex = vk_utils::findMemoryType (this->depth_buffer.memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, this->get_physical_device ());
+    VK_CHECK_RESULT (vkAllocateMemory (this->get_device (), &mem_alloc, nullptr, &this->depth_buffer.mem));
+    VK_CHECK_RESULT (vkBindImageMemory (this->get_device (), this->depth_buffer.image, this->depth_buffer.mem, 0));
 
-    for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
-        this->depth_textures [i] = vk_utils::createDepthTexture (this->device, this->physical_device
-            , swapChainExtent.width, swapChainExtent.height, this->depth_format, true);
-    }
-
-    vkEndCommandBuffer (cmd);
-    vk_utils::executeCommandBufferNow (cmd, this->transfer_queue, this->device);
-
-    this->depth_sampler = vk_utils::createSampler (this->device, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                          VK_BORDER_COLOR_INT_OPAQUE_BLACK, 1);
+    VkImageViewCreateInfo depth_attachment = vk_utils::defaultImageViewCreateInfo (this->depth_buffer.image, this->depth_buffer.format, 1, VK_IMAGE_ASPECT_DEPTH_BIT);
+    VK_CHECK_RESULT (vkCreateImageView (this->get_device (), &depth_attachment, nullptr, &this->depth_buffer.view));
 }
 
-void VulkanContext::destroy_depth_resources () {
-    for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
-        vk_utils::deleteImg (this->device, &this->depth_textures [i]);
+void VulkanContext::destroy_depth_buffer () {
+    vk_utils::deleteImg (this->device, &this->depth_buffer);
+}
+
+void VulkanContext::destroy_framebuffers () {
+    std::vector <VkFramebuffer> framebuffer;
+
+    for (auto framebuffer : this->main.framebuffer) {
+        if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer (this->device, framebuffer, nullptr);
     }
-    this->depth_textures.clear ();
-    if (this->depth_sampler != VK_NULL_HANDLE) {
-        vkDestroySampler (this->device, this->depth_sampler, nullptr);
-        this->depth_sampler = VK_NULL_HANDLE;
+    for (auto framebuffer : this->after.framebuffer) {
+        if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer (this->device, framebuffer, nullptr);
+    }
+
+    this->main.framebuffer.clear ();
+    this->after.framebuffer.clear ();
+}
+
+void VulkanContext::destroy_frame_resources () {
+    for (size_t i = 0; i < this->max_frames_in_flight; i++) {
+        vkDestroySemaphore (this->device, this->frame_resources [i].ready_to_present, nullptr);
+        vkDestroySemaphore (this->device, this->frame_resources [i].ready_to_render, nullptr);
+        vkDestroyFence (this->device, this->frame_resources [i].ready_to_record, nullptr);
     }
 }
 

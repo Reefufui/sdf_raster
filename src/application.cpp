@@ -18,17 +18,14 @@ Application::Application (int a_width, int a_height)
     : width ((a_width == 0) ? 1080 : a_width)
     , height ((a_height == 0) ? 900 : a_height)
     , user_data ({this}) {
-    init_logging ();
     camera.set_aspect_ratio (static_cast <float> (a_width) / static_cast <float> (a_height));
 }
 
-Application::Application (int a_width, int a_height, const std::string& a_window_title, bool a_mesh_shader_support)
+Application::Application (int a_width, int a_height, bool a_mesh_shader_support)
     : width (a_width)
     , height (a_height)
-    , window_title (a_window_title)
     , user_data ({this}) {
     try {
-        init_logging ();
         init_window ();
         init_vulkan (a_mesh_shader_support);
         init_renderer (a_mesh_shader_support);
@@ -111,7 +108,7 @@ void Application::init_window () {
 
     this->width = (this->width == 0) ? 1 : this->width;
     this->height = (this->height == 0) ? 1 : this->height;
-    this->window = glfwCreateWindow (this->width, this->height, this->window_title.c_str(), nullptr, nullptr);
+    this->window = glfwCreateWindow (this->width, this->height, APP_NAME, nullptr, nullptr);
     if (!this->window) {
         glfwTerminate ();
         throw std::runtime_error ("Failed to create GLFW window.");
@@ -168,8 +165,6 @@ void Application::cleanup () {
         glfwDestroyWindow (this->window);
     }
     glfwTerminate ();
-
-    shutdown_logging ();
 }
 
 void Application::process_input () {
@@ -234,7 +229,7 @@ void Application::key_callback (GLFWwindow* a_window, int key, int, int action, 
         if (app->camera_mode_active) {
             app->camera_mode_active = false;
             glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            LOG_INFO ("Exited camera mode (ESC). Cursor NORMAL.");
+            LOG_INFO ("Exited camera mode. Cursor NORMAL.");
         }
     }
 
@@ -249,7 +244,7 @@ void Application::key_callback (GLFWwindow* a_window, int key, int, int action, 
         } else if (action == GLFW_RELEASE) {
             if (app->c_key_pressed_this_frame) {
                 app->renderer->toggle_frustum_buffer (app->camera);
-                LOG_INFO ("Toggled frustum buffer visibility (C).");
+                LOG_INFO ("Toggled frustum buffer visibility.");
                 app->c_key_pressed_this_frame = false;
             }
         }
@@ -264,14 +259,14 @@ void Application::mouse_button_callback (GLFWwindow* a_window, int button, int a
         if ((button == GLFW_MOUSE_BUTTON_RIGHT || button == GLFW_MOUSE_BUTTON_LEFT) && action == GLFW_PRESS) {
             app->camera_mode_active = false;
             glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            LOG_INFO ("Exited camera mode (Right-click). Cursor NORMAL.");
+            LOG_INFO ("Exited camera mode. Cursor NORMAL.");
         }
     } else {
         if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
             app->camera_mode_active = true;
             glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             app->first_mouse = true;
-            LOG_INFO ("Entered camera mode (Mouse Click). Cursor DISABLED.");
+            LOG_INFO ("Entered camera mode. Cursor DISABLED.");
         }
     }
 }

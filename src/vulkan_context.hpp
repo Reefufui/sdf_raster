@@ -37,37 +37,38 @@ public:
 
     inline VkExtent2D get_swapchain_extent () const { return this->swapchain.GetExtent (); }
     inline VkFormat get_swapchain_image_format () const { return this->swapchain.GetFormat (); }
-    inline VkRenderPass get_render_pass () const { return this->render_pass; }
-    inline VkRenderPass get_render_pass_after () const { return this->render_pass_after; }
-    inline VkFramebuffer get_swapchain_framebuffer (uint32_t frame) const { return this->swapchain_framebuffers [frame]; }
+    inline VkRenderPass get_render_pass () const { return this->main.render_pass; }
+    inline VkRenderPass get_render_pass_after () const { return this->after.render_pass; }
+    inline VkFramebuffer get_swapchain_framebuffer () const { return this->main.framebuffer [this->acquired_image_index]; }
+    inline VkFramebuffer get_swapchain_framebuffer_after () const { return this->after.framebuffer [this->acquired_image_index]; }
 
     VkCommandBuffer begin_frame ();
     void end_frame (VkCommandBuffer command_buffer);
     uint32_t get_current_frame () { return this->current_frame; }
-    uint32_t get_current_image_index () { return this->current_image_index; }
     uint32_t get_total_frames () { return this->max_frames_in_flight; }
-    const std::vector <vk_utils::VulkanImageMem>& get_depth_textures () { return this->depth_textures; }
-    VkSampler get_depth_sampler () { return this->depth_sampler; }
 
 private:
     void create_instance ();
-    void setup_debug_utils_messenger ();
     void dump_mesh_shader_properties () const;
     void create_device (bool a_mesh_shader_support);
     void create_command_pools ();
     void get_device_queues ();
-    void create_render_pass ();
-    void create_render_pass_after ();
+    VkRenderPass create_render_pass (VkAttachmentLoadOp load_op);
     void create_frame_resources ();
-    void create_depth_resources ();
-    void create_framebuffers ();
-    void destroy_depth_resources ();
+    void create_depth_buffer ();
+    void destroy_depth_buffer ();
+    void destroy_framebuffers ();
+    void destroy_frame_resources ();
 
     void resize (int width, int height);
+    std::vector <VkFramebuffer> create_framebuffers (VkRenderPass a_render_pass);
 
-private:
-    VkInstance instance = VK_NULL_HANDLE;
+#ifdef VULKAN_VALIDATION_LAYERS
+    void setup_debug_utils_messenger ();
     VkDebugUtilsMessengerEXT debug_utils_messenger = VK_NULL_HANDLE;
+#endif
+
+    VkInstance instance = VK_NULL_HANDLE;
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
     vk_utils::QueueFID_T device_queue_ids {};
@@ -87,17 +88,21 @@ private:
     GLFWwindow* window = nullptr;
 
     VulkanSwapChain swapchain;
-    std::vector <VkFramebuffer> swapchain_framebuffers;
-    VkRenderPass render_pass = VK_NULL_HANDLE;
-    VkRenderPass render_pass_after = VK_NULL_HANDLE;
 
-    std::vector <vk_utils::VulkanImageMem> depth_textures;
-    VkFormat depth_format;
-    VkSampler depth_sampler = VK_NULL_HANDLE;
+    vk_utils::VulkanImageMem depth_buffer;
+
+    struct RenderPassResources {
+        std::vector <VkFramebuffer> framebuffer;
+        VkRenderPass render_pass = VK_NULL_HANDLE;
+    };
+
+    RenderPassResources main;
+    RenderPassResources after;
+
+    uint32_t acquired_image_index;
 
     const size_t max_frames_in_flight = 3;
-    uint32_t current_frame = 0;
-    uint32_t current_image_index;
+    uint32_t current_frame = 2;
     struct FrameResources {
         VkSemaphore ready_to_present;
         VkSemaphore ready_to_render;

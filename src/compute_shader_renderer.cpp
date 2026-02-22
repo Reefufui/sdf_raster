@@ -65,7 +65,6 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
     this->init_graphics_frustum_pipeline ();
 
     this->initialized = true;
-    std::cout << "ComputeShaderRenderer initialized successfully." << std::endl;
 }
 
 void ComputeShaderRenderer::init_push_constants () {
@@ -91,6 +90,8 @@ void ComputeShaderRenderer::init_descriptor_sets () {
     ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
     ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000);
     ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000);
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000);
+
     this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
 
 	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
@@ -129,11 +130,11 @@ void ComputeShaderRenderer::init_descriptor_sets () {
         , VK_SHADER_STAGE_COMPUTE_BIT
         , this->context->get_total_frames ());
 
-    this->depth_buffer_ds = create_depth_buffer_descriptor_set (*descriptor_maker
+    this->depth_buffer_ds = create_depth_buffer_descriptor_set (this->context->get_device ()
+        , this->context->get_physical_device ()
+        , *descriptor_maker
         , VK_SHADER_STAGE_COMPUTE_BIT
-        , this->context->get_depth_textures ()
-        , this->context->get_depth_sampler ()
-        , this->context->get_total_frames ());
+        , this->context->get_swapchain_extent ());
 
     this->frustum_ds = create_frustum_descriptor_set (this->context->get_device ()
         , this->context->get_physical_device ()
@@ -634,12 +635,12 @@ void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff, size
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
     std::array <VkDescriptorSet, 6> ds = {
-        this->sdf_octree_ds.descriptor_set,
-        this->mesh_ds.descriptor_sets [current_frame],
+        this->sdf_octree_ds.descriptor_set, // TODO: sepparate subtree roots buffer for all frames
+        this->mesh_ds.descriptor_sets [current_frame], // TODO: reuse one buffer for all in-flight frames
         this->marching_cubes_lookup_table_ds.descriptor_set,
-        this->active_leafs_ds.descriptor_sets [current_frame],
+        this->active_leafs_ds.descriptor_sets [current_frame], //TODO: reuse one buffer for all in-flight frames
         this->frustum_ds.descriptor_sets [current_frame],
-        this->depth_buffer_ds.descriptor_sets [current_frame]
+        this->depth_buffer_ds.descriptor_set
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline_layout,
@@ -818,7 +819,7 @@ void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, size_t curr
     VkRenderPassBeginInfo render_pass_info {};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     render_pass_info.renderPass = this->context->get_render_pass ();
-    render_pass_info.framebuffer = this->context->get_swapchain_framebuffer (this->context->get_current_image_index ());
+    render_pass_info.framebuffer = this->context->get_swapchain_framebuffer ();
     render_pass_info.renderArea.offset = {0, 0};
     render_pass_info.renderArea.extent = extent;
     render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
@@ -860,7 +861,7 @@ void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff) {
     VkRenderPassBeginInfo render_pass_info {};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     render_pass_info.renderPass = this->context->get_render_pass_after ();
-    render_pass_info.framebuffer = this->context->get_swapchain_framebuffer (this->context->get_current_image_index ());
+    render_pass_info.framebuffer = this->context->get_swapchain_framebuffer_after ();
     render_pass_info.renderArea.offset = {0, 0};
     render_pass_info.renderArea.extent = extent;
 
@@ -896,7 +897,7 @@ void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff) {
 
 void ComputeShaderRenderer::render (const Camera& camera) {
     if (!this->initialized) {
-        std::cerr << "Warning: MeshShaderRenderer::render called before init()." << std::endl;
+        LOG_ERROR ("render called before initialization");
         return;
     }
 
@@ -963,11 +964,9 @@ void ComputeShaderRenderer::shutdown () {
     vkDeviceWaitIdle (this->context->get_device ());
 
     if (!this->context || !this->context->is_initialized ()) {
-        std::cerr << "[ComputeShaderRenderer::shutdown] Warning: Vulkan context is already missing." << std::endl;
+        LOG_ERROR ("Vulkan context is already missing");
         return;
     }
-
-    std::cout << "[ComputeShaderRenderer::shutdown] ComputeShaderRenderer shutting down..." << std::endl;
 
     cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
     cleanup_mesh_descriptor_set (this->context->get_device (), this->mesh_ds);

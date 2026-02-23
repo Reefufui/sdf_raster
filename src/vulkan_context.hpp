@@ -51,6 +51,7 @@ public:
     void end_frame (VkCommandBuffer command_buffer);
     uint32_t get_current_frame () { return this->current_frame; }
     uint32_t get_total_frames () { return this->max_frames_in_flight; }
+    void register_resizable (std::function <void ()> f) { this->resizable_callbacks.push_back (f); };
 
 private:
     void create_instance ();
@@ -118,6 +119,8 @@ private:
     std::vector <FrameResources> frame_resources;
 
     VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties;
+
+    std::vector <std::function <void ()>> resizable_callbacks;
 
     bool initialized = false;
 };

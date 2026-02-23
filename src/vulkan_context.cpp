@@ -574,6 +574,10 @@ void VulkanContext::resize (int a_width, int a_height) {
     this->create_frame_resources ();
 
     this->current_frame = 0;
+
+    for (const auto& callback : resizable_callbacks) {
+        callback ();
+    }
 }
 
 VkRenderPass VulkanContext::create_render_pass (VkAttachmentLoadOp load_op) {

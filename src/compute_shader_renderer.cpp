@@ -55,6 +55,7 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
 
     this->init_push_constants ();
     this->init_descriptor_sets ();
+    this->init_compute_hz_buffer_pipeline ();
     this->init_compute_active_leafs_pipeline ();
     this->init_compute_prefix_sum_pass1_pipeline ();
     this->init_compute_prefix_sum_pass2_pipeline ();
@@ -64,7 +65,24 @@ void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_o
 
     this->init_graphics_frustum_pipeline ();
 
+    this->register_resizable ();
+
     this->initialized = true;
+}
+
+
+void ComputeShaderRenderer::register_resizable () {
+    auto resize_hz_buffer = [&] () {
+        cleanup_hz_buffer_descriptor_set (this->context->get_device (), this->hz_buffer_ds);
+
+        this->hz_buffer_ds = create_hz_buffer_descriptor_set (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , *descriptor_maker
+            , VK_SHADER_STAGE_COMPUTE_BIT
+            , this->context->get_swapchain_extent ());
+    };
+
+    this->context->register_resizable (resize_hz_buffer);
 }
 
 void ComputeShaderRenderer::init_push_constants () {
@@ -130,17 +148,26 @@ void ComputeShaderRenderer::init_descriptor_sets () {
         , VK_SHADER_STAGE_COMPUTE_BIT
         , this->context->get_total_frames ());
 
-    // this->depth_buffer_ds = create_depth_buffer_descriptor_set (this->context->get_device ()
-    //     , this->context->get_physical_device ()
-    //     , *descriptor_maker
-    //     , VK_SHADER_STAGE_COMPUTE_BIT
-    //     , this->context->get_swapchain_extent ());
+    this->hz_buffer_ds = create_hz_buffer_descriptor_set (this->context->get_device ()
+        , this->context->get_physical_device ()
+        , *descriptor_maker
+        , VK_SHADER_STAGE_COMPUTE_BIT
+        , this->context->get_swapchain_extent ());
 
     this->frustum_ds = create_frustum_descriptor_set (this->context->get_device ()
         , this->context->get_physical_device ()
         , *descriptor_maker
         , VK_SHADER_STAGE_COMPUTE_BIT
         , this->context->get_total_frames ());
+}
+
+void ComputeShaderRenderer::init_compute_hz_buffer_pipeline () {
+    vk_utils::ComputePipelineMaker compute_pipeline_maker;
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/mip_max_pooling.slang.spv");
+    this->compute_hz_buffer_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
+        this->hz_buffer_ds.gen_descriptor_set_layout
+        }, 0);
+    this->compute_hz_buffer_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
 void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
@@ -152,7 +179,7 @@ void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
             , this->marching_cubes_lookup_table_ds.descriptor_set_layout
             , this->active_leafs_ds.descriptor_set_layout
             , this->frustum_ds.descriptor_set_layout
-            // , this->depth_buffer_ds.descriptor_set_layout
+            // , this->hz_buffer_ds.descriptor_set_layout
         }, sizeof (PushConstantsData));
     this->compute_active_leafs_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
@@ -631,6 +658,72 @@ void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff, size_t cur
     );
 }
 
+void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff, size_t current_frame) {
+    // expects layout of hz_buffer_ds mip-images to be VK_IMAGE_LAYOUT_GENERAL
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_hz_buffer_pipeline);
+
+    const auto extent = this->context->get_swapchain_extent ();
+
+    for (uint32_t i = 0; i < this->hz_buffer_ds.hz_buffer.mipLvls - 1; ++i) {
+        const uint32_t srcMip = i;
+        const uint32_t dstMip = i + 1;
+
+        uint32_t srcWidth = std::max (1u, extent.width >> srcMip);
+        uint32_t srcHeight = std::max (1u, extent.height >> srcMip);
+        uint32_t dstWidth = std::max (1u, extent.width >> dstMip);
+        uint32_t dstHeight = std::max (1u, extent.height >> dstMip);
+
+        vkCmdBindDescriptorSets (cmd_buff
+            , VK_PIPELINE_BIND_POINT_COMPUTE
+            , this->compute_hz_buffer_pipeline_layout
+            , 0, 1, &this->hz_buffer_ds.gen_descriptor_sets [i]
+            , 0, nullptr);
+
+        uint32_t groupX = (dstWidth + 15) / 16;
+        uint32_t groupY = (dstHeight + 15) / 16;
+        vkCmdDispatch (cmd_buff, groupX, groupY, 1);
+
+        VkImageMemoryBarrier barrier = {};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = this->hz_buffer_ds.hz_buffer.image;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = dstMip;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        vkCmdPipelineBarrier (cmd_buff
+            , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+            , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+            , 0
+            , 0, nullptr
+            , 0, nullptr
+            , 1, &barrier);
+    }
+
+    VkImageSubresourceRange all_mip_lvls;
+    all_mip_lvls.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    all_mip_lvls.baseMipLevel = 0;
+    all_mip_lvls.levelCount = this->hz_buffer_ds.hz_buffer.mipLvls;
+    all_mip_lvls.baseArrayLayer = 0;
+    all_mip_lvls.layerCount = 1;
+
+    vk_utils::setImageLayout (cmd_buff
+        , this->hz_buffer_ds.hz_buffer.image
+        , VK_IMAGE_LAYOUT_GENERAL
+        , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        , all_mip_lvls
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+}
+
 void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
@@ -640,7 +733,7 @@ void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff, size
         this->marching_cubes_lookup_table_ds.descriptor_set,
         this->active_leafs_ds.descriptor_sets [current_frame], //TODO: reuse one buffer for all in-flight frames
         this->frustum_ds.descriptor_sets [current_frame]
-        // TODO: this->depth_buffer_ds.descriptor_set
+        // TODO: this->hz_buffer_ds.descriptor_set
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline_layout,
@@ -898,7 +991,7 @@ void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff) {
 void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
     const auto extent = this->context->get_swapchain_extent ();
     auto from = this->context->get_depth_buffer ().image;
-    auto to = this->depth_buffer_ds.hz_buffer.image;
+    auto to = this->hz_buffer_ds.hz_buffer.image;
 
     VkImageMemoryBarrier depth_to_src = {};
     depth_to_src.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -921,16 +1014,18 @@ void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
     hz_buffer_to_dst.pNext = nullptr;
     hz_buffer_to_dst.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     hz_buffer_to_dst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    // TODO: hz_buffer_to_dst.oldLayout = VK_IMAGE_LAYOUT_;
-    hz_buffer_to_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    hz_buffer_to_dst.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    hz_buffer_to_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     hz_buffer_to_dst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     hz_buffer_to_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     hz_buffer_to_dst.image = to;
-    hz_buffer_to_dst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    hz_buffer_to_dst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     hz_buffer_to_dst.subresourceRange.baseMipLevel = 0;
     hz_buffer_to_dst.subresourceRange.levelCount = 1;
     hz_buffer_to_dst.subresourceRange.baseArrayLayer = 0;
     hz_buffer_to_dst.subresourceRange.layerCount = 1;
+
+    std::array <VkImageMemoryBarrier, 2> barriers { depth_to_src, hz_buffer_to_dst };
 
     vkCmdPipelineBarrier (cmd_buff
         , VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
@@ -938,10 +1033,10 @@ void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
         , 0
         , 0, nullptr
         , 0, nullptr
-        , 1, &depth_to_src
+        , barriers.size (), barriers.data ()
     );
 
-    VkOffset3D whole_image { static_cast <int32_t> (extent.width), static_cast <int32_t> (extent.height), 0 };
+    VkOffset3D whole_image { static_cast <int32_t> (extent.width), static_cast <int32_t> (extent.height), 1 };
 
     VkImageBlit blitRegion {};
     blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -964,6 +1059,38 @@ void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
         , 1, &blitRegion
         , VK_FILTER_NEAREST
     );
+
+    VkImageSubresourceRange first_mip_lvl {};
+    first_mip_lvl.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    first_mip_lvl.baseMipLevel = 0;
+    first_mip_lvl.levelCount = 1;
+    first_mip_lvl.baseArrayLayer = 0;
+    first_mip_lvl.layerCount = 1;
+
+    vk_utils::setImageLayout (cmd_buff
+        , this->hz_buffer_ds.hz_buffer.image
+        , VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+        , VK_IMAGE_LAYOUT_GENERAL
+        , first_mip_lvl
+        , VK_PIPELINE_STAGE_TRANSFER_BIT
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+    );
+
+    VkImageSubresourceRange other_mip_lvls {};
+    other_mip_lvls.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    other_mip_lvls.baseMipLevel = 1;
+    other_mip_lvls.levelCount = this->hz_buffer_ds.hz_buffer.mipLvls - 1;
+    other_mip_lvls.baseArrayLayer = 0;
+    other_mip_lvls.layerCount = 1;
+
+    vk_utils::setImageLayout (cmd_buff
+        , this->hz_buffer_ds.hz_buffer.image
+        , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        , VK_IMAGE_LAYOUT_GENERAL
+        , other_mip_lvls
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+    );
 }
 
 void ComputeShaderRenderer::render (const Camera& camera) {
@@ -985,11 +1112,9 @@ void ComputeShaderRenderer::render (const Camera& camera) {
     }
     this->reset_active_leafs_counter (cmd_buff, current_frame);
     this->clear_geometry (cmd_buff, current_frame);
+    // this->compute_hz_buffer (cmd_buff, current_frame);
     this->compute_active_leafs (cmd_buff, current_frame);
     this->active_leafs_barrier (cmd_buff, current_frame);
-    // this->prefix_sum_pass1 (cmd_buff, current_frame);
-    // this->prefix_sum_pass2 (cmd_buff, current_frame);
-    // this->prefix_sum_pass3 (cmd_buff, current_frame);
     this->compute_geometry (cmd_buff, current_frame);
     this->geometry_barrier (cmd_buff, current_frame);
     this->draw_geometry (cmd_buff, current_frame);
@@ -1046,12 +1171,14 @@ void ComputeShaderRenderer::shutdown () {
     cleanup_active_leafs_descriptor_set (this->context->get_device (), this->active_leafs_ds);
     cleanup_frustum_descriptor_set (this->context->get_device (), this->frustum_ds);
     cleanup_draw_indexed_indirect_command_descriptor_set (this->context->get_device (), this->draw_indexed_indirect_command_ds);
+    cleanup_hz_buffer_descriptor_set (this->context->get_device (), this->hz_buffer_ds);
 
     if (this->frustum_draw_buffer) {
         this->frustum_draw_buffer.reset ();
     }
     this->descriptor_maker.reset ();
 
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_hz_buffer_pipeline, this->compute_hz_buffer_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_active_leafs_pipeline, this->compute_active_leafs_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass1_pipeline, this->compute_prefix_sum_pass1_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass2_pipeline, this->compute_prefix_sum_pass2_pipeline_layout);

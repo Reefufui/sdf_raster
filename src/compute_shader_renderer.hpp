@@ -31,12 +31,15 @@ public:
 private:
     void init_push_constants ();
     void init_descriptor_sets ();
+    void init_compute_hz_buffer_pipeline ();
     void init_compute_active_leafs_pipeline ();
     void init_compute_prefix_sum_pass1_pipeline ();
     void init_compute_prefix_sum_pass2_pipeline ();
     void init_compute_prefix_sum_pass3_pipeline ();
     void init_compute_geometry_pipeline ();
     void init_graphics_shading_pipeline ();
+
+    void register_resizable ();
 
     void init_graphics_frustum_pipeline ();
     void toggle_frustum_buffer (Camera& camera);
@@ -45,6 +48,7 @@ private:
     void update_frustum_buffer (const Camera& camera, size_t current_frame);
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame);
     void clear_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
+    void compute_hz_buffer (VkCommandBuffer cmd_buff, size_t current_frame);
     void compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame);
     void active_leafs_barrier (VkCommandBuffer cmd_buff, size_t current_frame);
     void prefix_sum_pass1 (VkCommandBuffer cmd_buff, size_t current_frame);
@@ -64,7 +68,7 @@ private:
     MarchingCubesLookupTableDescriptorSetInfo marching_cubes_lookup_table_ds {};
     ActiveLeafsDescriptorSetInfo active_leafs_ds {};
     DrawIndexedIndirectCommandDescriptorSetInfo draw_indexed_indirect_command_ds {};
-    DepthBufferDescriptorSetInfo depth_buffer_ds {};
+    HZBufferDescriptorSetInfo hz_buffer_ds {};
     FrustumDescriptorSetInfo frustum_ds {};
 
     VkRenderPass render_pass {VK_NULL_HANDLE};
@@ -73,11 +77,13 @@ private:
     VkPipelineLayout graphics_frustum_pipeline_layout {VK_NULL_HANDLE};
     VkPipeline graphics_frustum_pipeline {VK_NULL_HANDLE};
 
+    VkPipeline compute_hz_buffer_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_active_leafs_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_geometry_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_prefix_sum_pass1_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_prefix_sum_pass2_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_prefix_sum_pass3_pipeline {VK_NULL_HANDLE};
+    VkPipelineLayout compute_hz_buffer_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_active_leafs_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_geometry_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_prefix_sum_pass1_pipeline_layout {VK_NULL_HANDLE};

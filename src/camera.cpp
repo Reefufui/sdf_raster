@@ -128,9 +128,9 @@ void Camera::dump (const std::string& filename) const {
     if (o.is_open ()) {
         o << std::setw (4) << j << std::endl;
         o.close();
-        LOG_INFO ("cached camera settings to '{}' file for future use", filename);
+        LOG_INFO ("[Camera] Cached camera settings to '{}' file for future use.", filename);
     } else {
-        LOG_ERROR ("couldn't open file '{}' for dumping camera settings", filename);
+        LOG_ERROR ("[Camera] Couldn't open file '{}' for dumping camera settings.", filename);
     }
 }
 
@@ -148,13 +148,14 @@ void Camera::load (const std::string& filename) {
             movement_speed = j.at ("movement_speed").get <float> ();
             mouse_sensitivity = j.at ("mouse_sensitivity").get <float> ();
         } catch (const nlohmann::json::exception& e) {
-            LOG_ERROR ("failed to parse camera settings from JSON '{}': {}", filename, e.what ());
+            LOG_ERROR ("[Camera] Failed to parse camera settings from JSON '{}': {}.", filename, e.what ());
         } catch (const std::exception& e) {
-            LOG_ERROR ("failed to load camera settings: {}", e.what ());
+            LOG_ERROR ("[Camera] Failed to load camera settings: {}..", e.what ());
         }
         i.close ();
+        LOG_INFO ("[Camera] Restored cached camera settings from '{}'.", filename);
     } else {
-        LOG_WARN ("failed to open camera settings file '{}'. using defaults", filename);
+        LOG_WARN ("[Camera] Failed to open camera settings file '{}'. Fall back to defaults.", filename);
     }
 }
 

@@ -69,18 +69,10 @@ void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support)
     if (this->window) {
         VK_CHECK_RESULT (glfwCreateWindowSurface (this->get_instance (), this->window, nullptr, &this->surface));
     } else {
-        LOG_INFO ("launched in headless mode. skipped window creation");
+        LOG_INFO ("[VulkanContext] Launched in headless mode. Skipped window creation.");
     }
 
-    uint32_t width = a_width;
-    uint32_t height = a_height;
-    this->present_queue = this->swapchain.CreateSwapChain (this->get_physical_device ()
-            , this->get_device ()
-            , this->surface
-            , width
-            , height
-            , this->max_frames_in_swapchain
-            , false);
+    this->create_swapchain (static_cast <uint32_t> (a_width), static_cast <uint32_t> (a_height));
 
     if (!vk_utils::getSupportedDepthFormat (this->get_physical_device (), {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &this->depth_buffer.format)) {
         throw std::runtime_error ("couldn't find supported depth format");
@@ -94,6 +86,7 @@ void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support)
     this->after.framebuffer = this->create_framebuffers (this->after.render_pass);
 
     this->create_frame_resources ();
+    this->current_frame = max_frames_in_flight - 1;
 
     this->initialized = true;
 }
@@ -303,7 +296,7 @@ void VulkanContext::create_device (bool a_mesh_shader_support) {
     }
 
     if (!device_features_2.features.wideLines) {
-        LOG_WARN ("Physical device does NOT support wideLines. Defaulting to lineWidth = 1.0.");
+        LOG_WARN ("[VulkanContext] Physical device does NOT support wideLines. Defaulting to lineWidth = 1.0.");
     }
 
     VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features_enable {};
@@ -461,67 +454,57 @@ VkExtent2D choose_swap_extent (const VkSurfaceCapabilitiesKHR& capabilities, int
 
 void VulkanContext::shutdown () {
     if (!this->initialized) {
-        LOG_WARN ("attempted to shutdown an uninitialized or already shut down VulkanContext");
+        LOG_WARN ("[VulkanContext] Attempted to shutdown an uninitialized or already shut down vulkan context.");
         return;
     }
 
-    if (this->get_device() == VK_NULL_HANDLE) {
-        LOG_WARN ("Vulkan device was VK_NULL_HANDLE during shutdown. Resources might not have been created");
+    if (this->get_device () == VK_NULL_HANDLE) {
+        LOG_WARN ("[VulkanContext] Vulkan device was VK_NULL_HANDLE during shutdown. Resources might not have been created.");
     } else {
+        LOG_INFO ("[VulkanContext] Waiting for the GPU to go idle to shutdown application.");
         vkDeviceWaitIdle (this->get_device ());
-    }
 
-    this->destroy_depth_buffer ();
-    this->destroy_framebuffers ();
-    this->swapchain.Cleanup ();
-    this->destroy_frame_resources ();
+        this->destroy_depth_buffer ();
+        this->destroy_framebuffers ();
+        this->destroy_swapchain ();
+        this->destroy_frame_resources ();
 
-    auto destroy_render_pass_resources = [&](RenderPassResources& r) {
-        if (r.render_pass != VK_NULL_HANDLE) {
-            vkDestroyRenderPass (this->device, r.render_pass, nullptr);
-            r.render_pass = VK_NULL_HANDLE;
+        auto destroy_render_pass_resources = [&](RenderPassResources& r) {
+            if (r.render_pass != VK_NULL_HANDLE) {
+                vkDestroyRenderPass (this->device, r.render_pass, nullptr);
+                r.render_pass = VK_NULL_HANDLE;
+            }
+        };
+        destroy_render_pass_resources (main);
+        destroy_render_pass_resources (after);
+
+        auto destroy_command_pool = [&](VkCommandPool& command_pool) {
+            if (command_pool != VK_NULL_HANDLE) {
+                vkDestroyCommandPool (this->device, command_pool, nullptr);
+                command_pool = VK_NULL_HANDLE;
+            }
+        };
+        destroy_command_pool (this->compute_command_pool_reset);
+        destroy_command_pool (this->compute_command_pool_reset);
+        destroy_command_pool (this->compute_command_pool_transistent);
+        destroy_command_pool (this->graphics_command_pool_reset);
+        destroy_command_pool (this->graphics_command_pool_transistent);
+        destroy_command_pool (this->transfer_command_pool_reset);
+        destroy_command_pool (this->transfer_command_pool_transistent);
+
+        this->copy_helper.reset ();
+
+        if (this->device != VK_NULL_HANDLE) {
+            vkDestroyDevice (this->device, nullptr);
+            this->device = VK_NULL_HANDLE;
         }
-    };
-    destroy_render_pass_resources (main);
-    destroy_render_pass_resources (after);
-
-    if (this->compute_command_pool_reset != VK_NULL_HANDLE) {
-        vkDestroyCommandPool (this->get_device (), this->compute_command_pool_reset, nullptr);
-        this->compute_command_pool_reset = VK_NULL_HANDLE;
-    }
-    if (this->graphics_command_pool_reset != VK_NULL_HANDLE) {
-        vkDestroyCommandPool (this->get_device (), this->graphics_command_pool_reset, nullptr);
-        this->graphics_command_pool_reset = VK_NULL_HANDLE;
-    }
-    if (this->transfer_command_pool_reset != VK_NULL_HANDLE) {
-        vkDestroyCommandPool (this->get_device (), this->transfer_command_pool_reset, nullptr);
-        this->transfer_command_pool_reset = VK_NULL_HANDLE;
-    }
-    if (this->compute_command_pool_transistent != VK_NULL_HANDLE) {
-        vkDestroyCommandPool (this->get_device (), this->compute_command_pool_transistent, nullptr);
-        this->compute_command_pool_transistent = VK_NULL_HANDLE;
-    }
-    if (this->graphics_command_pool_transistent != VK_NULL_HANDLE) {
-        vkDestroyCommandPool (this->get_device (), this->graphics_command_pool_transistent, nullptr);
-        this->graphics_command_pool_transistent = VK_NULL_HANDLE;
-    }
-    if (this->transfer_command_pool_transistent != VK_NULL_HANDLE) {
-        vkDestroyCommandPool (this->get_device (), this->transfer_command_pool_transistent, nullptr);
-        this->transfer_command_pool_transistent = VK_NULL_HANDLE;
-    }
-
-    this->copy_helper.reset ();
-
-    if (this->device != VK_NULL_HANDLE) {
-        vkDestroyDevice (this->device, nullptr);
-        this->device = VK_NULL_HANDLE;
     }
 
     if (this->surface != VK_NULL_HANDLE) {
         if (this->get_instance () != VK_NULL_HANDLE) {
-            vkDestroySurfaceKHR (this->get_instance(), this->surface, nullptr);
+            vkDestroySurfaceKHR (this->get_instance (), this->surface, nullptr);
         } else {
-            LOG_ERROR ("VkInstance was VK_NULL_HANDLE while destroying VkSurfaceKHR");
+            LOG_ERROR ("[VulkanContext] VkInstance was VK_NULL_HANDLE while destroying VkSurfaceKHR.");
         }
         this->surface = VK_NULL_HANDLE;
     }
@@ -531,7 +514,7 @@ void VulkanContext::shutdown () {
         if (vkDestroyDebugUtilsMessengerEXT != nullptr && this->get_instance () != VK_NULL_HANDLE) {
             vkDestroyDebugUtilsMessengerEXT (this->get_instance (), this->debug_utils_messenger, nullptr);
         } else {
-            LOG_ERROR ("could not destroy debug messenger (PFN or Instance was NULL)");
+            LOG_ERROR ("[VulkanContext] Could not destroy debug messenger (PFN or Instance was NULL).");
         }
         this->debug_utils_messenger = VK_NULL_HANDLE;
     }
@@ -543,40 +526,50 @@ void VulkanContext::shutdown () {
     }
 
     this->initialized = false;
-    LOG_INFO ("VulkanContext shut down successfully");
+    LOG_INFO ("[VulkanContext] Vulkan instance destroyed successfully.");
 }
 
 void VulkanContext::resize (int a_width, int a_height) {
     if (a_width == 0 || a_height == 0) {
-        LOG_ERROR ("Width or height can't be zero.");
+        LOG_ERROR ("[VulkanContext] Width or height can't be zero.");
         return;
     }
-    uint32_t width = static_cast <int> (a_width);
-    uint32_t height = static_cast <int> (a_height);
+
     const auto extent = this->swapchain.GetExtent ();
-    LOG_INFO ("Waiting for the GPU to go idle to resize: ({}, {}) -> ({}, {})", extent.width, extent.height, width, height);
-
+    LOG_INFO ("[VulkanContext] Waiting for the GPU to go idle to resize: ({}, {}) -> ({}, {})", extent.width, extent.height, a_width, a_height);
     vkDeviceWaitIdle (this->get_device ());
-    LOG_INFO ("Recreating frame resources.");
 
-    this->swapchain.Cleanup ();
-    this->swapchain.CreateSwapChain (this->get_physical_device ()
-                                     , this->get_device ()
-                                     , this->surface
-                                     , width
-                                     , height
-                                     , this->max_frames_in_swapchain
-                                     , true);
+    this->create_swapchain (static_cast <uint32_t> (a_width), static_cast <uint32_t> (a_height));
     this->create_depth_buffer ();
     this->destroy_framebuffers ();
     this->main.framebuffer = this->create_framebuffers (this->main.render_pass);
     this->after.framebuffer = this->create_framebuffers (this->after.render_pass);
     this->create_frame_resources ();
 
-    this->current_frame = 0;
+    this->current_frame = this->max_frames_in_flight - 1;
 
     for (const auto& callback : resizable_callbacks) {
         callback ();
+    }
+}
+
+void VulkanContext::create_swapchain (uint32_t width, uint32_t height) {
+    this->destroy_swapchain ();
+
+    this->present_queue = this->swapchain.CreateSwapChain (this->get_physical_device ()
+            , this->get_device ()
+            , this->surface
+            , width
+            , height
+            , this->max_frames_in_swapchain
+            , false);
+
+    this->gpu_ready_to_present.resize (this->swapchain.GetImageCount ());
+
+    for (size_t i = 0; i < this->gpu_ready_to_present.size (); i++) {
+        VkSemaphoreCreateInfo semaphoreInfo {};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        vkCreateSemaphore (device, &semaphoreInfo, nullptr, &this->gpu_ready_to_present [i]);
     }
 }
 
@@ -672,9 +665,8 @@ void VulkanContext::create_frame_resources () {
     alloc_info.commandBufferCount = 1;
 
     for (size_t i = 0; i < max_frames_in_flight; i++) {
-        if (vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->frame_resources [i].ready_to_render) != VK_SUCCESS ||
-            vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->frame_resources [i].ready_to_present) != VK_SUCCESS ||
-            vkCreateFence (this->get_device (), &fence_info, nullptr, &this->frame_resources [i].ready_to_record) != VK_SUCCESS) {
+        if (vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->frame_resources [i].gpu_ready_to_render) != VK_SUCCESS ||
+            vkCreateFence (this->get_device (), &fence_info, nullptr, &this->frame_resources [i].cpu_ready_to_record) != VK_SUCCESS) {
             throw std::runtime_error ("Failed to create semaphores or fences for a frame!");
         }
 
@@ -685,9 +677,9 @@ void VulkanContext::create_frame_resources () {
 VkCommandBuffer VulkanContext::begin_frame () {
     this->current_frame = (this->current_frame + 1) % this->max_frames_in_flight;
 
-    vkWaitForFences (this->get_device (), 1, &this->frame_resources [this->current_frame].ready_to_record, VK_TRUE, UINT64_MAX);
-    VkResult result = this->swapchain.AcquireNextImage (this->frame_resources [this->current_frame].ready_to_render, &this->acquired_image_index);
-    // assert (next_frame == this->current_frame);
+    vkWaitForFences (this->get_device (), 1, &this->frame_resources [this->current_frame].cpu_ready_to_record, VK_TRUE, UINT64_MAX);
+    VkResult result = this->swapchain.AcquireNextImage (this->frame_resources [this->current_frame].gpu_ready_to_render, &this->acquired_image_index);
+    LOG_TRACE ("in-flight frame: {}, swapchain image: {}", this->current_frame, this->acquired_image_index);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         int width, height;
@@ -697,8 +689,6 @@ VkCommandBuffer VulkanContext::begin_frame () {
     } else if (result != VK_SUCCESS) {
         throw std::runtime_error ("failed to acquire swap chain image!");
     }
-
-    vkResetFences (this->get_device (), 1, &this->frame_resources [this->current_frame].ready_to_record);
 
     vkResetCommandBuffer (this->frame_resources [this->current_frame].command_buffer, 0);
 
@@ -722,8 +712,8 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
     VkSubmitInfo submit_info {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore wait_semaphores [] = {this->frame_resources [this->current_frame].ready_to_render};
-    VkPipelineStageFlags wait_stages [] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    VkSemaphore wait_semaphores [] = { this->frame_resources [this->current_frame].gpu_ready_to_render };
+    VkPipelineStageFlags wait_stages [] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
     submit_info.waitSemaphoreCount = 1;
     submit_info.pWaitSemaphores = wait_semaphores;
     submit_info.pWaitDstStageMask = wait_stages;
@@ -731,13 +721,14 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffer;
 
-    VkSemaphore signal_semaphores[] = {this->frame_resources [this->current_frame].ready_to_present};
+    VkSemaphore signal_semaphores [] = { this->gpu_ready_to_present [this->acquired_image_index] };
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = signal_semaphores;
 
-    VK_CHECK_RESULT (vkQueueSubmit (graphics_queue, 1, &submit_info, this->frame_resources [this->current_frame].ready_to_record));
+    vkResetFences (this->get_device (), 1, &this->frame_resources [this->current_frame].cpu_ready_to_record);
+    VK_CHECK_RESULT (vkQueueSubmit (graphics_queue, 1, &submit_info, this->frame_resources [this->current_frame].cpu_ready_to_record));
 
-    VkResult result = this->swapchain.QueuePresent (this->present_queue, this->acquired_image_index, this->frame_resources [this->current_frame].ready_to_present);
+    VkResult result = this->swapchain.QueuePresent (this->present_queue, this->acquired_image_index, this->gpu_ready_to_present [this->acquired_image_index]);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         int width, height;
@@ -802,7 +793,19 @@ void VulkanContext::create_depth_buffer () {
     VkImageViewCreateInfo depth_attachment = vk_utils::defaultImageViewCreateInfo (this->depth_buffer.image, this->depth_buffer.format, 1, VK_IMAGE_ASPECT_DEPTH_BIT);
     VK_CHECK_RESULT (vkCreateImageView (this->get_device (), &depth_attachment, nullptr, &this->depth_buffer.view));
 
-    LOG_INFO ("{} depth image with size ({}, {})", (recreated) ? "Recreated" : "Created", width, height);
+    LOG_INFO ("[VulkanContext] {} single depth buffer with size ({}, {}).", (recreated) ? "Recreated" : "Created", width, height);
+}
+
+void VulkanContext::destroy_swapchain () {
+    this->swapchain.Cleanup ();
+
+    for (auto render_finished_semaphore : this->gpu_ready_to_present) {
+        if (render_finished_semaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore (this->device, render_finished_semaphore, nullptr);
+        }
+    }
+
+    this->gpu_ready_to_present.clear ();
 }
 
 void VulkanContext::destroy_depth_buffer () {
@@ -825,9 +828,8 @@ void VulkanContext::destroy_framebuffers () {
 
 void VulkanContext::destroy_frame_resources () {
     for (size_t i = 0; i < this->max_frames_in_flight; i++) {
-        vkDestroySemaphore (this->device, this->frame_resources [i].ready_to_present, nullptr);
-        vkDestroySemaphore (this->device, this->frame_resources [i].ready_to_render, nullptr);
-        vkDestroyFence (this->device, this->frame_resources [i].ready_to_record, nullptr);
+        vkDestroySemaphore (this->device, this->frame_resources [i].gpu_ready_to_render, nullptr);
+        vkDestroyFence (this->device, this->frame_resources [i].cpu_ready_to_record, nullptr);
     }
     this->frame_resources.clear ();
 }

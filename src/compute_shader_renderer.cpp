@@ -25,6 +25,8 @@ std::ostream& operator<< (std::ostream& os, const NodeContext& context) {
 
 namespace sdf_raster {
 
+#define RENDERER_NAME "ComputeShaderRenderer"
+
 ComputeShaderRenderer::ComputeShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context)
     : context (vulkan_context)
     , width (0)
@@ -80,6 +82,9 @@ void ComputeShaderRenderer::register_resizable () {
             , *descriptor_maker
             , VK_SHADER_STAGE_COMPUTE_BIT
             , this->context->get_swapchain_extent ());
+
+        LOG_INFO ("[{}] Created HZ-buffer for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
+            , this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height, this->hz_buffer_ds.hz_buffer.mipLvls);
     };
 
     this->context->register_resizable (resize_hz_buffer);
@@ -89,18 +94,26 @@ void ComputeShaderRenderer::init_push_constants () {
     VkPhysicalDeviceProperties device_properties;
     vkGetPhysicalDeviceProperties (this->context->get_physical_device (), &device_properties);
     uint32_t max_push_constant_size = device_properties.limits.maxPushConstantsSize;
-    LOG_TRACE ("VkPhysicalDeviceProperties::maxPushConstantsSize: {} bytes", max_push_constant_size);
+    LOG_TRACE ("[{}] VkPhysicalDeviceProperties::maxPushConstantsSize: {} bytes.", RENDERER_NAME, max_push_constant_size);
     if (uint32_t {PUSH_CONSTANTS_DATA_SIZE} > max_push_constant_size) {
-        LOG_CRITICAL ("required PUSH_CONSTANTS_DATA_SIZE={} exceeds VkPhysicalDeviceProperties::maxPushConstantsSize={}"
-            , uint32_t {PUSH_CONSTANTS_DATA_SIZE}, max_push_constant_size);
+        LOG_CRITICAL ("[{}] Required PUSH_CONSTANTS_DATA_SIZE={} exceeds VkPhysicalDeviceProperties::maxPushConstantsSize={}"
+            , RENDERER_NAME, uint32_t {PUSH_CONSTANTS_DATA_SIZE}, max_push_constant_size);
         this->shutdown ();
         throw std::runtime_error ("required PUSH_CONSTANTS_DATA_SIZE exceeds VkPhysicalDeviceProperties::maxPushConstantsSize");
     }
 
-    this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
     this->push_constants.active_leafs_max_count = 78240; // TODO: settings
 
     this->prev_frame_view_projection.resize (this->context->get_total_frames ()); // PC for occlusion culling
+
+    const auto octree_depth = get_octree_max_depth (this->sdf_octree);
+    LOG_INFO ("[{}] Provided sdf-octree's depth: {} levels.", RENDERER_NAME, octree_depth);
+    if (octree_depth > MAX_OCTREE_DEPTH) {
+        LOG_WARN ("[{}] Provided sdf-octree is too deep. Rendering as if it was {} levels deep.", RENDERER_NAME, uint32_t {MAX_OCTREE_DEPTH});
+        this->push_constants.max_octree_depth = MAX_OCTREE_DEPTH;
+    } else {
+        this->push_constants.max_octree_depth = octree_depth;
+    }
 }
 
 void ComputeShaderRenderer::init_descriptor_sets () {
@@ -153,6 +166,8 @@ void ComputeShaderRenderer::init_descriptor_sets () {
         , *descriptor_maker
         , VK_SHADER_STAGE_COMPUTE_BIT
         , this->context->get_swapchain_extent ());
+    LOG_INFO ("[{}] Created HZ-buffer for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
+        , this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height, this->hz_buffer_ds.hz_buffer.mipLvls);
 
     this->frustum_ds = create_frustum_descriptor_set (this->context->get_device ()
         , this->context->get_physical_device ()

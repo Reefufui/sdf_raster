@@ -15,6 +15,7 @@ struct HZBufferDescriptorSetInfo {
 
     VkDescriptorSet descriptor_set;
     vk_utils::VulkanImageMem hz_buffer;
+    VkExtent2D extent;
 
     VkDescriptorSetLayout gen_descriptor_set_layout = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;

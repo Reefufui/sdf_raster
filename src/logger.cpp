@@ -52,7 +52,7 @@ void log_app_start () {
     spdlog::set_default_logger (main_logger);
     spdlog::register_logger (validation_logger);
 
-    spdlog::info ("Application '{} v{}.{}.{}' starting. Log level: {}", APP_NAME
+    spdlog::info ("'{} v{}.{}.{}' starting. Log level: {}", APP_NAME
         , APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_VERSION_PATCH, spdlog::level::to_string_view (spdlog::get_level ()));
 }
 
@@ -61,10 +61,10 @@ void log_app_exit (int exit_code) {
     std::chrono::duration <double> duration = end_time - g_app_start_time;
 
     if (exit_code) {
-        spdlog::error ("Application '{} v{}.{}.{}' finished with errors in {:.2f} seconds. See logs above for details. Exiting with code {}."
+        spdlog::error ("'{} v{}.{}.{}' finished with errors in {:.2f} seconds. See logs above for details. Exiting with code {}."
             , APP_NAME, APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_VERSION_PATCH, duration.count (), exit_code);
     } else {
-        spdlog::info ("Application '{} v{}.{}.{}' finished successfully in {:.2f} seconds. Exiting with code 0."
+        spdlog::info ("'{} v{}.{}.{}' finished successfully in {:.2f} seconds. Exiting with code 0."
             , APP_NAME, APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_VERSION_PATCH, duration.count ());
     }
 

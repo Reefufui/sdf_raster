@@ -32,7 +32,7 @@ void MeshShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octr
     this->height = a_height;
     this->sdf_octree = std::move (a_sdf_octree);
     this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3);
-    this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
+    // this->push_constants.max_octree_depth = get_octree_max_depth (this->sdf_octree, MAX_OCTREE_DEPTH);
     if (this->push_constants.max_octree_depth > MAX_OCTREE_DEPTH) {
         this->push_constants.max_octree_depth = MAX_OCTREE_DEPTH;
     }

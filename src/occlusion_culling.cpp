@@ -2,8 +2,6 @@
 
 #include "vk_utils.h"
 
-#include "logger.hpp"
-
 namespace sdf_raster {
 
 HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
@@ -17,6 +15,8 @@ HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
     assert (shader_stage_flags != 0 && "shader_stage_flags should specify at least one stage");
 
     HZBufferDescriptorSetInfo info = {};
+
+    info.extent = swapchain_extent;
 
     const uint32_t width = swapchain_extent.width;
     const uint32_t height = swapchain_extent.height;
@@ -79,8 +79,6 @@ HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
     ds_maker.BindBegin (shader_stage_flags);
     ds_maker.BindImage (0, info.hz_buffer.view, info.sampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     ds_maker.BindEnd (&info.descriptor_set, &info.descriptor_set_layout);
-
-    LOG_INFO ("Created HZ-buffer for occlusion culling ({}, {}) with {} mip levels.", width, height, info.hz_buffer.mipLvls);
 
     return info;
 }

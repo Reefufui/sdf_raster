@@ -392,7 +392,7 @@ std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, 
     return payloads;
 }
 
-int get_octree_max_depth (const SdfOctree& scene, int max_level_to_descend) {
+int get_octree_max_depth (const SdfOctree& scene) {
     if (scene.nodes.empty ()) {
         return -1;
     }
@@ -416,7 +416,7 @@ int get_octree_max_depth (const SdfOctree& scene, int max_level_to_descend) {
 
         const SdfOctreeNode& node = scene.nodes [current.node_idx];
 
-        if (node.offset == 0 || current.level >= max_level_to_descend) {
+        if (node.offset == 0) {
             continue;
         }
 
@@ -424,13 +424,6 @@ int get_octree_max_depth (const SdfOctree& scene, int max_level_to_descend) {
             uint32_t child_node_idx = node.offset + i;
             s.push ({ child_node_idx, current.level + 1 });
         }
-    }
-
-    LOG_TRACE ("MAX_OCTREE_DEPTH={} levels", uint32_t {MAX_OCTREE_DEPTH});
-    LOG_INFO ("given sdf-octree's depth: {} levels", max_overall_depth);
-    if (max_overall_depth > MAX_OCTREE_DEPTH) {
-        LOG_WARN ("given octree is too deep. Reducing it to MAX_OCTREE_DEPTH");
-        max_overall_depth = MAX_OCTREE_DEPTH;
     }
 
     return max_overall_depth;

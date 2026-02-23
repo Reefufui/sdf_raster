@@ -49,8 +49,8 @@ public:
 
     VkCommandBuffer begin_frame ();
     void end_frame (VkCommandBuffer command_buffer);
-    uint32_t get_current_frame () { return this->current_frame; }
-    uint32_t get_total_frames () { return this->max_frames_in_flight; }
+    inline uint32_t get_current_frame () { return this->current_frame; }
+    inline uint32_t get_total_frames () { return this->max_frames_in_flight; }
     void register_resizable (std::function <void ()> f) { this->resizable_callbacks.push_back (f); };
 
 private:
@@ -59,9 +59,12 @@ private:
     void create_device (bool a_mesh_shader_support);
     void create_command_pools ();
     void get_device_queues ();
+    void create_swapchain (uint32_t width, uint32_t height);
     VkRenderPass create_render_pass (VkAttachmentLoadOp load_op);
     void create_frame_resources ();
     void create_depth_buffer ();
+
+    void destroy_swapchain ();
     void destroy_depth_buffer ();
     void destroy_framebuffers ();
     void destroy_frame_resources ();
@@ -94,6 +97,7 @@ private:
     GLFWwindow* window = nullptr;
 
     VulkanSwapChain swapchain;
+    std::vector <VkSemaphore> gpu_ready_to_present;
 
     vk_utils::VulkanImageMem depth_buffer;
 
@@ -107,13 +111,12 @@ private:
 
     uint32_t acquired_image_index;
 
-    const size_t max_frames_in_swapchain = 5;
-    const size_t max_frames_in_flight = 3;
-    uint32_t current_frame = 2;
+    const size_t max_frames_in_swapchain = 3;
+    const size_t max_frames_in_flight = 1;
+    uint32_t current_frame;
     struct FrameResources {
-        VkSemaphore ready_to_present;
-        VkSemaphore ready_to_render;
-        VkFence ready_to_record;
+        VkSemaphore gpu_ready_to_render;
+        VkFence cpu_ready_to_record;
         VkCommandBuffer command_buffer;
     };
     std::vector <FrameResources> frame_resources;

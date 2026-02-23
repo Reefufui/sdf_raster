@@ -26,6 +26,7 @@ private:
     void init_renderer (bool a_mesh_shader_suppport);
     void init_vulkan (bool a_mesh_shader_suppport);
     void init_window ();
+    void init_gui ();
     void process_input ();
 
     static Application* get_app_ptr (GLFWwindow* window);

@@ -148,6 +148,7 @@ add_executable(${PROJECT_NAME}
     src/application.cpp
     src/camera.cpp
     src/compute_shader_renderer.cpp
+    src/gui.cpp
     src/logger.cpp
     src/main.cpp
     src/marching_cubes_lookup_table.cpp

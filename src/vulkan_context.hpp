@@ -33,6 +33,7 @@ public:
     inline VkQueue get_compute_queue () const { return this->compute_queue; }
     inline VkQueue get_graphics_queue () const { return this->graphics_queue; }
     inline VkQueue get_transfer_queue () const { return this->transfer_queue; }
+    inline uint32_t get_graphics_queue_family_index () const { return this->device_queue_ids.graphics; }
     inline std::shared_ptr <vk_utils::ICopyEngine> get_copy_helper () const { return this->copy_helper; }
 
     inline VkExtent2D get_swapchain_extent () const { return this->swapchain.GetExtent (); }
@@ -42,6 +43,9 @@ public:
     inline VkFramebuffer get_swapchain_framebuffer () const { return this->main.framebuffer [this->acquired_image_index]; }
     inline VkFramebuffer get_swapchain_framebuffer_after () const { return this->after.framebuffer [this->acquired_image_index]; }
     inline const vk_utils::VulkanImageMem& get_depth_buffer () const { return this->depth_buffer; }
+    inline VkImageView get_swapchain_image_view (uint32_t i) const { return this->swapchain.GetAttachment (i).view; }
+    inline uint32_t get_swapchain_image_count () const { return this->swapchain.GetImageCount (); }
+    inline VkFormat get_depth_format () const { return this->depth_buffer.format; }
 
     VkCommandBuffer begin_frame ();
     void end_frame (VkCommandBuffer command_buffer);

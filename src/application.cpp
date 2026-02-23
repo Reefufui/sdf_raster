@@ -7,6 +7,7 @@
 #include "application.hpp"
 #include "compute_shader_renderer.hpp"
 #include "cpu_sandbox/cpu_sandbox.h"
+#include "gui.hpp"
 #include "logger.hpp"
 #include "marching_cubes.hpp"
 #include "mesh_shader_renderer.hpp"
@@ -29,6 +30,7 @@ Application::Application (int a_width, int a_height, bool a_mesh_shader_support)
         init_window ();
         init_vulkan (a_mesh_shader_support);
         init_renderer (a_mesh_shader_support);
+        // init_gui ();
 
         float f_width = static_cast <float> (width);
         float f_height = static_cast <float> (height);
@@ -86,6 +88,12 @@ void Application::run (bool single_frame) {
             this->last_frame = current_frame;
 
             glfwPollEvents ();
+            int iconified = glfwGetWindowAttrib (this->window, GLFW_ICONIFIED);
+            if (iconified) {
+                std::this_thread::sleep_for (std::chrono::milliseconds (100));
+                continue;
+            }
+
             this->process_input ();
 
             double current_time = glfwGetTime ();
@@ -137,6 +145,9 @@ void Application::init_window () {
 }
 
 void Application::init_vulkan (bool a_mesh_shader_support) {
+    if (!glfwVulkanSupported ()) {
+        throw std::runtime_error ("Vulkan not supported.");
+    }
     this->vulkan_context = std::make_shared <VulkanContext> ();
     this->vulkan_context->init (this->window, this->width, this->height, a_mesh_shader_support);
 }
@@ -150,6 +161,28 @@ void Application::init_renderer (bool a_mesh_shader_support) {
     SdfOctree scene {};
     load_sdf_octree (scene, "./assets/sdf/lowpoly_bunny.octree");
     this->renderer->init (this->width, this->height, std::move (scene));
+}
+
+void Application::init_gui () {
+    std::vector <VkImageView> swapchain_image_views (this->vulkan_context->get_swapchain_image_count ());
+    for (size_t i = 0; i < swapchain_image_views.size (); i++) {
+        swapchain_image_views [i] = this->vulkan_context->get_swapchain_image_view (i);
+    }
+
+    gui::InitInfo init_info {
+        .device = this->vulkan_context->get_device (),
+        .window = this->window,
+        .instance = this->vulkan_context->get_instance (),
+        .physical_device = this->vulkan_context->get_physical_device (),
+        .graphics_queue = this->vulkan_context->get_graphics_queue (),
+        .graphics_queue_family_index = this->vulkan_context->get_graphics_queue_family_index (),
+        .swapchain_image_views = swapchain_image_views,
+        .surface_extent = this->vulkan_context->get_swapchain_extent (),
+        .surface_format = this->vulkan_context->get_swapchain_image_format (),
+        .depth_format = this->vulkan_context->get_depth_format (),
+    };
+
+    gui::init (init_info);
 }
 
 void Application::cleanup () {

@@ -80,7 +80,7 @@ void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support)
             , width
             , height
             , this->max_frames_in_swapchain
-            , true);
+            , false);
 
     if (!vk_utils::getSupportedDepthFormat (this->get_physical_device (), {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &this->depth_buffer.format)) {
         throw std::runtime_error ("couldn't find supported depth format");

@@ -52,6 +52,11 @@ private:
     float delta_time = 0.0f;
     float last_frame = 0.0f;
 
+    std::vector <float> frame_times;
+    const size_t max_frame_times = 60;
+    float total_frame_time = 0.0f;
+    bool dump_snapshot = false;
+
     struct UserData {
         Application* app;
     } user_data;

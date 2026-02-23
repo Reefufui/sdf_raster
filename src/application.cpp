@@ -87,6 +87,14 @@ void Application::run (bool single_frame) {
             this->delta_time = current_frame - last_frame;
             this->last_frame = current_frame;
 
+            this->frame_times.push_back (this->delta_time);
+            total_frame_time += this->delta_time;
+
+            if (frame_times.size () > max_frame_times) {
+                total_frame_time -= frame_times.front ();
+                frame_times.erase (frame_times.begin ());
+            }
+
             glfwPollEvents ();
             int iconified = glfwGetWindowAttrib (this->window, GLFW_ICONIFIED);
             if (iconified) {
@@ -102,6 +110,12 @@ void Application::run (bool single_frame) {
 
             this->camera.update ();
             this->renderer->render (this->camera);
+
+            if (this->dump_snapshot) {
+                float current_fps = (total_frame_time > 0.0f && !frame_times.empty()) ? (static_cast<float>(frame_times.size()) / total_frame_time) : 0.0f;
+                LOG_INFO ("FPS: {:.2f}", current_fps);
+                this->dump_snapshot = false;
+            }
         } while (!glfwWindowShouldClose (this->window) && !single_frame);
     } catch (...) {
         cleanup ();
@@ -281,6 +295,10 @@ void Application::key_callback (GLFWwindow* a_window, int key, int, int action, 
                 app->c_key_pressed_this_frame = false;
             }
         }
+    }
+
+    if (key == GLFW_KEY_I && action == GLFW_PRESS) {
+        app->dump_snapshot = true;
     }
 }
 

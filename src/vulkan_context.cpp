@@ -562,7 +562,7 @@ void VulkanContext::create_swapchain (uint32_t width, uint32_t height) {
             , width
             , height
             , this->max_frames_in_swapchain
-            , false);
+            , true);
 
     this->gpu_ready_to_present.resize (this->swapchain.GetImageCount ());
 

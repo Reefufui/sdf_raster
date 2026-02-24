@@ -23,9 +23,8 @@ public:
     explicit ComputeShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context);
     ~ComputeShaderRenderer ();
 
-    void init (int a_width, int a_height, SdfOctree&& a_sdf_octree) override;
+    void init (SdfOctree&& a_sdf_octree) override;
     void render (const Camera& a_camera) override;
-    void resize (int a_width, int a_height) override;
     void shutdown () override;
 
 private:
@@ -42,7 +41,7 @@ private:
     void register_resizable ();
 
     void init_graphics_frustum_pipeline ();
-    void toggle_frustum_buffer (Camera& camera);
+    void toggle_frustum_buffer (Camera& camera) override;
 
     void update_push_constants (const Camera& camera, size_t current_frame);
     void update_frustum_buffer (const Camera& camera, size_t current_frame);
@@ -71,7 +70,6 @@ private:
     HZBufferDescriptorSetInfo hz_buffer_ds {};
     FrustumDescriptorSetInfo frustum_ds {};
 
-    VkRenderPass render_pass {VK_NULL_HANDLE};
     VkPipelineLayout graphics_pipeline_layout {VK_NULL_HANDLE};
     VkPipeline graphics_pipeline {VK_NULL_HANDLE};
     VkPipelineLayout graphics_frustum_pipeline_layout {VK_NULL_HANDLE};
@@ -90,8 +88,6 @@ private:
     VkPipelineLayout compute_prefix_sum_pass2_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_prefix_sum_pass3_pipeline_layout {VK_NULL_HANDLE};
 
-    int width {};
-    int height {};
     SdfOctree sdf_octree {};
     std::vector <NodeContext> subtrees {};
     std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer {nullptr};

@@ -14,8 +14,7 @@ namespace sdf_raster {
 
 class Application {
 public:
-    Application (int a_width, int a_height);
-    Application (int width, int height, bool a_mesh_shader_support);
+    Application ();
     ~Application ();
 
     void run (bool single_frame);
@@ -23,8 +22,8 @@ public:
 
 private:
     void cleanup ();
-    void init_renderer (bool a_mesh_shader_suppport);
-    void init_vulkan (bool a_mesh_shader_suppport);
+    void init_renderer ();
+    void init_vulkan ();
     void init_window ();
     void init_gui ();
     void process_input ();
@@ -38,11 +37,8 @@ private:
 
 private:
     GLFWwindow* window;
-    int width;
-    int height;
 
     bool camera_mode_active = true;
-    bool escape_pressed_last_frame = false;
     bool c_key_pressed_this_frame = false;
 
     Camera camera;

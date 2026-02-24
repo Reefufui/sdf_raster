@@ -295,20 +295,6 @@ void cleanup_draw_indexed_indirect_command_descriptor_set (VkDevice device, Draw
     info = {};
 }
 
-namespace {
-
-std::ostream& operator<< (std::ostream& os, const NodeContext& context) {
-    os << "NodeContext {"
-        << " min_corner: (" << context.min_corner_x << "," << context.min_corner_y << "," << context.min_corner_z << ")"
-        << " voxel_size: " << context.voxel_size << ","
-        << " node_index: " << context.node_index << ","
-        << " cube_index: " << context.cube_index
-        << " }";
-    return os;
-}
-
-}
-
 std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend, bool verbose) {
     std::vector <NodeContext> payloads;
 
@@ -427,50 +413,6 @@ int get_octree_max_depth (const SdfOctree& scene) {
     }
 
     return max_overall_depth;
-}
-
-void dump_octree_subtree_pretty (const SdfOctree& scene, uint32_t subtree_root_node_idx, int max_display_depth, const std::string& prefix, int current_display_depth) {
-    // if (subtree_root_node_idx >= scene.nodes.size()) {
-    //     LOG_ERROR ("node index {} is out of bounds", subtree_root_node_idx);
-    //     return;
-    // }
-    //
-    // if (max_display_depth != -1 && current_display_depth > max_display_depth) {
-    //     return;
-    // }
-    //
-    // const SdfOctreeNode& node = scene.nodes [subtree_root_node_idx];
-    //
-    // std::cout << prefix << (current_display_depth == 0 ? "" : "|-- ")
-    //           << "Node [" << subtree_root_node_idx << "], Display Depth: " << current_display_depth;
-    // if (node.offset == 0) {
-    //     std::cout << ", Type: Leaf\n";
-    //     for (int i = 0; i < 8; ++i) {
-    //         std::cout << prefix << "|-- |-- "
-    //             << "value [" << i << "] = " << node.values [i] << std::endl;
-    //     }
-    // } else {
-    //     std::cout << ", Type: Internal (children offset: " << node.offset << ")";
-    // }
-    // std::cout << std::endl;
-    //
-    // if (node.offset != 0 && (max_display_depth == -1 || current_display_depth < max_display_depth)) {
-    //     std::string child_prefix = prefix + (current_display_depth == 0 ? "" : "|   ");
-    //
-    //     for (int i = 0; i < 8; ++i) {
-    //         uint32_t child_node_idx = node.offset + i;
-    //
-    //         std::string branch_prefix = child_prefix + (i == 7 ? "    " : "|   ");
-    //
-    //         dump_octree_subtree_pretty (
-    //             scene,
-    //             child_node_idx,
-    //             max_display_depth,
-    //             branch_prefix,
-    //             current_display_depth + 1
-    //         );
-    //     }
-    // }
 }
 
 std::vector <NodeContext> fetch_active_leafs (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t active_leafs_count, size_t frame) {

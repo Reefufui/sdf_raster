@@ -29,8 +29,6 @@ namespace sdf_raster {
 
 ComputeShaderRenderer::ComputeShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context)
     : context (vulkan_context)
-    , width (0)
-    , height (0)
     , initialized (false) {
     if (!this->context) {
         throw std::invalid_argument("VulkanContext cannot be null.");
@@ -40,13 +38,11 @@ ComputeShaderRenderer::ComputeShaderRenderer (std::shared_ptr <VulkanContext> vu
 ComputeShaderRenderer::~ComputeShaderRenderer () {
 }
 
-void ComputeShaderRenderer::init (int a_width, int a_height, SdfOctree&& a_sdf_octree) {
+void ComputeShaderRenderer::init (SdfOctree&& a_sdf_octree) {
     if (!this->context || !this->context->is_initialized ()) {
         throw std::runtime_error ("[ComputeShaderRenderer::init] VulkanContext is not initialized before renderer init.");
     }
 
-    this->width = a_width;
-    this->height = a_height;
     if (a_sdf_octree.nodes.size ()) {
         this->sdf_octree = std::move (a_sdf_octree);
     } else {
@@ -308,17 +304,19 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
+    auto extent = this->context->get_swapchain_extent ();
+
     VkViewport viewport {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = (float) this->width;
-    viewport.height = (float) this->height;
+    viewport.width = (float) extent.width;
+    viewport.height = (float) extent.height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor {};
     scissor.offset = {0, 0};
-    scissor.extent = {(uint32_t) this->width, (uint32_t) this->height};
+    scissor.extent = {(uint32_t) extent.width, (uint32_t) extent.height};
 
     VkPipelineViewportStateCreateInfo viewportState {};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -457,17 +455,19 @@ void ComputeShaderRenderer::init_graphics_frustum_pipeline () {
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
+    auto extent = this->context->get_swapchain_extent ();
+
     VkViewport viewport {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = (float) this->width;
-    viewport.height = (float) this->height;
+    viewport.width = (float) extent.width;
+    viewport.height = (float) extent.height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor {};
     scissor.offset = {0, 0};
-    scissor.extent = {(uint32_t) this->width, (uint32_t) this->height};
+    scissor.extent = {(uint32_t) extent.width, (uint32_t) extent.height};
 
     VkPipelineViewportStateCreateInfo viewportState {};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -673,18 +673,18 @@ void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff, size_t cur
     );
 }
 
-void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff, size_t current_frame) {
+void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff, size_t /*current_frame*/) {
     // expects layout of hz_buffer_ds mip-images to be VK_IMAGE_LAYOUT_GENERAL
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_hz_buffer_pipeline);
 
     const auto extent = this->context->get_swapchain_extent ();
 
     for (uint32_t i = 0; i < this->hz_buffer_ds.hz_buffer.mipLvls - 1; ++i) {
-        const uint32_t srcMip = i;
+        // const uint32_t srcMip = i;
         const uint32_t dstMip = i + 1;
 
-        uint32_t srcWidth = std::max (1u, extent.width >> srcMip);
-        uint32_t srcHeight = std::max (1u, extent.height >> srcMip);
+        // uint32_t srcWidth = std::max (1u, extent.width >> srcMip);
+        // uint32_t srcHeight = std::max (1u, extent.height >> srcMip);
         uint32_t dstWidth = std::max (1u, extent.width >> dstMip);
         uint32_t dstHeight = std::max (1u, extent.height >> dstMip);
 
@@ -1165,11 +1165,6 @@ void ComputeShaderRenderer::render (const Camera& camera) {
         dump = true;
         vkDeviceWaitIdle (this->context->get_device ());
     }
-}
-
-void ComputeShaderRenderer::resize (int a_width, int a_height) {
-    this->width = a_width;
-    this->height = a_height;
 }
 
 void ComputeShaderRenderer::shutdown () {

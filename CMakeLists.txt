@@ -10,12 +10,24 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-if (NOT DEFINED ENV{VULKAN_SDK})
-    message(FATAL_ERROR "VULKAN_SDK environment variable not set. Please set it before running cmake (e.g., source /etc/profile.d/vulkan_sdk.sh).")
+if (CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
+    set(VULKAN_SDK_REQUIRED TRUE)
+else()
+    set(VULKAN_SDK_REQUIRED FALSE)
 endif()
 
-if (NOT EXISTS "$ENV{VULKAN_SDK}")
-    message(FATAL_ERROR "VULKAN_SDK path does not exist: $ENV{VULKAN_SDK}. Please check your environment variable.")
+if (VULKAN_SDK_REQUIRED)
+    if (NOT DEFINED ENV{VULKAN_SDK})
+        message(FATAL_ERROR "VULKAN_SDK environment variable not set. Please set it before running cmake (e.g., source /etc/profile.d/vulkan_sdk.sh).")
+    endif()
+
+    if (NOT EXISTS "$ENV{VULKAN_SDK}")
+        message(FATAL_ERROR "VULKAN_SDK path does not exist: $ENV{VULKAN_SDK}. Please check your environment variable.")
+    endif()
+
+    set(VULKAN_SDK_ROOT "$ENV{VULKAN_SDK}")
+else()
+    message(STATUS "Vulkan SDK is not required for this build configuration (${CMAKE_BUILD_TYPE}).")
 endif()
 
 if (APPLE)
@@ -26,8 +38,36 @@ else()
     set(VULKAN_LIB_EXT ".so")
 endif()
 
-set(Vulkan_FOUND TRUE)
-set(VULKAN_SDK_ROOT "$ENV{VULKAN_SDK}")
+find_package(Vulkan REQUIRED)
+message(STATUS "Vulkan ${Vulkan_VERSION} found: ${Vulkan_FOUND}")
+message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
+message(STATUS "Vulkan libraries: ${Vulkan_LIBRARIES}")
+
+set (REQUIRED_VULKAN_MAJOR 1)
+set (REQUIRED_VULKAN_MINOR 4)
+set (REQUIRED_VULKAN_VERSION_STRING "${REQUIRED_VULKAN_MAJOR}.${REQUIRED_VULKAN_MINOR}")
+
+if (NOT DEFINED Vulkan_VERSION OR "${Vulkan_VERSION}" STREQUAL "")
+    message (FATAL_ERROR "Could not determine Vulkan API version from found Vulkan installation. 'Vulkan_VERSION' variable is not set by find_package (Vulkan).")
+endif ()
+
+string (REGEX MATCH "^([0-9]+)\\.([0-9]+)" _match_result "${Vulkan_VERSION}")
+if (NOT _match_result)
+    message (FATAL_ERROR "Could not parse major.minor version from Vulkan_VERSION string '${Vulkan_VERSION}'. Expected format like 'X.Y.Z'.")
+endif ()
+
+set (FOUND_VULKAN_MAJOR "${CMAKE_MATCH_1}")
+set (FOUND_VULKAN_MINOR "${CMAKE_MATCH_2}")
+
+message (STATUS "Parsed Vulkan API version from string: ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR}")
+
+if (FOUND_VULKAN_MAJOR LESS REQUIRED_VULKAN_MAJOR)
+    message (FATAL_ERROR "Found Vulkan API version ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR} is below the required minimum version ${REQUIRED_VULKAN_VERSION_STRING}. Please update your Vulkan drivers/SDK.")
+elseif (FOUND_VULKAN_MAJOR EQUAL REQUIRED_VULKAN_MAJOR AND FOUND_VULKAN_MINOR LESS REQUIRED_VULKAN_MINOR)
+    message(FATAL_ERROR "Found Vulkan API version ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR} is below the required minimum version ${REQUIRED_VULKAN_VERSION_STRING}. Please update your Vulkan drivers/SDK.")
+else ()
+    message(STATUS "Found Vulkan API version ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR} meets or exceeds the required minimum version ${REQUIRED_VULKAN_VERSION_STRING}.")
+endif ()
 
 include(FetchContent)
 
@@ -121,11 +161,6 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(spdlog_project)
 message(STATUS "spdlog_project is available (SOURCE_DIR: ${spdlog_project_SOURCE_DIR})")
 
-find_package(Vulkan REQUIRED)
-message(STATUS "Vulkan found: ${Vulkan_FOUND}")
-message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
-message(STATUS "Vulkan libraries: ${Vulkan_LIBRARIES}")
-
 add_executable(${PROJECT_NAME}
     ${litemath_SOURCE_DIR}/Image2d.cpp
     ${vk_utils_project_SOURCE_DIR}/vk_alloc_simple.cpp
@@ -153,7 +188,7 @@ add_executable(${PROJECT_NAME}
     src/main.cpp
     src/marching_cubes_lookup_table.cpp
     src/marching_cubes.cpp
-    src/mesh_shader_renderer.cpp
+    # DEPRECATED: src/mesh_shader_renderer.cpp
     src/mesh.cpp
     src/occlusion_culling.cpp
     src/sdf_octree.cpp
@@ -164,13 +199,18 @@ add_executable(${PROJECT_NAME}
     src/cpu_sandbox/mesh_constructor.cpp
 )
 
-target_include_directories(${PROJECT_NAME} PRIVATE "${VULKAN_SDK_ROOT}/include")
+if (VULKAN_SDK_REQUIRED)
+    target_include_directories(${PROJECT_NAME} PRIVATE "${VULKAN_SDK_ROOT}/include")
+    link_directories("${VULKAN_SDK_ROOT}/lib")
 
-link_directories("${VULKAN_SDK_ROOT}/lib")
+    if (NOT EXISTS "${VULKAN_SDK_ROOT}/lib/libvulkan${VULKAN_LIB_EXT}")
+        message(FATAL_ERROR "Could not find Vulkan loader library at ${VULKAN_SDK_ROOT}/lib/libvulkan${VULKAN_LIB_EXT}. Please check your Vulkan SDK installation.")
+    endif()
 
-if (NOT EXISTS "${VULKAN_SDK_ROOT}/lib/libvulkan${VULKAN_LIB_EXT}")
-     message(FATAL_ERROR "Could not find Vulkan loader library at ${VULKAN_SDK_ROOT}/lib/libvulkan${VULKAN_LIB_EXT}. Please check your Vulkan SDK installation.")
-endif()
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        INSTALL_RPATH "$ENV{VULKAN_SDK}/lib")
+
+endif ()
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC USE_STB_IMAGE)
 target_compile_definitions(${PROJECT_NAME} PRIVATE USE_VOLK)
@@ -194,13 +234,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     spdlog
 )
 
-set_target_properties(${PROJECT_NAME} PROPERTIES
-    INSTALL_RPATH "$ENV{VULKAN_SDK}/lib"
-)
-
-target_compile_options(${PROJECT_NAME} PRIVATE -fopenmp)
-target_link_options(${PROJECT_NAME} PRIVATE -fopenmp)
-
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     message(STATUS "Configuring for Debug build...")
     target_compile_options(${PROJECT_NAME} PRIVATE -g -O0 -Wall -Wextra)
@@ -218,44 +251,70 @@ elseif(CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
     target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO VULKAN_VALIDATION_LAYERS=1)
 endif()
 
-target_compile_options(${PROJECT_NAME} PRIVATE -fmax-errors=1 -Wno-deprecated-copy)
+target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-copy)
 
-set(SLANGC "$ENV{VULKAN_SDK}/bin/slangc")
-message(STATUS "Found slang: ${SLANGC}.")
-if (NOT EXISTS "${SLANGC}")
-    message(FATAL_ERROR "Slang compiler not found at expected location: ${SLANGC}. Please check your VULKAN_SDK installation.")
+set (SLANGC "")
+set (SLANG_COMPILER "" CACHE PATH "Path to the Slang compiler (slangc) executable. Overrides VULKAN_SDK's slangc if set.")
+if (SLANG_COMPILER)
+    if (EXISTS "${SLANG_COMPILER}" AND IS_EXECUTABLE "${SLANG_COMPILER}")
+        set (SLANGC "${SLANG_COMPILER}")
+        message (STATUS "Using user-specified slangc: ${SLANGC}")
+    else ()
+        message( FATAL_ERROR "User-specified Slang compiler '${SLANG_COMPILER}' is not a valid executable or does not exist.")
+    endif ()
+endif ()
+
+if (NOT SLANGC AND VULKAN_SDK_REQUIRED)
+    set (SDK_SLANGC "$ENV{VULKAN_SDK}/bin/slangc")
+    if (EXISTS "${SDK_SLANGC}" AND IS_EXECUTABLE "${SDK_SLANGC}")
+        set (SLANGC "${SDK_SLANGC}")
+        message (STATUS "Using slangc from VULKAN_SDK: ${SLANGC}")
+    else ()
+        message (WARNING "VULKAN_SDK found (${VULKAN_SDK_ROOT}), but slangc not found at '${SDK_SLANGC}' or is not executable. Attempting to find slangc in system PATH.")
+    endif ()
+endif ()
+
+if (NOT SLANGC)
+    find_program (SLANG_COMPILER_EXECUTABLE slangc)
+    if (SLANG_COMPILER_EXECUTABLE)
+        set (SLANGC "${SLANG_COMPILER_EXECUTABLE}")
+        set (SLANG_COMPILER_EXECUTABLE ${SLANG_COMPILER_EXECUTABLE} CACHE PATH "Path to the Slang compiler (slangc) executable if not using Vulkan SDK's version." FORCE)
+        message (STATUS "Found slangc in PATH: ${SLANG_COMPILER_EXECUTABLE}")
+    else ()
+        message (FATAL_ERROR "slangc not found. Please set the SLANG_COMPILER CMake variable or ensure slangc is in your PATH.")
+    endif ()
+endif ()
+
+if (SLANGC)
+    set(SLANG_SHADERS_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders)
+    set(SPIRV_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/assets/shaders)
+
+    file(GLOB_RECURSE SLANG_SOURCE_FILES
+        "${SLANG_SHADERS_SOURCE_DIR}/*.slang"
+        )
+
+    list(APPEND BUILT_SPIRV_FILES)
+
+    foreach(SLANG_FILE ${SLANG_SOURCE_FILES})
+        get_filename_component(FILE_NAME ${SLANG_FILE} NAME)
+        set(OUTPUT_SPV_FILE "${SPIRV_OUTPUT_DIR}/${FILE_NAME}.spv")
+
+        add_custom_command(
+            OUTPUT ${OUTPUT_SPV_FILE}
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SPIRV_OUTPUT_DIR}/"
+            COMMAND ${SLANGC} ${SLANG_FILE} -o ${OUTPUT_SPV_FILE} -target spirv
+            DEPENDS ${SLANG_FILE}
+            VERBATIM
+            )
+        list(APPEND BUILT_SPIRV_FILES ${OUTPUT_SPV_FILE})
+    endforeach()
+
+    add_custom_target(CompileSlangShaders ALL DEPENDS ${BUILT_SPIRV_FILES})
+
+    add_dependencies(${PROJECT_NAME} CompileSlangShaders)
+else()
+    message(WARNING "Slang compiler not found or specified. Shader compilation targets will be skipped.")
 endif()
-if(NOT SLANGC)
-    message(FATAL_ERROR "slangc not found. Ensure Slang compiler is installed and in your PATH.")
-endif()
-
-set(SLANG_SHADERS_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders)
-set(SPIRV_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/assets/shaders)
-
-file(GLOB_RECURSE SLANG_SOURCE_FILES
-    "${SLANG_SHADERS_SOURCE_DIR}/*.slang"
-    )
-
-list(APPEND BUILT_SPIRV_FILES)
-
-foreach(SLANG_FILE ${SLANG_SOURCE_FILES})
-    get_filename_component(FILE_NAME ${SLANG_FILE} NAME)
-    set(OUTPUT_SPV_FILE "${SPIRV_OUTPUT_DIR}/${FILE_NAME}.spv")
-
-    add_custom_command(
-        OUTPUT ${OUTPUT_SPV_FILE}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${SPIRV_OUTPUT_DIR}/"
-        COMMAND ${SLANGC} ${SLANG_FILE} -o ${OUTPUT_SPV_FILE} -target spirv
-        DEPENDS ${SLANG_FILE}
-        VERBATIM
-    )
-    list(APPEND BUILT_SPIRV_FILES ${OUTPUT_SPV_FILE})
-endforeach()
-
-add_custom_target(CompileSlangShaders ALL DEPENDS ${BUILT_SPIRV_FILES})
-
-add_dependencies(${PROJECT_NAME} CompileSlangShaders)
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/assets/)
 
 set(SDF_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/sdf")
 set(SDF_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/assets/sdf")
@@ -265,4 +324,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${SDF_SOURCE_DIR}" "${SDF_BINARY_DIR}"
     COMMENT "Copying assets/sdf to binary directory"
 )
+
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/assets/)
 

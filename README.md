@@ -30,7 +30,7 @@ The goal of this **master degree diploma** project is to develop accelerated imp
 ## Technology Stack
 
 *   **Language:** `C++17` (or higher)
-*   **Graphics API:** `Vulkan`
+*   **Graphics API:** `Vulkan 4.0+`
 *   **Build System:** `CMake`
 *   **Windowing System:** `GLFW`
 *   **Third-party Libraries:**
@@ -47,10 +47,10 @@ The goal of this **master degree diploma** project is to develop accelerated imp
 
 ### Prerequisites
 
-*   **C++ Compiler:** g++-15
+*   **Vulkan Libraries (optional Vulkan SDK for Debug):** `Vulkan 4.0+`
+*   **C++ Compiler:** g++ or clang.
+*   **Shader Compiler:** slangc. See script `./utils/install_slang.sh` for quick install or use Vulkan SDK.
 *   **CMake:** Version `3.16` or newer.
-*   **Vulkan SDK:** Installed and properly configured. The `VULKAN_SDK` environment variable must be set. See script `utils/install_vulkan_sdk_apt.sh` for quick linux setup.
-
 *   **OS:** Linux, macOS. **Windows is not supported.**
 
 ### Build Instructions
@@ -69,15 +69,15 @@ The goal of this **master degree diploma** project is to develop accelerated imp
         cmake --build build -j$(nproc)
         ```
         *Optionally, replace `-DCMAKE_BUILD_TYPE=Release` with `Debug` or `RelWithDebInfo`.*
+        *Make sure that **Vulkan SDK:** is installed and properly configured. The `VULKAN_SDK` environment variable must be set. See script `utils/install_vulkan_sdk_apt.sh` for quick linux setup.
 
     *   **For macOS:**
         ```bash
-        # --- Using g++-15 (OpenMP support, sorry) ---
-        cmake -B build -S . -DCMAKE_CXX_COMPILER=g++-15 -DCMAKE_BUILD_TYPE=Release
-        cmake --build build -j$(nproc)
-
+        cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+        cmake --build build -j$(sysctl -n hw.ncpu)
         ```
         *Optionally, replace `-DCMAKE_BUILD_TYPE=Release` with `Debug` or `RelWithDebInfo`.*
+        *Make sure that **Vulkan SDK:** is installed and properly configured. The `VULKAN_SDK` environment variable must be set.
 
 ## Running the Project
 **Important:** The application must be run from the `build` directory to ensure all resources are loaded correctly.
@@ -92,16 +92,18 @@ cd build
 ## Usage and Controls
 
 *   **Toggle Camera Mode:**
-    *   `any mouse click | esc`: Exit flying camera mode. (Cursor becomes enabled).
-    *   `right mouse click`: Enter flying camera mode. (Cursor becomes disabled).
+    *   `click | esc`: Exit flying camera mode. (Cursor becomes enabled).
+    *   `right click`: Enter flying camera mode. (Cursor becomes disabled).
 *   **Movement (in Camera Mode):**
     *   `w, a, s, d`: Move forwards, left, backwards, right.
     *   `space`: Move up.
     *   `ctrl (control)`: Move down.
-    *   `mouse movement`: Look around.
-    *   `mouse scroll wheel`: Adjust FOV.
+    *   `mouse`: Look around.
+    *   `scroll`: Adjust FOV.
 *   **Camera Reset:**
     *   `r`: Reset camera position and orientation.
+*   **FPS dump::**
+    *   `i`: Dump current FPS to log.
 *   **Toggle Frustum View:**
     *   `c`: Toggle culling visualization (to see which parts are rendered).
 *   **Exit Application:**

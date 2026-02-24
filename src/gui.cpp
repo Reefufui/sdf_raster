@@ -137,15 +137,6 @@ void UI::create_depth_buffer () {
     VkFormatProperties format_properties;
     vkGetPhysicalDeviceFormatProperties (m_physicalDevice, m_depthFormat, &format_properties);
 
-    VkImageTiling tiling = VK_IMAGE_TILING_OPTIMAL;
-    if (!(format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
-        tiling = VK_IMAGE_TILING_LINEAR;
-        if (!(format_properties.linearTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
-            throw std::runtime_error ("DepthStencilAttachment is not supported for optimal or linear tiling of depth format!");
-        }
-        LOG_WARN ("[UI] Optimal tiling not supported for depth format, falling back to linear.");
-    }
-
     VkImageCreateInfo image_info {};
     image_info.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     image_info.imageType     = VK_IMAGE_TYPE_2D;

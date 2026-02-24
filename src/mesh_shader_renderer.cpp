@@ -302,11 +302,6 @@ void MeshShaderRenderer::render (const Camera& a_camera) {
     this->context->end_frame (cmd_buff);
 }
 
-void MeshShaderRenderer::resize (int a_width, int a_height) {
-    this->width = a_width;
-    this->height = a_height;
-}
-
 void MeshShaderRenderer::shutdown () {
     vkDeviceWaitIdle (this->context->get_device ());
 

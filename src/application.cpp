@@ -15,29 +15,13 @@
 
 namespace sdf_raster {
 
-Application::Application (int a_width, int a_height)
-    : width ((a_width == 0) ? 1080 : a_width)
-    , height ((a_height == 0) ? 900 : a_height)
-    , user_data ({this}) {
-    camera.set_aspect_ratio (static_cast <float> (a_width) / static_cast <float> (a_height));
-}
-
-Application::Application (int a_width, int a_height, bool a_mesh_shader_support)
-    : width (a_width)
-    , height (a_height)
-    , user_data ({this}) {
+Application::Application ()
+    : user_data ({this}) {
     try {
         init_window ();
-        init_vulkan (a_mesh_shader_support);
-        init_renderer (a_mesh_shader_support);
+        init_vulkan ();
+        init_renderer ();
         // init_gui ();
-
-        float f_width = static_cast <float> (width);
-        float f_height = static_cast <float> (height);
-        this->last_x = f_width / 2.0f;
-        this->last_y = f_height / 2.0f;
-        this->camera = Camera ();
-        this->camera.set_aspect_ratio (f_width / f_height);
     } catch (...) {
         cleanup ();
         throw;
@@ -128,9 +112,8 @@ void Application::init_window () {
     glfwWindowHint (GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint (GLFW_RESIZABLE, GLFW_TRUE);
 
-    this->width = (this->width == 0) ? 1 : this->width;
-    this->height = (this->height == 0) ? 1 : this->height;
-    this->window = glfwCreateWindow (this->width, this->height, APP_NAME, nullptr, nullptr);
+    glfwWindowHint (GLFW_MAXIMIZED, GLFW_TRUE);
+    this->window = glfwCreateWindow (1080, 900, APP_NAME, nullptr, nullptr);
     if (!this->window) {
         glfwTerminate ();
         throw std::runtime_error ("Failed to create GLFW window.");
@@ -147,34 +130,37 @@ void Application::init_window () {
     this->camera_mode_active = true;
     this->first_mouse = true;
 
-    if (this->width == 1 || this->height == 1) {
-        glfwMaximizeWindow (this->window);
-        glfwGetWindowSize (this->window, &this->width, &this->height);
-        LOG_INFO ("maximized window dimensions: {}x{}", this->width, this->height);
-    }
+    int width, height;
+    glfwGetWindowSize (this->window, &width, &height);
+    LOG_INFO ("Window dimensions: {}x{}", width, height);
 
-    float f_width = static_cast <float> (this->width);
-    float f_height = static_cast <float> (this->height);
+    float f_width = static_cast <float> (width);
+    float f_height = static_cast <float> (height);
+
+    this->camera = Camera ();
     this->camera.set_aspect_ratio (f_width / f_height);
+
+    this->last_x = f_width / 2.0f;
+    this->last_y = f_height / 2.0f;
 }
 
-void Application::init_vulkan (bool a_mesh_shader_support) {
+void Application::init_vulkan () {
     if (!glfwVulkanSupported ()) {
         throw std::runtime_error ("Vulkan not supported.");
     }
     this->vulkan_context = std::make_shared <VulkanContext> ();
-    this->vulkan_context->init (this->window, this->width, this->height, a_mesh_shader_support);
+
+    int width, height;
+    glfwGetWindowSize (this->window, &width, &height);
+    this->vulkan_context->init (this->window, width, height, false);
 }
 
-void Application::init_renderer (bool a_mesh_shader_support) {
-    if (a_mesh_shader_support) {
-        this->renderer = std::make_unique <MeshShaderRenderer> (this->vulkan_context);
-    } else {
-        this->renderer = std::make_unique <ComputeShaderRenderer> (this->vulkan_context);
-    }
+void Application::init_renderer () {
+    this->renderer = std::make_unique <ComputeShaderRenderer> (this->vulkan_context);
+
     SdfOctree scene {};
     load_sdf_octree (scene, "./assets/sdf/lowpoly_bunny.octree");
-    this->renderer->init (this->width, this->height, std::move (scene));
+    this->renderer->init (std::move (scene));
 }
 
 void Application::init_gui () {
@@ -234,9 +220,6 @@ void Application::process_input () {
 void Application::framebuffer_resize_callback (GLFWwindow* a_window, int a_width, int a_height) {
     auto app = get_app_ptr (a_window);
     if (app && app->renderer) {
-        app->width = a_width;
-        app->height = a_height;
-        app->renderer->resize (a_width, a_height);
         app->camera.set_aspect_ratio (static_cast <float> (a_width) / static_cast <float> (a_height));
     }
 }

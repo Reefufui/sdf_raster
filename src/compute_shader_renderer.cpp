@@ -675,77 +675,102 @@ void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
         return;
     }
 
-    VkImageMemoryBarrier depth_to_src = {};
-    depth_to_src.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    depth_to_src.pNext = nullptr;
-    depth_to_src.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    depth_to_src.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    depth_to_src.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depth_to_src.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    depth_to_src.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    depth_to_src.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    depth_to_src.image = f.prev_depth_image;
-    depth_to_src.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    depth_to_src.subresourceRange.baseMipLevel = 0;
-    depth_to_src.subresourceRange.levelCount = 1;
-    depth_to_src.subresourceRange.baseArrayLayer = 0;
-    depth_to_src.subresourceRange.layerCount = 1;
+    if (!this->frustum_draw_buffer) {
+        VkImageMemoryBarrier depth_to_src = {};
+        depth_to_src.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        depth_to_src.pNext = nullptr;
+        depth_to_src.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        depth_to_src.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        depth_to_src.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depth_to_src.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        depth_to_src.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        depth_to_src.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        depth_to_src.image = f.prev_depth_image;
+        depth_to_src.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        depth_to_src.subresourceRange.baseMipLevel = 0;
+        depth_to_src.subresourceRange.levelCount = 1;
+        depth_to_src.subresourceRange.baseArrayLayer = 0;
+        depth_to_src.subresourceRange.layerCount = 1;
 
-    vkCmdPipelineBarrier (cmd_buff
-        , VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
-        , VK_PIPELINE_STAGE_TRANSFER_BIT
-        , 0
-        , 0, nullptr
-        , 0, nullptr
-        , 1, &depth_to_src
-    );
+        vkCmdPipelineBarrier (cmd_buff
+            , VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
+            , VK_PIPELINE_STAGE_TRANSFER_BIT
+            , 0
+            , 0, nullptr
+            , 0, nullptr
+            , 1, &depth_to_src);
 
-    VkBufferImageCopy buffer_image_copy_region {
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource = {
-            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        },
-        .imageOffset = { 0, 0, 0 },
-        .imageExtent = { this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height, 1 }
-    };
+        VkBufferImageCopy buffer_image_copy_region {
+            .bufferOffset = 0,
+            .bufferRowLength = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+            .imageOffset = { 0, 0, 0 },
+            .imageExtent = { this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height, 1 }
+        };
 
-    vkCmdCopyImageToBuffer (cmd_buff
-         , f.prev_depth_image
-         , VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
-         , f.transition_buffer
-         , 1, &buffer_image_copy_region);
+        vkCmdCopyImageToBuffer (cmd_buff
+            , f.prev_depth_image
+            , VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+            , f.transition_buffer
+            , 1, &buffer_image_copy_region);
 
-    VkBufferMemoryBarrier transition_barrier {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .buffer = f.transition_buffer,
-        .offset = 0,
-        .size = VK_WHOLE_SIZE
-    };
+        VkBufferMemoryBarrier transition_barrier {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = f.transition_buffer,
+            .offset = 0,
+            .size = VK_WHOLE_SIZE
+        };
 
-    vkCmdPipelineBarrier (cmd_buff
-        , VK_PIPELINE_STAGE_TRANSFER_BIT
-        , VK_PIPELINE_STAGE_TRANSFER_BIT
-        , 0
-        , 0, nullptr
-        , 1, &transition_barrier
-        , 0, nullptr);
+        vkCmdPipelineBarrier (cmd_buff
+            , VK_PIPELINE_STAGE_TRANSFER_BIT
+            , VK_PIPELINE_STAGE_TRANSFER_BIT
+            , 0
+            , 0, nullptr
+            , 1, &transition_barrier
+            , 0, nullptr);
 
-    buffer_image_copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        buffer_image_copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
-    vkCmdCopyBufferToImage (cmd_buff
-        , f.transition_buffer
-        , f.hz_buffer.image
-        , VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-         , 1, &buffer_image_copy_region);
+        vkCmdCopyBufferToImage (cmd_buff
+            , f.transition_buffer
+            , f.hz_buffer.image
+            , VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+            , 1, &buffer_image_copy_region);
+
+        VkImageMemoryBarrier depth_to_attachment = {};
+        depth_to_attachment.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        depth_to_attachment.pNext = nullptr;
+        depth_to_attachment.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        depth_to_attachment.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        depth_to_attachment.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        depth_to_attachment.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depth_to_attachment.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        depth_to_attachment.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        depth_to_attachment.image = f.prev_depth_image;
+        depth_to_attachment.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        depth_to_attachment.subresourceRange.baseMipLevel = 0;
+        depth_to_attachment.subresourceRange.levelCount = 1;
+        depth_to_attachment.subresourceRange.baseArrayLayer = 0;
+        depth_to_attachment.subresourceRange.layerCount = 1;
+
+        vkCmdPipelineBarrier (cmd_buff
+            , VK_PIPELINE_STAGE_TRANSFER_BIT
+            , VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
+            , 0
+            , 0, nullptr
+            , 0, nullptr
+            , 1, &depth_to_attachment);
+    }
 
     VkImageSubresourceRange first_mip_lvl {};
     first_mip_lvl.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1265,7 +1290,9 @@ void ComputeShaderRenderer::render (const Camera& camera) {
         vkDeviceWaitIdle (this->context->get_device ());
     }
 
-    prepare_next_frame_data (this->hz_buffer_ds, this->frame_index, this->context->get_depth_buffer ().image, camera.get_view_projection_matrix ());
+    if (!this->frustum_draw_buffer) {
+        prepare_next_frame_data (this->hz_buffer_ds, this->frame_index, this->context->get_depth_buffer ().image, camera.get_view_projection_matrix ());
+    }
     this->frame_index = (this->frame_index + 1) % this->context->get_total_frames ();
 }
 

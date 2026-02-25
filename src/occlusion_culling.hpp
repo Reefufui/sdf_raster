@@ -12,19 +12,22 @@ namespace sdf_raster {
 
 struct HZBufferDescriptorSetInfo {
     struct FrameResources {
-        VkImage prev_depth_image;
+        VkImage prev_depth_image = VK_NULL_HANDLE;
         LiteMath::float4x4 prev_view_proj;
 
         std::vector <VkDescriptorSet> gen_descriptor_sets;
         std::vector <VkImageView> gen_image_views;
 
-        VkDescriptorSet descriptor_set;
+        VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
         vk_utils::VulkanImageMem hz_buffer;
+
+        VkBuffer transition_buffer = VK_NULL_HANDLE;
     };
     std::vector <FrameResources> frame_resources;
 
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
     VkDescriptorSetLayout gen_descriptor_set_layout = VK_NULL_HANDLE;
+    VkDeviceMemory transition_memory = VK_NULL_HANDLE;
     VkExtent2D extent;
     VkSampler sampler;
 };

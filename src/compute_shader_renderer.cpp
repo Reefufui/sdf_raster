@@ -208,7 +208,7 @@ void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
             , this->marching_cubes_lookup_table_ds.descriptor_set_layout
             , this->active_leafs_ds.descriptor_set_layout
             , this->frustum_ds.descriptor_set_layout
-            // , this->hz_buffer_ds.descriptor_set_layout
+            , this->hz_buffer_ds.descriptor_set_layout
         }, sizeof (PushConstantsData));
     this->compute_active_leafs_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
@@ -700,8 +700,52 @@ void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
         , 1, &depth_to_src
     );
 
-    // TODO: HERE: copy depth->transition_buffer->color
-    // VkOffset3D whole_image { static_cast <int32_t> (this->hz_buffer_ds.extent.width), static_cast <int32_t> (this->hz_buffer_ds.extent.height), 1 };
+    VkBufferImageCopy buffer_image_copy_region {
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+        .imageOffset = { 0, 0, 0 },
+        .imageExtent = { this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height, 1 }
+    };
+
+    vkCmdCopyImageToBuffer (cmd_buff
+         , f.prev_depth_image
+         , VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+         , f.transition_buffer
+         , 1, &buffer_image_copy_region);
+
+    VkBufferMemoryBarrier transition_barrier {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = f.transition_buffer,
+        .offset = 0,
+        .size = VK_WHOLE_SIZE
+    };
+
+    vkCmdPipelineBarrier (cmd_buff
+        , VK_PIPELINE_STAGE_TRANSFER_BIT
+        , VK_PIPELINE_STAGE_TRANSFER_BIT
+        , 0
+        , 0, nullptr
+        , 1, &transition_barrier
+        , 0, nullptr);
+
+    buffer_image_copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+    vkCmdCopyBufferToImage (cmd_buff
+        , f.transition_buffer
+        , f.hz_buffer.image
+        , VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+         , 1, &buffer_image_copy_region);
 
     VkImageSubresourceRange first_mip_lvl {};
     first_mip_lvl.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -737,48 +781,48 @@ void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
 
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
 
-    // vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_hz_buffer_pipeline);
-    //
-    // for (uint32_t i = 0; i < f.hz_buffer.mipLvls - 1; ++i) {
-    //     const uint32_t dstMip = i + 1;
-    //
-    //     uint32_t dstWidth = std::max (1u, this->hz_buffer_ds.extent.width >> dstMip);
-    //     uint32_t dstHeight = std::max (1u, this->hz_buffer_ds.extent.height >> dstMip);
-    //
-    //     vkCmdBindDescriptorSets (cmd_buff
-    //         , VK_PIPELINE_BIND_POINT_COMPUTE
-    //         , this->compute_hz_buffer_pipeline_layout
-    //         , 0, 1, &f.gen_descriptor_sets [i]
-    //         , 0, nullptr);
-    //
-    //     uint32_t groupX = (dstWidth + 15) / 16;
-    //     uint32_t groupY = (dstHeight + 15) / 16;
-    //     vkCmdDispatch (cmd_buff, groupX, groupY, 1);
-    //
-    //     VkImageMemoryBarrier barrier = {};
-    //     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    //     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    //     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    //     barrier.image = f.hz_buffer.image;
-    //     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    //     barrier.subresourceRange.baseMipLevel = dstMip;
-    //     barrier.subresourceRange.levelCount = 1;
-    //     barrier.subresourceRange.baseArrayLayer = 0;
-    //     barrier.subresourceRange.layerCount = 1;
-    //     barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    //     barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    //
-    //     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    //     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    //
-    //     vkCmdPipelineBarrier (cmd_buff
-    //         , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-    //         , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-    //         , 0
-    //         , 0, nullptr
-    //         , 0, nullptr
-    //         , 1, &barrier);
-    // }
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_hz_buffer_pipeline);
+
+    for (uint32_t i = 0; i < f.hz_buffer.mipLvls - 1; ++i) {
+        const uint32_t dstMip = i + 1;
+
+        uint32_t dstWidth = std::max (1u, this->hz_buffer_ds.extent.width >> dstMip);
+        uint32_t dstHeight = std::max (1u, this->hz_buffer_ds.extent.height >> dstMip);
+
+        vkCmdBindDescriptorSets (cmd_buff
+            , VK_PIPELINE_BIND_POINT_COMPUTE
+            , this->compute_hz_buffer_pipeline_layout
+            , 0, 1, &f.gen_descriptor_sets [i]
+            , 0, nullptr);
+
+        uint32_t groupX = (dstWidth + 15) / 16;
+        uint32_t groupY = (dstHeight + 15) / 16;
+        vkCmdDispatch (cmd_buff, groupX, groupY, 1);
+
+        VkImageMemoryBarrier barrier = {};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = f.hz_buffer.image;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = dstMip;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        vkCmdPipelineBarrier (cmd_buff
+            , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+            , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+            , 0
+            , 0, nullptr
+            , 0, nullptr
+            , 1, &barrier);
+    }
 
     VkImageSubresourceRange all_mip_lvls;
     all_mip_lvls.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -836,13 +880,13 @@ void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff
 void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
-    std::array <VkDescriptorSet, 5> ds = {
+    std::array <VkDescriptorSet, 6> ds = {
         this->sdf_octree_ds.descriptor_set, // TODO: sepparate subtree roots buffer for all frames
         this->mesh_ds.descriptor_sets [this->frame_index],
         this->marching_cubes_lookup_table_ds.descriptor_set,
         this->active_leafs_ds.descriptor_sets [this->frame_index],
-        this->frustum_ds.descriptor_sets [this->frame_index]
-        // TODO: this->hz_buffer_ds.descriptor_set
+        this->frustum_ds.descriptor_sets [this->frame_index],
+        this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline_layout,

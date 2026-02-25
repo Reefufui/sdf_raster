@@ -1,5 +1,6 @@
 #include "occlusion_culling.hpp"
 
+#include "vk_buffers.h"
 #include "vk_utils.h"
 
 namespace sdf_raster {
@@ -89,6 +90,17 @@ HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
         ds_maker.BindEnd (&f.descriptor_set, &info.descriptor_set_layout);
     }
 
+    const VkDeviceSize transition_size = width * height * sizeof (float);
+    std::vector <VkBuffer> buffers (max_frames_in_flight);
+    std::vector <VkMemoryRequirements> mem_reqs (max_frames_in_flight);
+
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
+        buffers [i] = vk_utils::createBuffer (device, transition_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, &mem_reqs [i]);
+        info.frame_resources [i].transition_buffer = buffers [i];
+    }
+
+    info.transition_memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
+
     return info;
 }
 
@@ -153,6 +165,11 @@ void cleanup_hz_buffer_descriptor_set (VkDevice device, HZBufferDescriptorSetInf
 
         f.gen_descriptor_sets.clear ();
         f.gen_image_views.clear ();
+
+        if (f.transition_buffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer (device, f.transition_buffer, nullptr);
+            f.transition_buffer = VK_NULL_HANDLE;
+        }
     }
 
     info.frame_resources.clear ();
@@ -160,6 +177,11 @@ void cleanup_hz_buffer_descriptor_set (VkDevice device, HZBufferDescriptorSetInf
     if (info.sampler != VK_NULL_HANDLE) {
         vkDestroySampler (device, info.sampler, nullptr);
         info.sampler = VK_NULL_HANDLE;
+    }
+
+    if (info.transition_memory != VK_NULL_HANDLE) {
+        vkFreeMemory (device, info.transition_memory, nullptr);
+        info.transition_memory = VK_NULL_HANDLE;
     }
 
     info = {};

@@ -100,7 +100,7 @@ private:
     std::vector <vk_utils::VulkanImageMem> depth_buffers;
     VkFormat depth_format;
     std::vector <VkSemaphore> gpu_ready_to_present;
-    const size_t max_frames_in_swapchain = 2;
+    const size_t max_frames_in_swapchain = 3;
     uint32_t acquired_image_index;
 
     struct FrameResources {
@@ -110,7 +110,7 @@ private:
         VkCommandBuffer command_buffer = VK_NULL_HANDLE;
     };
     std::vector <FrameResources> frame_resources;
-    const size_t max_frames_in_flight = 1;
+    const size_t max_frames_in_flight = 2;
 
     struct RenderPassResources {
         std::vector <VkFramebuffer> framebuffer;

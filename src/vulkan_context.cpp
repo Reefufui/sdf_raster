@@ -665,20 +665,21 @@ void VulkanContext::create_frame_resources () {
     alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     alloc_info.commandBufferCount = 1;
 
+    VkSubmitInfo submit_info {};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.waitSemaphoreCount = 0;
+    submit_info.pWaitSemaphores = nullptr;
+    submit_info.pWaitDstStageMask = nullptr;
+    submit_info.commandBufferCount = 0;
+    submit_info.pCommandBuffers = nullptr;
+    submit_info.signalSemaphoreCount = 1;
+
     for (size_t i = 0; i < this->max_frames_in_flight; i++) {
         VK_CHECK_RESULT (vkCreateSemaphore (this->device, &semaphore_info, nullptr, &this->frame_resources [i].wait_before_color_attachment_output));
         VK_CHECK_RESULT (vkCreateSemaphore (this->device, &semaphore_info, nullptr, &this->frame_resources [i].wait_before_depth_copy));
         VK_CHECK_RESULT (vkCreateFence (this->get_device (), &fence_info, nullptr, &this->frame_resources [i].cpu_wait_next_frame));
         VK_CHECK_RESULT (vkAllocateCommandBuffers (this->get_device (), &alloc_info, &this->frame_resources [i].command_buffer));
 
-        VkSubmitInfo submit_info {};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.waitSemaphoreCount = 0;
-        submit_info.pWaitSemaphores = nullptr;
-        submit_info.pWaitDstStageMask = nullptr;
-        submit_info.commandBufferCount = 0;
-        submit_info.pCommandBuffers = nullptr;
-        submit_info.signalSemaphoreCount = 1;
         submit_info.pSignalSemaphores = &this->frame_resources [i].wait_before_depth_copy;
         VK_CHECK_RESULT (vkQueueSubmit (graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
     }

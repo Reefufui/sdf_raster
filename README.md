@@ -68,16 +68,14 @@ The goal of this **master degree diploma** project is to develop accelerated imp
         cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
         cmake --build build -j$(nproc)
         ```
-        *Optionally, replace `-DCMAKE_BUILD_TYPE=Release` with `Debug` or `RelWithDebInfo`.*
-        *Make sure that **Vulkan SDK:** is installed and properly configured. The `VULKAN_SDK` environment variable must be set. See script `utils/install_vulkan_sdk_apt.sh` for quick linux setup.
+        *Optionally, replace `-DCMAKE_BUILD_TYPE=Release` with `Debug` or `RelWithDebInfo`. If so, make sure that **Vulkan SDK:** is installed and properly configured. The `VULKAN_SDK` environment variable must be set. See script `utils/install_vulkan_sdk_apt.sh` for quick linux setup.
 
     *   **For macOS:**
         ```bash
         cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
         cmake --build build -j$(sysctl -n hw.ncpu)
         ```
-        *Optionally, replace `-DCMAKE_BUILD_TYPE=Release` with `Debug` or `RelWithDebInfo`.*
-        *Make sure that **Vulkan SDK:** is installed and properly configured. The `VULKAN_SDK` environment variable must be set.
+        *Optionally, replace `-DCMAKE_BUILD_TYPE=Release` with `Debug` or `RelWithDebInfo`. If so, make sure that **Vulkan SDK:** is installed and properly configured. The `VULKAN_SDK` environment variable must be set.
 
 ## Running the Project
 **Important:** The application must be run from the `build` directory to ensure all resources are loaded correctly.
@@ -102,7 +100,7 @@ cd build
     *   `scroll`: Adjust FOV.
 *   **Camera Reset:**
     *   `r`: Reset camera position and orientation.
-*   **FPS dump::**
+*   **FPS dump:**
     *   `i`: Dump current FPS to log.
 *   **Toggle Frustum View:**
     *   `c`: Toggle culling visualization (to see which parts are rendered).

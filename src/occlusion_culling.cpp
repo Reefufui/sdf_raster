@@ -92,6 +92,49 @@ HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
     return info;
 }
 
+void change_hz_buffer_layout_to_shader_read_only_optimal (VkDevice device, VkCommandPool pool, VkQueue queue, HZBufferDescriptorSetInfo& info) {
+    VkCommandBufferBeginInfo begin_info {};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags = 0;
+    begin_info.pInheritanceInfo = nullptr;
+
+    VkCommandBuffer cmd_buff = vk_utils::createCommandBuffer (device, pool);
+    VK_CHECK_RESULT (vkBeginCommandBuffer (cmd_buff, &begin_info));
+
+    VkImageSubresourceRange whole_image {};
+    whole_image.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    whole_image.baseMipLevel = 0;
+    whole_image.levelCount = info.frame_resources [0].hz_buffer.mipLvls;
+    whole_image.baseArrayLayer = 0;
+    whole_image.layerCount = 1;
+
+    VkImageMemoryBarrier barr = {};
+    barr.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barr.pNext = nullptr;
+    barr.srcAccessMask = 0;
+    barr.dstAccessMask = 0;
+    barr.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barr.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barr.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barr.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barr.subresourceRange = whole_image;
+
+    for (size_t i = 0; i < info.frame_resources.size (); ++i) {
+        barr.image = info.frame_resources [i].hz_buffer.image;
+
+        vkCmdPipelineBarrier (cmd_buff
+            , VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
+            , VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
+            , 0
+            , 0, nullptr
+            , 0, nullptr
+            , 1, &barr);
+    }
+
+    VK_CHECK_RESULT (vkEndCommandBuffer (cmd_buff));
+    vk_utils::executeCommandBufferNow (cmd_buff, queue, device);
+}
+
 void prepare_next_frame_data (HZBufferDescriptorSetInfo& info, uint32_t frame_idx, VkImage frame_depth_image, LiteMath::float4x4 frame_view_proj) {
     info.frame_resources [frame_idx].prev_depth_image = frame_depth_image;
     info.frame_resources [frame_idx].prev_view_proj = frame_view_proj;

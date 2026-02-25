@@ -49,6 +49,7 @@ private:
     void clear_geometry (VkCommandBuffer cmd_buff);
     void compute_hz_buffer (VkCommandBuffer cmd_buff);
     void compute_active_leafs (VkCommandBuffer cmd_buff);
+    void hz_buffer_barrier (VkCommandBuffer cmd_buff);
     void active_leafs_barrier (VkCommandBuffer cmd_buff);
     void prefix_sum_pass1 (VkCommandBuffer cmd_buff);
     void prefix_sum_pass2 (VkCommandBuffer cmd_buff);

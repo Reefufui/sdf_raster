@@ -37,6 +37,8 @@ HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
         , VkExtent2D swapchain_extent
         , size_t max_frames_in_flight);
 
+void change_hz_buffer_layout_to_shader_read_only_optimal (VkDevice device, VkCommandPool pool, VkQueue queue, HZBufferDescriptorSetInfo& info);
+
 void prepare_next_frame_data (HZBufferDescriptorSetInfo& info, uint32_t frame_idx, VkImage frame_depth_image, LiteMath::float4x4 frame_view_proj);
 
 void cleanup_hz_buffer_descriptor_set (VkDevice device, HZBufferDescriptorSetInfo& info);

@@ -43,19 +43,19 @@ private:
     void init_graphics_frustum_pipeline ();
     void toggle_frustum_buffer (Camera& camera) override;
 
-    void update_push_constants (const Camera& camera, size_t current_frame);
-    void update_frustum_buffer (const Camera& camera, size_t current_frame);
-    void reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame);
-    void clear_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
-    void compute_hz_buffer (VkCommandBuffer cmd_buff, size_t current_frame);
-    void compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame);
-    void active_leafs_barrier (VkCommandBuffer cmd_buff, size_t current_frame);
-    void prefix_sum_pass1 (VkCommandBuffer cmd_buff, size_t current_frame);
-    void prefix_sum_pass2 (VkCommandBuffer cmd_buff, size_t current_frame);
-    void prefix_sum_pass3 (VkCommandBuffer cmd_buff, size_t current_frame);
-    void compute_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
-    void geometry_barrier (VkCommandBuffer cmd_buff, size_t current_frame);
-    void draw_geometry (VkCommandBuffer cmd_buff, size_t current_frame);
+    void update_push_constants (const Camera& camera);
+    void update_frustum_buffer (const Camera& camera);
+    void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
+    void clear_geometry (VkCommandBuffer cmd_buff);
+    void compute_hz_buffer (VkCommandBuffer cmd_buff);
+    void compute_active_leafs (VkCommandBuffer cmd_buff);
+    void active_leafs_barrier (VkCommandBuffer cmd_buff);
+    void prefix_sum_pass1 (VkCommandBuffer cmd_buff);
+    void prefix_sum_pass2 (VkCommandBuffer cmd_buff);
+    void prefix_sum_pass3 (VkCommandBuffer cmd_buff);
+    void compute_geometry (VkCommandBuffer cmd_buff);
+    void geometry_barrier (VkCommandBuffer cmd_buff);
+    void draw_geometry (VkCommandBuffer cmd_buff);
     void draw_frustum (VkCommandBuffer cmd_buff);
     void copy_depth (VkCommandBuffer cmd_buff);
 
@@ -91,10 +91,10 @@ private:
     SdfOctree sdf_octree {};
     std::vector <NodeContext> subtrees {};
     std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer {nullptr};
-    std::vector <LiteMath::float4x4> prev_frame_view_projection {};
 
     PushConstantsData push_constants;
 
+    uint32_t frame_index {0};
     bool initialized {false};
 };
 

@@ -1,10 +1,11 @@
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstring>
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <vector>
-// #include <iostream> // TODO: remove
 
 #include "vulkan_context.hpp"
 #include "logger.hpp"
@@ -74,19 +75,18 @@ void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support)
 
     this->create_swapchain (static_cast <uint32_t> (a_width), static_cast <uint32_t> (a_height));
 
-    if (!vk_utils::getSupportedDepthFormat (this->get_physical_device (), {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &this->depth_buffer.format)) {
+    if (!vk_utils::getSupportedDepthFormat (this->get_physical_device (), {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &this->depth_format)) {
         throw std::runtime_error ("couldn't find supported depth format");
     }
 
     this->main.render_pass = this->create_render_pass (VK_ATTACHMENT_LOAD_OP_CLEAR);
     this->after.render_pass = this->create_render_pass (VK_ATTACHMENT_LOAD_OP_NONE);
 
-    this->create_depth_buffer ();
+    this->create_depth_buffers ();
     this->main.framebuffer = this->create_framebuffers (this->main.render_pass);
     this->after.framebuffer = this->create_framebuffers (this->after.render_pass);
 
     this->create_frame_resources ();
-    this->current_frame = max_frames_in_flight - 1;
 
     this->initialized = true;
 }
@@ -397,6 +397,7 @@ struct SwapChainSupportDetails {
     std::vector <VkPresentModeKHR> present_modes;
 };
 
+// TODO: use this function
 SwapChainSupportDetails query_swap_chain_support (VkPhysicalDevice device, VkSurfaceKHR surface) {
     SwapChainSupportDetails details;
     VK_CHECK_RESULT (vkGetPhysicalDeviceSurfaceCapabilitiesKHR (device, surface, &details.capabilities));
@@ -464,7 +465,7 @@ void VulkanContext::shutdown () {
         LOG_INFO ("[VulkanContext] Waiting for the GPU to go idle to shutdown application.");
         vkDeviceWaitIdle (this->get_device ());
 
-        this->destroy_depth_buffer ();
+        this->destroy_depth_buffers ();
         this->destroy_framebuffers ();
         this->destroy_swapchain ();
         this->destroy_frame_resources ();
@@ -540,13 +541,11 @@ void VulkanContext::resize (int a_width, int a_height) {
     vkDeviceWaitIdle (this->get_device ());
 
     this->create_swapchain (static_cast <uint32_t> (a_width), static_cast <uint32_t> (a_height));
-    this->create_depth_buffer ();
+    this->create_depth_buffers ();
     this->destroy_framebuffers ();
     this->main.framebuffer = this->create_framebuffers (this->main.render_pass);
     this->after.framebuffer = this->create_framebuffers (this->after.render_pass);
     this->create_frame_resources ();
-
-    this->current_frame = this->max_frames_in_flight - 1;
 
     for (const auto& callback : resizable_callbacks) {
         callback ();
@@ -571,6 +570,8 @@ void VulkanContext::create_swapchain (uint32_t width, uint32_t height) {
         semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         vkCreateSemaphore (device, &semaphoreInfo, nullptr, &this->gpu_ready_to_present [i]);
     }
+
+    this->acquired_image_index = std::numeric_limits <uint32_t>::max ();
 }
 
 VkRenderPass VulkanContext::create_render_pass (VkAttachmentLoadOp load_op) {
@@ -588,10 +589,10 @@ VkRenderPass VulkanContext::create_render_pass (VkAttachmentLoadOp load_op) {
     color_attachment_ref.attachment = 0;
     color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    assert (this->depth_buffer.format != VK_FORMAT_UNDEFINED);
+    assert (this->depth_format != VK_FORMAT_UNDEFINED);
 
     VkAttachmentDescription depth_attachment {};
-    depth_attachment.format = this->depth_buffer.format;
+    depth_attachment.format = this->depth_format;
     depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depth_attachment.loadOp = load_op;
     depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -615,15 +616,15 @@ VkRenderPass VulkanContext::create_render_pass (VkAttachmentLoadOp load_op) {
     dependencies [0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencies [0].dstSubpass = 0;
     dependencies [0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencies [0].srcAccessMask = 0;
+    dependencies [0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencies [0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencies [0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies [0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencies [0].dependencyFlags = 0;
 
     dependencies [1].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencies [1].dstSubpass = 0;
-    dependencies [1].srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencies [1].srcAccessMask = 0;
+    dependencies [1].srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencies [1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencies [1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependencies [1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencies [1].dependencyFlags = 0;
@@ -664,22 +665,31 @@ void VulkanContext::create_frame_resources () {
     alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     alloc_info.commandBufferCount = 1;
 
-    for (size_t i = 0; i < max_frames_in_flight; i++) {
-        if (vkCreateSemaphore (this->get_device (), &semaphore_info, nullptr, &this->frame_resources [i].gpu_ready_to_render) != VK_SUCCESS ||
-            vkCreateFence (this->get_device (), &fence_info, nullptr, &this->frame_resources [i].cpu_ready_to_record) != VK_SUCCESS) {
-            throw std::runtime_error ("Failed to create semaphores or fences for a frame!");
-        }
-
+    for (size_t i = 0; i < this->max_frames_in_flight; i++) {
+        VK_CHECK_RESULT (vkCreateSemaphore (this->device, &semaphore_info, nullptr, &this->frame_resources [i].wait_before_color_attachment_output));
+        VK_CHECK_RESULT (vkCreateSemaphore (this->device, &semaphore_info, nullptr, &this->frame_resources [i].wait_before_depth_copy));
+        VK_CHECK_RESULT (vkCreateFence (this->get_device (), &fence_info, nullptr, &this->frame_resources [i].cpu_wait_next_frame));
         VK_CHECK_RESULT (vkAllocateCommandBuffers (this->get_device (), &alloc_info, &this->frame_resources [i].command_buffer));
+
+        VkSubmitInfo submit_info {};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.waitSemaphoreCount = 0;
+        submit_info.pWaitSemaphores = nullptr;
+        submit_info.pWaitDstStageMask = nullptr;
+        submit_info.commandBufferCount = 0;
+        submit_info.pCommandBuffers = nullptr;
+        submit_info.signalSemaphoreCount = 1;
+        submit_info.pSignalSemaphores = &this->frame_resources [i].wait_before_depth_copy;
+        VK_CHECK_RESULT (vkQueueSubmit (graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
     }
 }
 
-VkCommandBuffer VulkanContext::begin_frame () {
-    this->current_frame = (this->current_frame + 1) % this->max_frames_in_flight;
+VkCommandBuffer VulkanContext::begin_frame (uint32_t frame_idx) {
+    vkWaitForFences (this->device, 1, &this->frame_resources [frame_idx].cpu_wait_next_frame, VK_TRUE, UINT64_MAX);
+    vkResetFences (this->device, 1, &this->frame_resources [frame_idx].cpu_wait_next_frame);
 
-    vkWaitForFences (this->get_device (), 1, &this->frame_resources [this->current_frame].cpu_ready_to_record, VK_TRUE, UINT64_MAX);
-    VkResult result = this->swapchain.AcquireNextImage (this->frame_resources [this->current_frame].gpu_ready_to_render, &this->acquired_image_index);
-    LOG_TRACE ("in-flight frame: {}, swapchain image: {}", this->current_frame, this->acquired_image_index);
+    VkResult result = this->swapchain.AcquireNextImage (this->frame_resources [frame_idx].wait_before_color_attachment_output, &this->acquired_image_index);
+    LOG_TRACE ("in-flight frame: {}, swapchain image: {}", frame_idx, this->acquired_image_index);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         int width, height;
@@ -690,19 +700,21 @@ VkCommandBuffer VulkanContext::begin_frame () {
         throw std::runtime_error ("failed to acquire swap chain image!");
     }
 
-    vkResetCommandBuffer (this->frame_resources [this->current_frame].command_buffer, 0);
+    vkResetCommandBuffer (this->frame_resources [frame_idx].command_buffer, 0);
 
     VkCommandBufferBeginInfo begin_info {};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags = 0;
     begin_info.pInheritanceInfo = nullptr;
 
-    VK_CHECK_RESULT (vkBeginCommandBuffer (this->frame_resources [this->current_frame].command_buffer, &begin_info));
+    VK_CHECK_RESULT (vkBeginCommandBuffer (this->frame_resources [frame_idx].command_buffer, &begin_info));
 
-    return this->frame_resources [this->current_frame].command_buffer;
+    return this->frame_resources [frame_idx].command_buffer;
 }
 
-void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
+void VulkanContext::end_frame (VkCommandBuffer command_buffer, uint32_t frame_idx) {
+    assert (this->acquired_image_index < this->max_frames_in_swapchain);
+
     if (command_buffer == VK_NULL_HANDLE) {
         return;
     }
@@ -712,21 +724,33 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer) {
     VkSubmitInfo submit_info {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore wait_semaphores [] = { this->frame_resources [this->current_frame].gpu_ready_to_render };
-    VkPipelineStageFlags wait_stages [] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-    submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = wait_semaphores;
-    submit_info.pWaitDstStageMask = wait_stages;
+    constexpr size_t wait_semaphores_count = 2;
+
+    std::array <VkSemaphore, wait_semaphores_count> wait_semaphores {};
+    wait_semaphores [0] = this->frame_resources [frame_idx].wait_before_color_attachment_output;
+    wait_semaphores [1] = this->frame_resources [frame_idx].wait_before_depth_copy;
+
+    std::array <VkPipelineStageFlags, wait_semaphores_count> wait_stages {};
+    wait_stages [0] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    wait_stages [1] = VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+    submit_info.waitSemaphoreCount = wait_semaphores_count;
+    submit_info.pWaitSemaphores = wait_semaphores.data ();
+    submit_info.pWaitDstStageMask = wait_stages.data ();
 
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffer;
 
-    VkSemaphore signal_semaphores [] = { this->gpu_ready_to_present [this->acquired_image_index] };
-    submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = signal_semaphores;
+    constexpr size_t signal_semaphores_count = 2;
 
-    vkResetFences (this->get_device (), 1, &this->frame_resources [this->current_frame].cpu_ready_to_record);
-    VK_CHECK_RESULT (vkQueueSubmit (graphics_queue, 1, &submit_info, this->frame_resources [this->current_frame].cpu_ready_to_record));
+    std::array <VkSemaphore, signal_semaphores_count> signal_semaphores {};
+    signal_semaphores [0] = this->gpu_ready_to_present [this->acquired_image_index];
+    signal_semaphores [1] = this->frame_resources [frame_idx].wait_before_depth_copy;
+
+    submit_info.signalSemaphoreCount = signal_semaphores_count;
+    submit_info.pSignalSemaphores = signal_semaphores.data ();
+
+    VK_CHECK_RESULT (vkQueueSubmit (graphics_queue, 1, &submit_info, this->frame_resources [frame_idx].cpu_wait_next_frame));
 
     VkResult result = this->swapchain.QueuePresent (this->present_queue, this->acquired_image_index, this->gpu_ready_to_present [this->acquired_image_index]);
 
@@ -756,44 +780,51 @@ std::vector <VkFramebuffer> VulkanContext::create_framebuffers (VkRenderPass a_r
 
     for (uint32_t i = 0; i < framebuffers_count; i++) {
         assert (this->swapchain.GetAttachment (i).view != VK_NULL_HANDLE);
-        assert (this->depth_buffer.view != VK_NULL_HANDLE);
+        assert (this->depth_buffers [i].view != VK_NULL_HANDLE);
         attachments [0] = this->swapchain.GetAttachment (i).view;
-        attachments [1] = this->depth_buffer.view;
+        attachments [1] = this->depth_buffers [i].view;
         VK_CHECK_RESULT (vkCreateFramebuffer (this->device, &framebuffer_info, nullptr, &framebuffers [i]));
     }
 
     return framebuffers;
 }
 
-void VulkanContext::create_depth_buffer () {
-    assert (this->depth_buffer.format != VK_FORMAT_UNDEFINED);
+void VulkanContext::create_depth_buffers () {
+    assert (this->depth_format != VK_FORMAT_UNDEFINED);
 
     const uint32_t width = this->swapchain.GetExtent ().width;
     const uint32_t height = this->swapchain.GetExtent ().height;
     assert (width > 0 && height > 0);
 
     bool recreated = false;
-    if (this->depth_buffer.image != VK_NULL_HANDLE) {
+    if (this->depth_buffers.size ()) {
         recreated = true;
-        this->destroy_depth_buffer ();
+        this->destroy_depth_buffers ();
     }
 
+    this->depth_buffers.resize (this->max_frames_in_swapchain);
+
     const VkImageUsageFlags usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    VkImageCreateInfo create_info = vk_utils::defaultImageCreateInfo (width, height, this->depth_buffer.format, usage, 1);
-    VK_CHECK_RESULT (vkCreateImage (this->get_device (), &create_info, nullptr, &this->depth_buffer.image));
-    vkGetImageMemoryRequirements (this->get_device (), this->depth_buffer.image, &this->depth_buffer.memReq);
+    VkImageCreateInfo create_info = vk_utils::defaultImageCreateInfo (width, height, this->depth_format, usage, 1);
 
-    VkMemoryAllocateInfo mem_alloc {};
-    mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    mem_alloc.allocationSize = this->depth_buffer.memReq.size;
-    mem_alloc.memoryTypeIndex = vk_utils::findMemoryType (this->depth_buffer.memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, this->get_physical_device ());
-    VK_CHECK_RESULT (vkAllocateMemory (this->get_device (), &mem_alloc, nullptr, &this->depth_buffer.mem));
-    VK_CHECK_RESULT (vkBindImageMemory (this->get_device (), this->depth_buffer.image, this->depth_buffer.mem, 0));
+    for (size_t i = 0; i < this->max_frames_in_swapchain; ++i) {
+        this->depth_buffers [i].format = this->depth_format;
 
-    VkImageViewCreateInfo depth_attachment = vk_utils::defaultImageViewCreateInfo (this->depth_buffer.image, this->depth_buffer.format, 1, VK_IMAGE_ASPECT_DEPTH_BIT);
-    VK_CHECK_RESULT (vkCreateImageView (this->get_device (), &depth_attachment, nullptr, &this->depth_buffer.view));
+        VK_CHECK_RESULT (vkCreateImage (this->get_device (), &create_info, nullptr, &this->depth_buffers [i].image));
+        vkGetImageMemoryRequirements (this->get_device (), this->depth_buffers [i].image, &this->depth_buffers [i].memReq);
 
-    LOG_INFO ("[VulkanContext] {} single depth buffer with size ({}, {}).", (recreated) ? "Recreated" : "Created", width, height);
+        VkMemoryAllocateInfo mem_alloc {};
+        mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        mem_alloc.allocationSize = this->depth_buffers [i].memReq.size;
+        mem_alloc.memoryTypeIndex = vk_utils::findMemoryType (this->depth_buffers [i].memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, this->get_physical_device ());
+        VK_CHECK_RESULT (vkAllocateMemory (this->get_device (), &mem_alloc, nullptr, &this->depth_buffers [i].mem));
+        VK_CHECK_RESULT (vkBindImageMemory (this->get_device (), this->depth_buffers [i].image, this->depth_buffers [i].mem, 0));
+
+        VkImageViewCreateInfo depth_attachment = vk_utils::defaultImageViewCreateInfo (this->depth_buffers [i].image, this->depth_format, 1, VK_IMAGE_ASPECT_DEPTH_BIT);
+        VK_CHECK_RESULT (vkCreateImageView (this->get_device (), &depth_attachment, nullptr, &this->depth_buffers [i].view));
+    }
+
+    LOG_INFO ("[VulkanContext] {} {} depth buffers with size ({}, {}).", (recreated) ? "Recreated" : "Created", this->max_frames_in_swapchain, width, height);
 }
 
 void VulkanContext::destroy_swapchain () {
@@ -808,8 +839,11 @@ void VulkanContext::destroy_swapchain () {
     this->gpu_ready_to_present.clear ();
 }
 
-void VulkanContext::destroy_depth_buffer () {
-    vk_utils::deleteImg (this->device, &this->depth_buffer);
+void VulkanContext::destroy_depth_buffers () {
+    for (size_t i = 0; i < this->depth_buffers.size (); ++i) {
+        vk_utils::deleteImg (this->device, &this->depth_buffers [i]);
+    }
+    this->depth_buffers.clear ();
 }
 
 void VulkanContext::destroy_framebuffers () {
@@ -828,8 +862,9 @@ void VulkanContext::destroy_framebuffers () {
 
 void VulkanContext::destroy_frame_resources () {
     for (size_t i = 0; i < this->max_frames_in_flight; i++) {
-        vkDestroySemaphore (this->device, this->frame_resources [i].gpu_ready_to_render, nullptr);
-        vkDestroyFence (this->device, this->frame_resources [i].cpu_ready_to_record, nullptr);
+        vkDestroySemaphore (this->device, this->frame_resources [i].wait_before_color_attachment_output, nullptr);
+        vkDestroySemaphore (this->device, this->frame_resources [i].wait_before_depth_copy, nullptr);
+        vkDestroyFence (this->device, this->frame_resources [i].cpu_wait_next_frame, nullptr);
     }
     this->frame_resources.clear ();
 }

@@ -66,6 +66,7 @@ void ComputeShaderRenderer::init (SdfOctree&& a_sdf_octree) {
     this->register_resizable ();
 
     this->initialized = true;
+    // throw std::runtime_error ("STOP.");
 }
 
 
@@ -77,10 +78,13 @@ void ComputeShaderRenderer::register_resizable () {
             , this->context->get_physical_device ()
             , *descriptor_maker
             , VK_SHADER_STAGE_COMPUTE_BIT
-            , this->context->get_swapchain_extent ());
+            , this->context->get_swapchain_extent ()
+            , this->context->get_total_frames ());
 
-        LOG_INFO ("[{}] Created HZ-buffer for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
-            , this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height, this->hz_buffer_ds.hz_buffer.mipLvls);
+        LOG_INFO ("[{}] Created {} HZ-buffers for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
+            , this->context->get_total_frames ()
+            , this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height
+            , this->hz_buffer_ds.frame_resources [0].hz_buffer.mipLvls);
     };
 
     this->context->register_resizable (resize_hz_buffer);
@@ -89,18 +93,15 @@ void ComputeShaderRenderer::register_resizable () {
 void ComputeShaderRenderer::init_push_constants () {
     VkPhysicalDeviceProperties device_properties;
     vkGetPhysicalDeviceProperties (this->context->get_physical_device (), &device_properties);
-    uint32_t max_push_constant_size = device_properties.limits.maxPushConstantsSize;
-    LOG_TRACE ("[{}] VkPhysicalDeviceProperties::maxPushConstantsSize: {} bytes.", RENDERER_NAME, max_push_constant_size);
-    if (uint32_t {PUSH_CONSTANTS_DATA_SIZE} > max_push_constant_size) {
-        LOG_CRITICAL ("[{}] Required PUSH_CONSTANTS_DATA_SIZE={} exceeds VkPhysicalDeviceProperties::maxPushConstantsSize={}"
-            , RENDERER_NAME, uint32_t {PUSH_CONSTANTS_DATA_SIZE}, max_push_constant_size);
-        this->shutdown ();
-        throw std::runtime_error ("required PUSH_CONSTANTS_DATA_SIZE exceeds VkPhysicalDeviceProperties::maxPushConstantsSize");
+    const uint32_t max_push_constant_size = device_properties.limits.maxPushConstantsSize;
+    const uint32_t required_push_constant_size = sizeof (PushConstantsData);
+    if (required_push_constant_size > max_push_constant_size) {
+        LOG_CRITICAL ("[{}] Required push constants size ({}) exceeds VkPhysicalDeviceProperties::maxPushConstantsSize ({})."
+            , RENDERER_NAME, required_push_constant_size, max_push_constant_size);
+        throw std::runtime_error ("sizeof (PushConstantsData) exceeds VkPhysicalDeviceProperties::maxPushConstantsSize");
     }
 
     this->push_constants.active_leafs_max_count = 78240; // TODO: settings
-
-    this->prev_frame_view_projection.resize (this->context->get_total_frames ()); // PC for occlusion culling
 
     const auto octree_depth = get_octree_max_depth (this->sdf_octree);
     LOG_INFO ("[{}] Provided sdf-octree's depth: {} levels.", RENDERER_NAME, octree_depth);
@@ -110,6 +111,9 @@ void ComputeShaderRenderer::init_push_constants () {
     } else {
         this->push_constants.max_octree_depth = octree_depth;
     }
+
+    this->push_constants.occlusion_culling = false; // TODO: set inital state from config
+    this->push_constants.frustum_culling = true; // TODO: set inital state from config
 }
 
 void ComputeShaderRenderer::init_descriptor_sets () {
@@ -161,9 +165,12 @@ void ComputeShaderRenderer::init_descriptor_sets () {
         , this->context->get_physical_device ()
         , *descriptor_maker
         , VK_SHADER_STAGE_COMPUTE_BIT
-        , this->context->get_swapchain_extent ());
-    LOG_INFO ("[{}] Created HZ-buffer for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
-        , this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height, this->hz_buffer_ds.hz_buffer.mipLvls);
+        , this->context->get_swapchain_extent ()
+        , this->context->get_total_frames ());
+    LOG_INFO ("[{}] Created {} HZ-buffers for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
+        , this->context->get_total_frames ()
+        , this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height
+        , this->hz_buffer_ds.frame_resources [0].hz_buffer.mipLvls);
 
     this->frustum_ds = create_frustum_descriptor_set (this->context->get_device ()
         , this->context->get_physical_device ()
@@ -494,7 +501,7 @@ void ComputeShaderRenderer::init_graphics_frustum_pipeline () {
     VkPipelineDepthStencilStateCreateInfo depthStencil {};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_FALSE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
 
@@ -567,13 +574,15 @@ void ComputeShaderRenderer::toggle_frustum_buffer (Camera& camera) {
         , camera);
 }
 
-void ComputeShaderRenderer::update_push_constants (const Camera& camera, size_t current_frame) {
+void ComputeShaderRenderer::update_push_constants (const Camera& camera) {
     this->push_constants.view_proj = camera.get_view_projection_matrix ();
     this->push_constants.camera_pos = LiteMath::to_float4 (camera.get_position (), 1.0f);
+    this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
 
-    this->push_constants.prev_view_proj = this->prev_frame_view_projection [current_frame];
-    this->prev_frame_view_projection [current_frame] = this->push_constants.view_proj;
+    this->push_constants.occlusion_culling = false; // TODO: ui handle
+    this->push_constants.frustum_culling = true; // TODO: ui handle
 
+    // TODO: fix for multiple in flight frames
     if (fetch_active_leaf_overflow_flag (this->context->get_copy_helper (), this->active_leafs_ds)) {
         vkDeviceWaitIdle (this->context->get_device ());
         this->push_constants.max_octree_depth -= 1;
@@ -595,8 +604,8 @@ LiteMath::float3 face_normal (const LiteMath::float4& a, const LiteMath::float4&
 
 }
 
-void ComputeShaderRenderer::update_frustum_buffer (const Camera& camera, size_t current_frame) {
-    FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [current_frame]);
+void ComputeShaderRenderer::update_frustum_buffer (const Camera& camera) {
+    FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);
 
     const auto& vertices = camera.get_frustum_corners ();
     std::copy (vertices.begin (), vertices.end (), ptr->vertices);
@@ -619,34 +628,9 @@ void ComputeShaderRenderer::update_frustum_buffer (const Camera& camera, size_t 
     }
 }
 
-void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff, size_t current_frame) {
-    vkCmdFillBuffer (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [current_frame], 0, VK_WHOLE_SIZE, 0x00000000);
-
-    VkBufferMemoryBarrier buffer_barrier = {};
-    buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    buffer_barrier.pNext = nullptr;
-    buffer_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    buffer_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    buffer_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    buffer_barrier.buffer = this->active_leafs_ds.active_leaf_counter_buffers [current_frame];
-    buffer_barrier.offset = 0;
-    buffer_barrier.size = VK_WHOLE_SIZE;
-
-    vkCmdPipelineBarrier (
-        cmd_buff,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        0,
-        0, nullptr,
-        1, &buffer_barrier,
-        0, nullptr
-    );
-}
-
-void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff, size_t current_frame) {
-    vkCmdFillBuffer (cmd_buff, this->mesh_ds.vertices_buffers [current_frame], 0, VK_WHOLE_SIZE, 0x00000000);
-    vkCmdFillBuffer (cmd_buff, this->mesh_ds.indices_buffers [current_frame], 0, VK_WHOLE_SIZE, 0x00000000);
+void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff) {
+    vkCmdFillBuffer (cmd_buff, this->mesh_ds.vertices_buffers [this->frame_index], 0, VK_WHOLE_SIZE, 0x00000000);
+    vkCmdFillBuffer (cmd_buff, this->mesh_ds.indices_buffers [this->frame_index], 0, VK_WHOLE_SIZE, 0x00000000);
 
     VkBufferMemoryBarrier buffer_barrier = {};
     buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -659,8 +643,8 @@ void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff, size_t cur
     buffer_barrier.size = VK_WHOLE_SIZE;
 
     std::vector <VkBufferMemoryBarrier> barriers (2, buffer_barrier);
-    barriers [0].buffer = this->mesh_ds.vertices_buffers [current_frame];
-    barriers [1].buffer = this->mesh_ds.indices_buffers [current_frame];
+    barriers [0].buffer = this->mesh_ds.vertices_buffers [this->frame_index];
+    barriers [1].buffer = this->mesh_ds.indices_buffers [this->frame_index];
 
     vkCmdPipelineBarrier (
         cmd_buff,
@@ -673,25 +657,130 @@ void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff, size_t cur
     );
 }
 
-void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff, size_t /*current_frame*/) {
-    // expects layout of hz_buffer_ds mip-images to be VK_IMAGE_LAYOUT_GENERAL
+void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
+    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
+    if (f.prev_depth_image == VK_NULL_HANDLE) {
+        LOG_ERROR ("[{}] No previous depth image to copy from.", RENDERER_NAME);
+        return;
+    }
+
+    VkImageMemoryBarrier depth_to_src = {};
+    depth_to_src.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    depth_to_src.pNext = nullptr;
+    depth_to_src.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    depth_to_src.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    depth_to_src.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depth_to_src.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    depth_to_src.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    depth_to_src.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    depth_to_src.image = f.prev_depth_image;
+    depth_to_src.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    depth_to_src.subresourceRange.baseMipLevel = 0;
+    depth_to_src.subresourceRange.levelCount = 1;
+    depth_to_src.subresourceRange.baseArrayLayer = 0;
+    depth_to_src.subresourceRange.layerCount = 1;
+
+    VkImageMemoryBarrier hz_buffer_to_dst = {};
+    hz_buffer_to_dst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    hz_buffer_to_dst.pNext = nullptr;
+    hz_buffer_to_dst.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    hz_buffer_to_dst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    hz_buffer_to_dst.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    hz_buffer_to_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    hz_buffer_to_dst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    hz_buffer_to_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    hz_buffer_to_dst.image = f.hz_buffer.image;
+    hz_buffer_to_dst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    hz_buffer_to_dst.subresourceRange.baseMipLevel = 0;
+    hz_buffer_to_dst.subresourceRange.levelCount = 1;
+    hz_buffer_to_dst.subresourceRange.baseArrayLayer = 0;
+    hz_buffer_to_dst.subresourceRange.layerCount = 1;
+
+    std::array <VkImageMemoryBarrier, 2> barriers { depth_to_src, hz_buffer_to_dst };
+
+    vkCmdPipelineBarrier (cmd_buff
+        , VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
+        , VK_PIPELINE_STAGE_TRANSFER_BIT
+        , 0
+        , 0, nullptr
+        , 0, nullptr
+        , barriers.size (), barriers.data ()
+    );
+
+    VkOffset3D whole_image { static_cast <int32_t> (this->hz_buffer_ds.extent.width), static_cast <int32_t> (this->hz_buffer_ds.extent.height), 1 };
+
+    VkImageBlit blitRegion {};
+    blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    blitRegion.srcSubresource.mipLevel = 0;
+    blitRegion.srcSubresource.baseArrayLayer = 0;
+    blitRegion.srcSubresource.layerCount = 1;
+    blitRegion.srcOffsets [0] = { 0, 0, 0 };
+    blitRegion.srcOffsets [1] = whole_image;
+
+    blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blitRegion.dstSubresource.mipLevel = 0;
+    blitRegion.dstSubresource.baseArrayLayer = 0;
+    blitRegion.dstSubresource.layerCount = 1;
+    blitRegion.dstOffsets [0] = { 0, 0, 0 };
+    blitRegion.dstOffsets [1] = whole_image;
+
+    vkCmdBlitImage (cmd_buff
+        , f.prev_depth_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+        , f.hz_buffer.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+        , 1, &blitRegion
+        , VK_FILTER_NEAREST
+    );
+
+    VkImageSubresourceRange first_mip_lvl {};
+    first_mip_lvl.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    first_mip_lvl.baseMipLevel = 0;
+    first_mip_lvl.levelCount = 1;
+    first_mip_lvl.baseArrayLayer = 0;
+    first_mip_lvl.layerCount = 1;
+
+    vk_utils::setImageLayout (cmd_buff
+        , f.hz_buffer.image
+        , VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+        , VK_IMAGE_LAYOUT_GENERAL
+        , first_mip_lvl
+        , VK_PIPELINE_STAGE_TRANSFER_BIT
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+    );
+
+    VkImageSubresourceRange other_mip_lvls {};
+    other_mip_lvls.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    other_mip_lvls.baseMipLevel = 1;
+    other_mip_lvls.levelCount = f.hz_buffer.mipLvls - 1;
+    other_mip_lvls.baseArrayLayer = 0;
+    other_mip_lvls.layerCount = 1;
+
+    vk_utils::setImageLayout (cmd_buff
+        , f.hz_buffer.image
+        , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        , VK_IMAGE_LAYOUT_GENERAL
+        , other_mip_lvls
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+    );
+}
+
+void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
+    // expects layout of all hz_buffer_ds mip-images to be VK_IMAGE_LAYOUT_GENERAL
+
+    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
+
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_hz_buffer_pipeline);
 
-    const auto extent = this->context->get_swapchain_extent ();
-
-    for (uint32_t i = 0; i < this->hz_buffer_ds.hz_buffer.mipLvls - 1; ++i) {
-        // const uint32_t srcMip = i;
+    for (uint32_t i = 0; i < f.hz_buffer.mipLvls - 1; ++i) {
         const uint32_t dstMip = i + 1;
 
-        // uint32_t srcWidth = std::max (1u, extent.width >> srcMip);
-        // uint32_t srcHeight = std::max (1u, extent.height >> srcMip);
-        uint32_t dstWidth = std::max (1u, extent.width >> dstMip);
-        uint32_t dstHeight = std::max (1u, extent.height >> dstMip);
+        uint32_t dstWidth = std::max (1u, this->hz_buffer_ds.extent.width >> dstMip);
+        uint32_t dstHeight = std::max (1u, this->hz_buffer_ds.extent.height >> dstMip);
 
         vkCmdBindDescriptorSets (cmd_buff
             , VK_PIPELINE_BIND_POINT_COMPUTE
             , this->compute_hz_buffer_pipeline_layout
-            , 0, 1, &this->hz_buffer_ds.gen_descriptor_sets [i]
+            , 0, 1, &f.gen_descriptor_sets [i]
             , 0, nullptr);
 
         uint32_t groupX = (dstWidth + 15) / 16;
@@ -702,7 +791,7 @@ void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff, size_t 
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = this->hz_buffer_ds.hz_buffer.image;
+        barrier.image = f.hz_buffer.image;
         barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         barrier.subresourceRange.baseMipLevel = dstMip;
         barrier.subresourceRange.levelCount = 1;
@@ -726,12 +815,12 @@ void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff, size_t 
     VkImageSubresourceRange all_mip_lvls;
     all_mip_lvls.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     all_mip_lvls.baseMipLevel = 0;
-    all_mip_lvls.levelCount = this->hz_buffer_ds.hz_buffer.mipLvls;
+    all_mip_lvls.levelCount = f.hz_buffer.mipLvls;
     all_mip_lvls.baseArrayLayer = 0;
     all_mip_lvls.layerCount = 1;
 
     vk_utils::setImageLayout (cmd_buff
-        , this->hz_buffer_ds.hz_buffer.image
+        , f.hz_buffer.image
         , VK_IMAGE_LAYOUT_GENERAL
         , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         , all_mip_lvls
@@ -739,15 +828,40 @@ void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff, size_t 
         , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 }
 
-void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff, size_t current_frame) {
+void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
+    vkCmdFillBuffer (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [this->frame_index], 0, VK_WHOLE_SIZE, 0x00000000);
+
+    VkBufferMemoryBarrier buffer_barrier = {};
+    buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    buffer_barrier.pNext = nullptr;
+    buffer_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    buffer_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buffer_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buffer_barrier.buffer = this->active_leafs_ds.active_leaf_counter_buffers [this->frame_index];
+    buffer_barrier.offset = 0;
+    buffer_barrier.size = VK_WHOLE_SIZE;
+
+    vkCmdPipelineBarrier (
+        cmd_buff,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0,
+        0, nullptr,
+        1, &buffer_barrier,
+        0, nullptr
+    );
+}
+
+void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
     std::array <VkDescriptorSet, 5> ds = {
         this->sdf_octree_ds.descriptor_set, // TODO: sepparate subtree roots buffer for all frames
-        this->mesh_ds.descriptor_sets [current_frame], // TODO: reuse one buffer for all in-flight frames
+        this->mesh_ds.descriptor_sets [this->frame_index],
         this->marching_cubes_lookup_table_ds.descriptor_set,
-        this->active_leafs_ds.descriptor_sets [current_frame], //TODO: reuse one buffer for all in-flight frames
-        this->frustum_ds.descriptor_sets [current_frame]
+        this->active_leafs_ds.descriptor_sets [this->frame_index],
+        this->frustum_ds.descriptor_sets [this->frame_index]
         // TODO: this->hz_buffer_ds.descriptor_set
     };
 
@@ -759,12 +873,12 @@ void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff, size
     vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
 }
 
-void ComputeShaderRenderer::active_leafs_barrier (VkCommandBuffer cmd_buff, size_t current_frame) {
+void ComputeShaderRenderer::active_leafs_barrier (VkCommandBuffer cmd_buff) {
     VkBufferMemoryBarrier active_leafs_buffer_barrier = {};
     active_leafs_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     active_leafs_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     active_leafs_buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    active_leafs_buffer_barrier.buffer = this->active_leafs_ds.active_leafs_buffers [current_frame];
+    active_leafs_buffer_barrier.buffer = this->active_leafs_ds.active_leafs_buffers [this->frame_index];
     active_leafs_buffer_barrier.offset = 0;
     active_leafs_buffer_barrier.size = VK_WHOLE_SIZE;
 
@@ -772,7 +886,7 @@ void ComputeShaderRenderer::active_leafs_barrier (VkCommandBuffer cmd_buff, size
     active_leaf_vertices_count_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     active_leaf_vertices_count_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     active_leaf_vertices_count_buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    active_leaf_vertices_count_buffer_barrier.buffer = this->active_leafs_ds.active_leaf_vertices_count_buffers [current_frame];
+    active_leaf_vertices_count_buffer_barrier.buffer = this->active_leafs_ds.active_leaf_vertices_count_buffers [this->frame_index];
     active_leaf_vertices_count_buffer_barrier.offset = 0;
     active_leaf_vertices_count_buffer_barrier.size = VK_WHOLE_SIZE;
 
@@ -780,7 +894,7 @@ void ComputeShaderRenderer::active_leafs_barrier (VkCommandBuffer cmd_buff, size
     active_leaf_indices_count_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     active_leaf_indices_count_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     active_leaf_indices_count_buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    active_leaf_indices_count_buffer_barrier.buffer = this->active_leafs_ds.active_leaf_indices_count_buffers [current_frame];
+    active_leaf_indices_count_buffer_barrier.buffer = this->active_leafs_ds.active_leaf_indices_count_buffers [this->frame_index];
     active_leaf_indices_count_buffer_barrier.offset = 0;
     active_leaf_indices_count_buffer_barrier.size = VK_WHOLE_SIZE;
 
@@ -806,7 +920,7 @@ void ComputeShaderRenderer::active_leafs_barrier (VkCommandBuffer cmd_buff, size
     indirect_dispatch_barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
     indirect_dispatch_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     indirect_dispatch_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    indirect_dispatch_barrier.buffer = this->active_leafs_ds.active_leaf_counter_buffers [current_frame];
+    indirect_dispatch_barrier.buffer = this->active_leafs_ds.active_leaf_counter_buffers [this->frame_index];
     indirect_dispatch_barrier.offset = 0;
     indirect_dispatch_barrier.size = VK_WHOLE_SIZE;
 
@@ -821,11 +935,11 @@ void ComputeShaderRenderer::active_leafs_barrier (VkCommandBuffer cmd_buff, size
     );
 }
 
-void ComputeShaderRenderer::prefix_sum_pass1 (VkCommandBuffer cmd_buff, size_t current_frame) {
+void ComputeShaderRenderer::prefix_sum_pass1 (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prefix_sum_pass1_pipeline);
 
     std::array <VkDescriptorSet, 1> ds = {
-        this->active_leafs_ds.descriptor_sets [current_frame]
+        this->active_leafs_ds.descriptor_sets [this->frame_index]
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prefix_sum_pass1_pipeline_layout,
@@ -836,23 +950,23 @@ void ComputeShaderRenderer::prefix_sum_pass1 (VkCommandBuffer cmd_buff, size_t c
     // vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
 }
 
-void ComputeShaderRenderer::prefix_sum_pass2 (VkCommandBuffer, size_t) {
+void ComputeShaderRenderer::prefix_sum_pass2 (VkCommandBuffer) {
     // TODO
 }
 
-void ComputeShaderRenderer::prefix_sum_pass3 (VkCommandBuffer, size_t) {
+void ComputeShaderRenderer::prefix_sum_pass3 (VkCommandBuffer) {
     // TODO
 }
 
-void ComputeShaderRenderer::compute_geometry (VkCommandBuffer cmd_buff, size_t current_frame) {
+void ComputeShaderRenderer::compute_geometry (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_geometry_pipeline);
 
     std::array <VkDescriptorSet, 5> ds = {
         this->sdf_octree_ds.descriptor_set,
-        this->mesh_ds.descriptor_sets [current_frame],
+        this->mesh_ds.descriptor_sets [this->frame_index],
         this->marching_cubes_lookup_table_ds.descriptor_set,
-        this->active_leafs_ds.descriptor_sets [current_frame],
-        this->draw_indexed_indirect_command_ds.descriptor_sets [current_frame]
+        this->active_leafs_ds.descriptor_sets [this->frame_index],
+        this->draw_indexed_indirect_command_ds.descriptor_sets [this->frame_index]
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_geometry_pipeline_layout,
@@ -860,15 +974,15 @@ void ComputeShaderRenderer::compute_geometry (VkCommandBuffer cmd_buff, size_t c
 
     vkCmdPushConstants (cmd_buff, this->compute_geometry_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-    vkCmdDispatchIndirect (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [current_frame], 0);
+    vkCmdDispatchIndirect (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [this->frame_index], 0);
 }
 
-void ComputeShaderRenderer::geometry_barrier (VkCommandBuffer cmd_buff, size_t current_frame) {
+void ComputeShaderRenderer::geometry_barrier (VkCommandBuffer cmd_buff) {
     VkBufferMemoryBarrier vertex_buffer_barrier = {};
     vertex_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     vertex_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     vertex_buffer_barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-    vertex_buffer_barrier.buffer = this->mesh_ds.vertices_buffers [current_frame];
+    vertex_buffer_barrier.buffer = this->mesh_ds.vertices_buffers [this->frame_index];
     vertex_buffer_barrier.offset = 0;
     vertex_buffer_barrier.size = VK_WHOLE_SIZE;
 
@@ -876,7 +990,7 @@ void ComputeShaderRenderer::geometry_barrier (VkCommandBuffer cmd_buff, size_t c
     index_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     index_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     index_buffer_barrier.dstAccessMask = VK_ACCESS_INDEX_READ_BIT;
-    index_buffer_barrier.buffer = this->mesh_ds.indices_buffers [current_frame];
+    index_buffer_barrier.buffer = this->mesh_ds.indices_buffers [this->frame_index];
     index_buffer_barrier.offset = 0;
     index_buffer_barrier.size = VK_WHOLE_SIZE;
 
@@ -898,7 +1012,7 @@ void ComputeShaderRenderer::geometry_barrier (VkCommandBuffer cmd_buff, size_t c
     indirect_draw_barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
     indirect_draw_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     indirect_draw_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    indirect_draw_barrier.buffer = this->draw_indexed_indirect_command_ds.draw_indexed_indirect_command_buffers [current_frame];
+    indirect_draw_barrier.buffer = this->draw_indexed_indirect_command_ds.draw_indexed_indirect_command_buffers [this->frame_index];
     indirect_draw_barrier.offset = 0;
     indirect_draw_barrier.size = VK_WHOLE_SIZE;
 
@@ -913,7 +1027,7 @@ void ComputeShaderRenderer::geometry_barrier (VkCommandBuffer cmd_buff, size_t c
     );
 }
 
-void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, size_t current_frame) {
+void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff) {
     const auto extent = this->context->get_swapchain_extent ();
 
     std::array <VkClearValue, 2> clear_values {};
@@ -953,12 +1067,12 @@ void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, size_t curr
 
     vkCmdPushConstants (cmd_buff, this->graphics_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &push_constants);
 
-    VkBuffer vertex_buffers [] = {this->mesh_ds.vertices_buffers [current_frame]};
+    VkBuffer vertex_buffers [] = {this->mesh_ds.vertices_buffers [this->frame_index]};
     VkDeviceSize offsets [] = {0};
     vkCmdBindVertexBuffers (cmd_buff, 0, 1, vertex_buffers, offsets);
-    vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds.indices_buffers [current_frame], 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds.indices_buffers [this->frame_index], 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdDrawIndexedIndirect (cmd_buff, this->draw_indexed_indirect_command_ds.draw_indexed_indirect_command_buffers [current_frame], 0, 1, 0);
+    vkCmdDrawIndexedIndirect (cmd_buff, this->draw_indexed_indirect_command_ds.draw_indexed_indirect_command_buffers [this->frame_index], 0, 1, 0);
 
     vkCmdEndRenderPass (cmd_buff);
 }
@@ -1003,151 +1117,57 @@ void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
-    const auto extent = this->context->get_swapchain_extent ();
-    auto from = this->context->get_depth_buffer ().image;
-    auto to = this->hz_buffer_ds.hz_buffer.image;
-
-    VkImageMemoryBarrier depth_to_src = {};
-    depth_to_src.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    depth_to_src.pNext = nullptr;
-    depth_to_src.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    depth_to_src.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    depth_to_src.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depth_to_src.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    depth_to_src.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    depth_to_src.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    depth_to_src.image = from;
-    depth_to_src.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    depth_to_src.subresourceRange.baseMipLevel = 0;
-    depth_to_src.subresourceRange.levelCount = 1;
-    depth_to_src.subresourceRange.baseArrayLayer = 0;
-    depth_to_src.subresourceRange.layerCount = 1;
-
-    VkImageMemoryBarrier hz_buffer_to_dst = {};
-    hz_buffer_to_dst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    hz_buffer_to_dst.pNext = nullptr;
-    hz_buffer_to_dst.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    hz_buffer_to_dst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    hz_buffer_to_dst.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    hz_buffer_to_dst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    hz_buffer_to_dst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    hz_buffer_to_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    hz_buffer_to_dst.image = to;
-    hz_buffer_to_dst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    hz_buffer_to_dst.subresourceRange.baseMipLevel = 0;
-    hz_buffer_to_dst.subresourceRange.levelCount = 1;
-    hz_buffer_to_dst.subresourceRange.baseArrayLayer = 0;
-    hz_buffer_to_dst.subresourceRange.layerCount = 1;
-
-    std::array <VkImageMemoryBarrier, 2> barriers { depth_to_src, hz_buffer_to_dst };
-
-    vkCmdPipelineBarrier (cmd_buff
-        , VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
-        , VK_PIPELINE_STAGE_TRANSFER_BIT
-        , 0
-        , 0, nullptr
-        , 0, nullptr
-        , barriers.size (), barriers.data ()
-    );
-
-    VkOffset3D whole_image { static_cast <int32_t> (extent.width), static_cast <int32_t> (extent.height), 1 };
-
-    VkImageBlit blitRegion {};
-    blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    blitRegion.srcSubresource.mipLevel = 0;
-    blitRegion.srcSubresource.baseArrayLayer = 0;
-    blitRegion.srcSubresource.layerCount = 1;
-    blitRegion.srcOffsets [0] = { 0, 0, 0 };
-    blitRegion.srcOffsets [1] = whole_image;
-
-    blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    blitRegion.dstSubresource.mipLevel = 0;
-    blitRegion.dstSubresource.baseArrayLayer = 0;
-    blitRegion.dstSubresource.layerCount = 1;
-    blitRegion.dstOffsets [0] = { 0, 0, 0 };
-    blitRegion.dstOffsets [1] = whole_image;
-
-    vkCmdBlitImage (cmd_buff
-        , from, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
-        , to, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-        , 1, &blitRegion
-        , VK_FILTER_NEAREST
-    );
-
-    VkImageSubresourceRange first_mip_lvl {};
-    first_mip_lvl.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    first_mip_lvl.baseMipLevel = 0;
-    first_mip_lvl.levelCount = 1;
-    first_mip_lvl.baseArrayLayer = 0;
-    first_mip_lvl.layerCount = 1;
-
-    vk_utils::setImageLayout (cmd_buff
-        , this->hz_buffer_ds.hz_buffer.image
-        , VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-        , VK_IMAGE_LAYOUT_GENERAL
-        , first_mip_lvl
-        , VK_PIPELINE_STAGE_TRANSFER_BIT
-        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-    );
-
-    VkImageSubresourceRange other_mip_lvls {};
-    other_mip_lvls.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    other_mip_lvls.baseMipLevel = 1;
-    other_mip_lvls.levelCount = this->hz_buffer_ds.hz_buffer.mipLvls - 1;
-    other_mip_lvls.baseArrayLayer = 0;
-    other_mip_lvls.layerCount = 1;
-
-    vk_utils::setImageLayout (cmd_buff
-        , this->hz_buffer_ds.hz_buffer.image
-        , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        , VK_IMAGE_LAYOUT_GENERAL
-        , other_mip_lvls
-        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-    );
-}
-
 void ComputeShaderRenderer::render (const Camera& camera) {
     if (!this->initialized) {
         LOG_ERROR ("render called before initialization");
         return;
     }
 
-    auto cmd_buff = this->context->begin_frame ();
+    auto cmd_buff = this->context->begin_frame (this->frame_index);
     if (cmd_buff == VK_NULL_HANDLE) {
         return;
     }
 
-    const auto current_frame = this->context->get_current_frame ();
-
-    this->update_push_constants (camera, current_frame);
+    this->update_push_constants (camera);
     if (!this->frustum_draw_buffer) {
-        this->update_frustum_buffer (camera, current_frame);
+        this->update_frustum_buffer (camera);
     }
-    this->reset_active_leafs_counter (cmd_buff, current_frame);
-    this->clear_geometry (cmd_buff, current_frame);
-    // this->compute_hz_buffer (cmd_buff, current_frame);
-    this->compute_active_leafs (cmd_buff, current_frame);
-    this->active_leafs_barrier (cmd_buff, current_frame);
-    this->compute_geometry (cmd_buff, current_frame);
-    this->geometry_barrier (cmd_buff, current_frame);
-    this->draw_geometry (cmd_buff, current_frame);
+
+    this->clear_geometry (cmd_buff);
+
+    if (this->push_constants.occlusion_culling) {
+        if (this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image != VK_NULL_HANDLE) {
+            this->copy_depth (cmd_buff);
+            this->compute_hz_buffer (cmd_buff);
+        } else {
+            LOG_WARN ("[{}] No previous depth image (likely first frame). Occlusion culling skipped.", RENDERER_NAME);
+            this->push_constants.occlusion_culling = false;
+        }
+    }
+
+    this->reset_active_leafs_counter (cmd_buff);
+    this->compute_active_leafs (cmd_buff);
+
+    this->active_leafs_barrier (cmd_buff);
+    this->compute_geometry (cmd_buff);
+
+    this->geometry_barrier (cmd_buff);
+    this->draw_geometry (cmd_buff);
+
     if (this->frustum_draw_buffer) {
         this->draw_frustum (cmd_buff);
     }
-    // this->copy_depth (cmd_buff);
 
-    this->context->end_frame (cmd_buff);
+    this->context->end_frame (cmd_buff, this->frame_index);
 
     static bool dump = true;
     if (!dump) {
         vkDeviceWaitIdle (this->context->get_device ());
 
-        size_t active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, current_frame);
-        const auto active_leafs = fetch_active_leafs (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, current_frame);
-        const auto vertices_count = fetch_vertices_count (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, current_frame);
-        const auto indices_count = fetch_indices_count (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, current_frame);
+        size_t active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
+        const auto active_leafs = fetch_active_leafs (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, this->frame_index);
+        const auto vertices_count = fetch_vertices_count (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, this->frame_index);
+        const auto indices_count = fetch_indices_count (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, this->frame_index);
         size_t vertices_count_total = 0;
         size_t indices_count_total = 0;
         for (size_t i = 0; i < active_leafs.size (); ++i) {
@@ -1159,12 +1179,15 @@ void ComputeShaderRenderer::render (const Camera& camera) {
         std::cout << "vertices count: " << vertices_count_total << "/" << 100000 << std::endl;
         std::cout << "indices count: " << indices_count_total << "/" << 100000 << std::endl;
 
-        const auto mesh = fetch_mesh_from_device (this->context->get_copy_helper (), this->mesh_ds, current_frame);
+        const auto mesh = fetch_mesh_from_device (this->context->get_copy_helper (), this->mesh_ds, this->frame_index);
         save_mesh_as_obj (mesh, "result.obj");
 
         dump = true;
         vkDeviceWaitIdle (this->context->get_device ());
     }
+
+    prepare_next_frame_data (this->hz_buffer_ds, this->frame_index, this->context->get_depth_buffer ().image, camera.get_view_projection_matrix ());
+    this->frame_index = (this->frame_index + 1) % this->context->get_total_frames ();
 }
 
 void ComputeShaderRenderer::shutdown () {

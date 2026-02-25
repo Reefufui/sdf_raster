@@ -120,7 +120,6 @@ void Application::init_window () {
     }
 
     glfwSetWindowUserPointer (this->window, &this->user_data);
-    glfwSetFramebufferSizeCallback (this->window, framebuffer_resize_callback);
     glfwSetCursorPosCallback (this->window, mouse_callback);
     glfwSetScrollCallback (this->window, scroll_callback);
     glfwSetKeyCallback (this->window, key_callback);
@@ -153,6 +152,12 @@ void Application::init_vulkan () {
     int width, height;
     glfwGetWindowSize (this->window, &width, &height);
     this->vulkan_context->init (this->window, width, height, false);
+
+    auto resize_camera = [&] () {
+        auto extent = this->vulkan_context->get_swapchain_extent ();
+        this->camera.set_aspect_ratio (static_cast <float> (extent.width) / static_cast <float> (extent.height));
+    };
+    this->vulkan_context->register_resizable (resize_camera);
 }
 
 void Application::init_renderer () {
@@ -214,13 +219,6 @@ void Application::process_input () {
             this->camera.process_keyboard_input (Camera::Movement::UP, this->delta_time);
         if (glfwGetKey (this->window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
             this->camera.process_keyboard_input (Camera::Movement::DOWN, this->delta_time);
-    }
-}
-
-void Application::framebuffer_resize_callback (GLFWwindow* a_window, int a_width, int a_height) {
-    auto app = get_app_ptr (a_window);
-    if (app && app->renderer) {
-        app->camera.set_aspect_ratio (static_cast <float> (a_width) / static_cast <float> (a_height));
     }
 }
 

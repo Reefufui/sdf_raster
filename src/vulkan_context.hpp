@@ -1,13 +1,14 @@
 #pragma once
 
+#include <memory>
+#include <vector>
+
 #include "vk_context.h"
 #include "vk_images.h"
 #include "vk_swapchain.h"
 #include "vk_utils.h"
-#include "GLFW/glfw3.h"
 
-#include <memory>
-#include <vector>
+#include "GLFW/glfw3.h" // NOTE: must be included after Vulkan
 
 struct GLFWwindow;
 
@@ -42,14 +43,13 @@ public:
     inline VkRenderPass get_render_pass_after () const { return this->after.render_pass; }
     inline VkFramebuffer get_swapchain_framebuffer () const { return this->main.framebuffer [this->acquired_image_index]; }
     inline VkFramebuffer get_swapchain_framebuffer_after () const { return this->after.framebuffer [this->acquired_image_index]; }
-    inline const vk_utils::VulkanImageMem& get_depth_buffer () const { return this->depth_buffer; }
+    inline const vk_utils::VulkanImageMem& get_depth_buffer () const { return this->depth_buffers [this->acquired_image_index]; }
     inline VkImageView get_swapchain_image_view (uint32_t i) const { return this->swapchain.GetAttachment (i).view; }
     inline uint32_t get_swapchain_image_count () const { return this->swapchain.GetImageCount (); }
-    inline VkFormat get_depth_format () const { return this->depth_buffer.format; }
+    inline VkFormat get_depth_format () const { return this->depth_format; }
 
-    VkCommandBuffer begin_frame ();
-    void end_frame (VkCommandBuffer command_buffer);
-    inline uint32_t get_current_frame () { return this->current_frame; }
+    VkCommandBuffer begin_frame (uint32_t frame_idx);
+    void end_frame (VkCommandBuffer command_buffer, uint32_t frame_idx);
     inline uint32_t get_total_frames () { return this->max_frames_in_flight; }
     void register_resizable (std::function <void ()> f) { this->resizable_callbacks.push_back (f); };
 
@@ -62,10 +62,10 @@ private:
     void create_swapchain (uint32_t width, uint32_t height);
     VkRenderPass create_render_pass (VkAttachmentLoadOp load_op);
     void create_frame_resources ();
-    void create_depth_buffer ();
+    void create_depth_buffers ();
 
     void destroy_swapchain ();
-    void destroy_depth_buffer ();
+    void destroy_depth_buffers ();
     void destroy_framebuffers ();
     void destroy_frame_resources ();
 
@@ -97,29 +97,27 @@ private:
     GLFWwindow* window = nullptr;
 
     VulkanSwapChain swapchain;
+    std::vector <vk_utils::VulkanImageMem> depth_buffers;
+    VkFormat depth_format;
     std::vector <VkSemaphore> gpu_ready_to_present;
+    const size_t max_frames_in_swapchain = 2;
+    uint32_t acquired_image_index;
 
-    vk_utils::VulkanImageMem depth_buffer;
+    struct FrameResources {
+        VkFence cpu_wait_next_frame = VK_NULL_HANDLE;
+        VkSemaphore wait_before_color_attachment_output = VK_NULL_HANDLE;
+        VkSemaphore wait_before_depth_copy = VK_NULL_HANDLE;
+        VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+    };
+    std::vector <FrameResources> frame_resources;
+    const size_t max_frames_in_flight = 1;
 
     struct RenderPassResources {
         std::vector <VkFramebuffer> framebuffer;
         VkRenderPass render_pass = VK_NULL_HANDLE;
     };
-
     RenderPassResources main;
     RenderPassResources after;
-
-    uint32_t acquired_image_index;
-
-    const size_t max_frames_in_swapchain = 3;
-    const size_t max_frames_in_flight = 1;
-    uint32_t current_frame;
-    struct FrameResources {
-        VkSemaphore gpu_ready_to_render;
-        VkFence cpu_ready_to_record;
-        VkCommandBuffer command_buffer;
-    };
-    std::vector <FrameResources> frame_resources;
 
     VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties;
 

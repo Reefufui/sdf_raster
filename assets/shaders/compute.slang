@@ -98,11 +98,11 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
 
         float3 child_coord = coord_stack [level - 1] + child_corner_offset;
 
-        if (!voxel_frustum_intersects (child_coord, child_voxel_size)) {
+        if ((pc.frustum_culling == 1) && !voxel_frustum_intersects (child_coord, child_voxel_size)) {
             continue;
         }
 
-        if (voxel_occluded (child_coord, child_voxel_size)) {
+        if ((pc.occlusion_culling == 1) && voxel_occluded (child_coord, child_voxel_size)) {
             continue;
         }
 

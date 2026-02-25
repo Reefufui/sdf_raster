@@ -15,8 +15,6 @@
 
 #include <LiteMath.h>
 
-#define column_major
-
 using float3 = LiteMath::float3;
 using float4 = LiteMath::float4;
 using float4x4 = LiteMath::float4x4;
@@ -62,13 +60,20 @@ struct TaskPayload {
     uint triangles_count;
 };
 
-#define PUSH_CONSTANTS_DATA_SIZE 160
+#ifdef __cplusplus
+#define column_major
+#else
+#define alignas(x)
+#endif
+
 struct PushConstantsData {
-    column_major float4x4 view_proj;
-    column_major float4x4 prev_view_proj;
-    float4 camera_pos;
-    int max_octree_depth;
-    uint active_leafs_max_count;
+    alignas (16) column_major float4x4 view_proj;
+    alignas (16) column_major float4x4 prev_view_proj;
+    alignas (16) float4 camera_pos;
+    alignas (4)  uint max_octree_depth;
+    alignas (4)  uint active_leafs_max_count;
+    alignas (4)  uint occlusion_culling;
+    alignas (4)  uint frustum_culling;
 };
 
 struct SdfOctreeNode {

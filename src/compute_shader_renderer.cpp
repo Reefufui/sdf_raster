@@ -670,12 +670,8 @@ void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff) {
 
 void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
-    if (f.prev_depth_image == VK_NULL_HANDLE) {
-        LOG_ERROR ("[{}] No previous depth image to copy from.", RENDERER_NAME);
-        return;
-    }
 
-    if (!this->frustum_draw_buffer) {
+    if (!this->frustum_draw_buffer && this->push_constants.occlusion_culling) {
         VkImageMemoryBarrier depth_to_src = {};
         depth_to_src.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         depth_to_src.pNext = nullptr;
@@ -806,47 +802,49 @@ void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
 
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
 
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_hz_buffer_pipeline);
+    if (this->push_constants.occlusion_culling) {
+        vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_hz_buffer_pipeline);
 
-    for (uint32_t i = 0; i < f.hz_buffer.mipLvls - 1; ++i) {
-        const uint32_t dstMip = i + 1;
+        for (uint32_t i = 0; i < f.hz_buffer.mipLvls - 1; ++i) {
+            const uint32_t dstMip = i + 1;
 
-        uint32_t dstWidth = std::max (1u, this->hz_buffer_ds.extent.width >> dstMip);
-        uint32_t dstHeight = std::max (1u, this->hz_buffer_ds.extent.height >> dstMip);
+            uint32_t dstWidth = std::max (1u, this->hz_buffer_ds.extent.width >> dstMip);
+            uint32_t dstHeight = std::max (1u, this->hz_buffer_ds.extent.height >> dstMip);
 
-        vkCmdBindDescriptorSets (cmd_buff
-            , VK_PIPELINE_BIND_POINT_COMPUTE
-            , this->compute_hz_buffer_pipeline_layout
-            , 0, 1, &f.gen_descriptor_sets [i]
-            , 0, nullptr);
+            vkCmdBindDescriptorSets (cmd_buff
+                , VK_PIPELINE_BIND_POINT_COMPUTE
+                , this->compute_hz_buffer_pipeline_layout
+                , 0, 1, &f.gen_descriptor_sets [i]
+                , 0, nullptr);
 
-        uint32_t groupX = (dstWidth + 15) / 16;
-        uint32_t groupY = (dstHeight + 15) / 16;
-        vkCmdDispatch (cmd_buff, groupX, groupY, 1);
+            uint32_t groupX = (dstWidth + 15) / 16;
+            uint32_t groupY = (dstHeight + 15) / 16;
+            vkCmdDispatch (cmd_buff, groupX, groupY, 1);
 
-        VkImageMemoryBarrier barrier = {};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = f.hz_buffer.image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = dstMip;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            VkImageMemoryBarrier barrier = {};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = f.hz_buffer.image;
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseMipLevel = dstMip;
+            barrier.subresourceRange.levelCount = 1;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = 1;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-        vkCmdPipelineBarrier (cmd_buff
-            , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-            , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-            , 0
-            , 0, nullptr
-            , 0, nullptr
-            , 1, &barrier);
+            vkCmdPipelineBarrier (cmd_buff
+                , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                , 0
+                , 0, nullptr
+                , 0, nullptr
+                , 1, &barrier);
+        }
     }
 
     VkImageSubresourceRange all_mip_lvls;
@@ -1237,14 +1235,12 @@ void ComputeShaderRenderer::render (const Camera& camera) {
 
     this->clear_geometry (cmd_buff);
 
-    if (this->push_constants.occlusion_culling) {
-        if (this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image != VK_NULL_HANDLE) {
-            this->copy_depth (cmd_buff);
-            this->compute_hz_buffer (cmd_buff);
-        } else {
-            LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
-            this->push_constants.occlusion_culling = false;
-        }
+    if (this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image != VK_NULL_HANDLE) {
+        this->copy_depth (cmd_buff);
+        this->compute_hz_buffer (cmd_buff);
+    } else {
+        LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
+        this->push_constants.occlusion_culling = true;
     }
 
     this->reset_active_leafs_counter (cmd_buff);

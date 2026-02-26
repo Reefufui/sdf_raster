@@ -25,7 +25,7 @@ bool voxel_occluded (const float3 coord, const float voxel_size) {
     }
 
     if (max_uv.x <= 0.0f || max_uv.y <= 0.0f || min_uv.x >= 1.0f || min_uv.y >= 1.0f) {
-        return false;
+        return false; // NOTE: Using previous frame's view matrix for frustum culling is a bad idea.
     }
 
     min_uv = clamp (min_uv, 0.0f, 1.0f);
@@ -38,7 +38,7 @@ bool voxel_occluded (const float3 coord, const float voxel_size) {
     float2 aabb_pixels = (max_uv - min_uv) * hzb_resolution;
     float max_dim = max (aabb_pixels.x, aabb_pixels.y);
 
-    float mip_f = ceil (log2 (max_dim));
+    float mip_f = floor (log2 (max_dim));
     uint mip = (uint) clamp (mip_f, 0.0f, mip_levels); // NOTE: On this mip level: texel size >= AABB size
 
     float hz0 = depth_sampler.SampleLevel (float2(min_uv.x, min_uv.y), mip);
@@ -46,7 +46,7 @@ bool voxel_occluded (const float3 coord, const float voxel_size) {
     float hz2 = depth_sampler.SampleLevel (float2(min_uv.x, max_uv.y), mip);
     float hz3 = depth_sampler.SampleLevel (float2(max_uv.x, max_uv.y), mip);
 
-    float hz_depth = min (min (hz0, hz1), min (hz2, hz3));
+    float hz_depth = max (max (hz0, hz1), max (hz2, hz3));
     return min_depth > hz_depth;
 }
 

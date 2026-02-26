@@ -302,7 +302,7 @@ if (SLANGC)
         add_custom_command(
             OUTPUT ${OUTPUT_SPV_FILE}
             COMMAND ${CMAKE_COMMAND} -E make_directory "${SPIRV_OUTPUT_DIR}/"
-            COMMAND ${SLANGC} ${SLANG_FILE} -o ${OUTPUT_SPV_FILE} -target spirv
+            COMMAND ${SLANGC} ${SLANG_FILE} -o ${OUTPUT_SPV_FILE} -target spirv -matrix-layout-column-major -O3
             DEPENDS ${SLANG_FILE}
             VERBATIM
             )

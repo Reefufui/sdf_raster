@@ -31,20 +31,12 @@
 static const float eps = 1e-6f;
 
 float3 interpolate (float3 p1, float3 p2, float valp1, float valp2) {
-    if (abs (0.f - valp1) < eps)
-        return (p1);
-    if (abs (0.f - valp2) < eps)
-        return (p2);
-    if (abs (valp1 - valp2) < eps)
-        return (p1);
-
-    float mu = (0.f - valp1) / (valp2 - valp1);
-
-    float3 p;
-    p.x = p1.x + mu * (p2.x - p1.x);
-    p.y = p1.y + mu * (p2.y - p1.y);
-    p.z = p1.z + mu * (p2.z - p1.z);
-    return (p);
+    if (abs (valp1 - valp2) < eps) {
+        return p1;
+    }
+    float mu = -valp1 / (valp2 - valp1);
+    mu = clamp (mu, 0.0f, 1.0f);
+    return lerp (p1, p2, mu);
 }
 
 float sample_sdf (const float3 p) {
@@ -102,17 +94,14 @@ void generate_geometry (uint active_leaf_index) {
 
     float3 corners [8];
     for (int i = 0; i < 8; ++i) {
-        float3 corner_offset = {0.0f, 0.0f, 0.0f};
-        if (((i >> 0) & 1) == 1) corner_offset.x = context.voxel_size;
-        if (((i >> 1) & 1) == 1) corner_offset.y = context.voxel_size;
-        if (((i >> 2) & 1) == 1) corner_offset.z = context.voxel_size;
-        corners [i] = min_corner + corner_offset;
+        corners [i] = min_corner + float3 (
+            (float)((i >> 0) & 1)
+            , (float)((i >> 1) & 1)
+            , (float)((i >> 2) & 1)
+        ) * context.voxel_size;
     }
 
-    uint triangles_count = 0;
-    for (; triangles_count < MAX_LEAF_PRIMS; ++triangles_count) {
-        if (cube_index_2_triangle_indices [context.cube_index * 16 + triangles_count * 3] == -1) break;
-    }
+    uint triangles_count = cube_index_2_mesh_output_counts [context.cube_index].y;
 
     for (int i = 0; i < triangles_count; ++i) {
         const int base = context.cube_index * 16 + i * 3;

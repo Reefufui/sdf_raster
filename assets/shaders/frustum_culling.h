@@ -27,16 +27,7 @@ bool test_axis (const float3 corners [8], const float3 axis) {
 }
 
 // false if fully outside, true if inside or intersects
-bool voxel_frustum_intersects (const float3 coord, const float voxel_size) {
-    float3 voxel_corners [8];
-    for (int i = 0; i < 8; ++i) {
-        float3 corner_offset = {0.0f, 0.0f, 0.0f};
-        if (((i >> 0) & 1) == 1) corner_offset.x = voxel_size;
-        if (((i >> 1) & 1) == 1) corner_offset.y = voxel_size;
-        if (((i >> 2) & 1) == 1) corner_offset.z = voxel_size;
-        voxel_corners [i] = coord + corner_offset;
-    }
-
+bool voxel_frustum_intersects (const float3 voxel_corners [8]) {
     // Test voxel axes
     for (int i = 0; i < 3; i++) {
         if (!test_axis (voxel_corners, voxel_axes [i])) return false;

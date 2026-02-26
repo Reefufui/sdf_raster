@@ -204,7 +204,6 @@ void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
     compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/compute.slang.spv");
     this->compute_active_leafs_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
             this->sdf_octree_ds.descriptor_set_layout
-            , this->mesh_ds.descriptor_set_layout
             , this->marching_cubes_lookup_table_ds.descriptor_set_layout
             , this->active_leafs_ds.descriptor_set_layout
             , this->frustum_ds.descriptor_set_layout
@@ -903,9 +902,8 @@ void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff
 void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
-    std::array <VkDescriptorSet, 6> ds = {
+    std::array <VkDescriptorSet, 5> ds = {
         this->sdf_octree_ds.descriptor_set, // TODO: sepparate subtree roots buffer for all frames
-        this->mesh_ds.descriptor_sets [this->frame_index],
         this->marching_cubes_lookup_table_ds.descriptor_set,
         this->active_leafs_ds.descriptor_sets [this->frame_index],
         this->frustum_ds.descriptor_sets [this->frame_index],

@@ -1,17 +1,12 @@
 // false if fully occluded
 
-bool voxel_occluded (const float3 coord, const float voxel_size) {
+bool voxel_occluded (const float3 voxel_corners [8]) {
     float2 min_uv = float2 (1.0f);
     float2 max_uv = float2 (0.0f);
     float min_depth = 1.0f;
 
     for (int i = 0; i < 8; ++i) {
-        float3 offset = {0.0f, 0.0f, 0.0f};
-        if (((i >> 0) & 1) > 0) offset.x = voxel_size;
-        if (((i >> 1) & 1) > 0) offset.y = voxel_size;
-        if (((i >> 2) & 1) > 0) offset.z = voxel_size;
-
-        float4 clip = mul (pc.prev_view_proj, float4 (coord + offset, 1.0f));
+        float4 clip = mul (pc.prev_view_proj, float4 (voxel_corners [i], 1.0f));
         if (clip.w <= 0.0f) {
             return false;
         }

@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img src="images/bunny_frustum_culled.png" alt="Stanford Bunny Frustum Culled" width="700"/>
+  <img src="images/bunny_culled.png" alt="Stanford Bunny Culled" width="700"/>
   <br>
   <em>What is actually rendered.</em>
 </p>
@@ -24,66 +24,142 @@ The goal of this **master degree diploma** project is to develop accelerated imp
 *   **Frutum culling:** Culling whole SDF-octree subtrees which are not intersected with frustum.
 *   **Fly-around cam:** Simple camera and controls for scene navigation. Caches previous camera view.
 *   **Culling demo:** Ability to leave your current frustum and look at the renderered scene from another angle.
-*   **Occlusion culling (WIP):** Occlusion culling optimization using H-Zbuffer.
+*   **Occlusion culling:** Occlusion culling optimization using previous frame H-Zbuffer.
 *   **Mesh shading (WIP):** Directly feeding rasterizer with geometry, rather then using per-frame vertex buffers.
 
 ## Technology Stack
 
-*   **Language:** `C++17` (or higher)
+*   **Language:** `C++20, Slang`
 *   **Graphics API:** `Vulkan 4.0+`
 *   **Build System:** `CMake`
 *   **Windowing System:** `GLFW`
 *   **Third-party Libraries:**
-    *   `Vulkan SDK` (for Vulkan API and tooling)
-    *   `volk` (Vulkan function loader)
+    *   `volk` (for Vulkan function loading)
     *   `spdlog` (for logging)
-    *   `LiteMath` (linear algebra)
+    *   `LiteMath` (for linear algebra)
+    *   `LiteImage` (for texture/image loading)
     *   `nlohmann/json` (for configuration/data parsing)
-    *   `dear ImGui` (for debug GUI/interface)
-    *   `stb_image` (for texture/image loading)
-*   **Shader Language:** `Slang`
+    *   `dear ImGui` (for GUI/interface)
 
 ## Building the Project
 
 ### Prerequisites
 
-*   **Vulkan Libraries (optional Vulkan SDK for Debug):** `Vulkan 4.0+`
-*   **C++ Compiler:** g++ or clang.
-*   **Shader Compiler:** slangc. See script `./utils/install_slang.sh` for quick install or use Vulkan SDK.
-*   **CMake:** Version `3.16` or newer.
 *   **OS:** Linux, macOS. **Windows is not supported.**
+*   **CMake:** version `3.21` or newer.
+*   **C++ Compiler:** any
+*   **Git:** Required for cloning the repository with submodules.
+
+#### Graphics Dependencies
+
+You need to install development libraries for Vulkan and GLFW.
+
+*   **GLFW:** A windowing system library.
+    *   **On Debian/Ubuntu:**
+        ```bash
+        sudo apt install libglfw3-dev
+        ```
+    *   **On Arch Linux:**
+        ```bash
+        sudo pacman -S glfw
+        ```
+    *   **On Fedora:**
+        ```bash
+        sudo dnf install glfw-devel
+        ```
+    *   **On macOS (using Homebrew):**
+        ```bash
+        brew install glfw
+        ```
+
+*   **Vulkan:**
+    You must have a Vulkan-compatible GPU and up-to-date drivers.
+
+    **1. Minimum Requirements (for Release builds):**
+    You need the Vulkan loader and development headers.
+
+    *   **On Debian/Ubuntu:**
+        ```bash
+        sudo apt install libvulkan-dev vulkan-tools
+        ```
+    *   **On Arch Linux:**
+        ```bash
+        sudo pacman -S vulkan-icd-loader vulkan-headers
+        ```
+    *   **On Fedora:**
+        ```bash
+        sudo dnf install vulkan-loader-devel
+        ```
+    *   **On macOS (using Homebrew):**
+        ```bash
+        brew install vulkan-headers moltenvk
+        ```
+    _You can verify the installation by running `vulkaninfo`._
+
+    **2. Full SDK (for Debug builds):**
+    For debugging and access to validation layers, it is highly recommended to install the full Vulkan SDK.
+
+    *   Download the SDK from the official website: **[vulkan.lunarg.com](https://vulkan.lunarg.com/)**.
+    *   Follow their installation instructions and make sure the `VULKAN_SDK` environment variable is set correctly.
+    *   For a quick setup on Debian/Ubuntu, you can use the provided script: `./utils/install_vulkan_sdk_apt.sh`.
+
+#### Shading Language Compiler
+*   **Slang Compiler:** The project uses `slangc` for shader compilation.
+    *   You can use the provided helper script for a quick installation:
+        ```bash
+        ./utils/install_slang.sh
+        ```
+
 
 ### Build Instructions
 
-1.  **Clone the repository:**
+1.  **Clone the repository (with submodules):**
     ```bash
-    git clone https://github.com/Reefufui/sdf_raster.git
+    git clone --recursive https://github.com/Reefufui/sdf_raster.git
     cd sdf_raster
     ```
 
 2.  **Configure and Build:**
+    You can use the provided helper scripts or build manually.
 
-    *   **For Linux:**
-        ```bash
-        cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-        cmake --build build -j$(nproc)
-        ```
-        *Optionally, replace `-DCMAKE_BUILD_TYPE=Release` with `Debug` or `RelWithDebInfo`. If so, make sure that **Vulkan SDK:** is installed and properly configured. The `VULKAN_SDK` environment variable must be set. See script `utils/install_vulkan_sdk_apt.sh` for quick linux setup.
+    *   **Using Scripts (Recommended):**
+        *   For a Release build: `./utils/rebuild_release.sh`
+        *   For a Debug build: `./utils/rebuild_debug.sh`
 
-    *   **For macOS:**
-        ```bash
-        cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-        cmake --build build -j$(sysctl -n hw.ncpu)
-        ```
-        *Optionally, replace `-DCMAKE_BUILD_TYPE=Release` with `Debug` or `RelWithDebInfo`. If so, make sure that **Vulkan SDK:** is installed and properly configured. The `VULKAN_SDK` environment variable must be set.
+    *   **Manual Build:**
+        *   **For Linux:**
+            ```bash
+            # For a Release build
+            cmake -B build-release -S . -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-release -j$(nproc)
+
+            # For a Debug build (Vulkan SDK is required)
+            cmake -B build-debug -S . -DCMAKE_BUILD_TYPE=Debug
+            cmake --build build-debug -j$(nproc)
+            ```
+        *   **For macOS:**
+            ```bash
+            # For a Release build
+            cmake -B build-release -S . -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-release -j$(sysctl -n hw.ncpu)
+
+            # For a Debug build (Vulkan SDK is required)
+            cmake -B build-debug -S . -DCMAKE_BUILD_TYPE=Debug
+            cmake --build build-debug -j$(sysctl -n hw.ncpu)
+            ```
 
 ## Running the Project
-**Important:** The application must be run from the `build` directory to ensure all resources are loaded correctly.
+**Important:** The application must be run from the build directory to ensure all resources are loaded correctly.
 
-After building the project, navigate to the `build` directory and run the executable:
+After building the project, navigate to the build directory and run the executable:
 
 ```bash
-cd build
+# If you built in release mode
+cd build-release
+./bin/sdf_raster
+
+# Or if you built in debug mode
+cd build-debug
 ./bin/sdf_raster
 ```
 

@@ -1,11 +1,12 @@
 #!/bin/bash
 
 PROJECT_NAME="sdf_raster"
-VERSION="1.0.0"
+VERSION="1.0.1"
 RELEASE_DIR_BASE="release-packages"
 
 EXECUTABLE_PATH="release-build/bin/${PROJECT_NAME}"
 ASSETS_PATH="release-build/assets"
+SHADERS_PATH="release-build/shaders"
 LOGS_PATH="release-build/logs"
 
 get_os_name() {
@@ -63,6 +64,13 @@ if [ -d "${ASSETS_PATH}" ]; then
     cp -R "${ASSETS_PATH}" "${PACKING_DIR}/"
 else
     echo "Warning: Assets folder '${ASSETS_PATH}' not found. Skipping."
+fi
+
+if [ -d "${SHADERS_PATH}" ]; then
+    echo "Copying shaders folder: ${SHADERS_PATH}"
+    cp -R "${SHADERS_PATH}" "${PACKING_DIR}/"
+else
+    echo "Warning: Shader folder '${SHADERS_PATH}' not found. Skipping."
 fi
 
 if [ -f "README.md" ]; then

@@ -8,32 +8,6 @@ set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set (CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set (CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-if (CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
-    set (VULKAN_SDK_REQUIRED TRUE)
-else ()
-    set (VULKAN_SDK_REQUIRED FALSE)
-endif ()
-
-if (VULKAN_SDK_REQUIRED)
-    if (NOT DEFINED ENV{VULKAN_SDK})
-        message (FATAL_ERROR "VULKAN_SDK environment variable not set. Vulkan SDK is required for this build configuration (${CMAKE_BUILD_TYPE}).")
-    endif ()
-
-    if (NOT EXISTS "$ENV{VULKAN_SDK}")
-        message (FATAL_ERROR "VULKAN_SDK path does not exist: $ENV{VULKAN_SDK}. Please check your environment variable.")
-    endif ()
-
-    set (VULKAN_SDK_ROOT "$ENV{VULKAN_SDK}")
-else ()
-    message (STATUS "Vulkan SDK is not required for this build configuration (${CMAKE_BUILD_TYPE}).")
-endif ()
-
-if (APPLE)
-    set (VULKAN_LIB_EXT ".dylib")
-else ()
-    set (VULKAN_LIB_EXT ".so")
-endif ()
-
 find_package(Vulkan REQUIRED)
 message(STATUS "Vulkan ${Vulkan_VERSION} found: ${Vulkan_FOUND}")
 message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
@@ -65,37 +39,37 @@ else ()
     message(STATUS "Found Vulkan API version ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR} meets or exceeds the required minimum version ${REQUIRED_VULKAN_VERSION_STRING}.")
 endif ()
 
-message(STATUS "Checking for system glfw3...")
+message (STATUS "Checking for system glfw3...")
 set (REQUIRED_GLFW_VERSION "3.4.0")
-find_package(glfw3 CONFIG REQUIRED)
-if(glfw3_VERSION VERSION_GREATER REQUIRED_GLFW_VERSION)
-    message(WARNING 
+find_package (glfw3 CONFIG REQUIRED)
+if (glfw3_VERSION VERSION_GREATER REQUIRED_GLFW_VERSION)
+    message (WARNING 
         "GLFW version ${glfw3_VERSION} > required ${REQUIRED_GLFW_VERSION}. "
         "Tested with ${REQUIRED_GLFW_VERSION} only. Possible compatibility issues.")
-elseif(glfw3_VERSION VERSION_LESS REQUIRED_GLFW_VERSION)
-    message(FATAL_ERROR 
+elseif (glfw3_VERSION VERSION_LESS REQUIRED_GLFW_VERSION)
+    message (FATAL_ERROR 
         "GLFW version ${glfw3_VERSION} < required ${REQUIRED_GLFW_VERSION}")
-else()
-    message(STATUS "GLFW version ${glfw3_VERSION} - perfect match!")
-endif()
+else ()
+    message (STATUS "GLFW version ${glfw3_VERSION} - perfect match!")
+endif ()
 add_library (glfw::glfw ALIAS glfw)
 
 add_subdirectory (submodules/volk)
 
-set (SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-set (SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
-set (SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set (SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
-set (SPDLOG_COMPILED_LIB_ASYNC ON CACHE BOOL "" FORCE)
+set (SPDLOG_BUILD_SHARED OFF CACHE BOOL "")
+set (SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "")
+set (SPDLOG_BUILD_TESTS OFF CACHE BOOL "")
+set (SPDLOG_INSTALL OFF CACHE BOOL "")
+set (SPDLOG_COMPILED_LIB_ASYNC ON CACHE BOOL "")
 add_subdirectory (submodules/spdlog)
 
-set (JSON_BuildTests OFF CACHE BOOL "" FORCE)
-set (JSON_Install OFF CACHE BOOL "" FORCE)
-set (JSON_MultipleHeaders ON CACHE BOOL "" FORCE)
-set (JSON_GlobalUDLs OFF CACHE BOOL "" FORCE)
-set (JSON_ImplicitConversions OFF CACHE BOOL "" FORCE)
-set (JSON_Diagnostics OFF CACHE BOOL "" FORCE)
-set (JSON_Diagnostic_Positions OFF CACHE BOOL "" FORCE)
+set (JSON_BuildTests OFF CACHE BOOL "")
+set (JSON_Install OFF CACHE BOOL "")
+set (JSON_MultipleHeaders ON CACHE BOOL "")
+set (JSON_GlobalUDLs OFF CACHE BOOL "")
+set (JSON_ImplicitConversions OFF CACHE BOOL "")
+set (JSON_Diagnostics OFF CACHE BOOL "")
+set (JSON_Diagnostic_Positions OFF CACHE BOOL "")
 add_subdirectory (submodules/json)
 
 add_library (imgui STATIC
@@ -109,7 +83,6 @@ target_include_directories (imgui PUBLIC
     submodules/imgui
     submodules/imgui/backends
 )
-target_compile_features (imgui PRIVATE cxx_std_20)
 add_library (imgui::imgui ALIAS imgui)
 
 add_library (vk_utils STATIC
@@ -155,29 +128,13 @@ add_executable(${PROJECT_NAME}
     src/vulkan_context.cpp
 )
 
-if (VULKAN_SDK_REQUIRED)
-    target_include_directories (${PROJECT_NAME} PRIVATE "${VULKAN_SDK_ROOT}/include")
-    link_directories ("${VULKAN_SDK_ROOT}/lib")
-
-    if (NOT EXISTS "${VULKAN_SDK_ROOT}/lib/libvulkan${VULKAN_LIB_EXT}")
-        message (FATAL_ERROR "Could not find Vulkan loader library at ${VULKAN_SDK_ROOT}/lib/libvulkan${VULKAN_LIB_EXT}. Please check your Vulkan SDK installation.")
-    endif()
-
-    set_target_properties (${PROJECT_NAME} PROPERTIES INSTALL_RPATH "$ENV{VULKAN_SDK}/lib")
-endif ()
-
-target_compile_definitions (${PROJECT_NAME} PRIVATE IMGUI_DISABLE_OBSOLETE_FUNCTIONS=1)
-
 target_include_directories (${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${vk_utils_project_SOURCE_DIR}
-    ${litemath_SOURCE_DIR}
-    ${imgui_SOURCE_DIR}
-    ${imgui_SOURCE_DIR}/backends
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets
 )
 
 target_link_libraries (${PROJECT_NAME} PRIVATE
-    # ${Vulkan_LOADER_LIBRARY}
     glfw::glfw
     imgui::imgui
     LiteMath::LiteImage
@@ -190,28 +147,22 @@ target_link_libraries (${PROJECT_NAME} PRIVATE
 )
 
 if (CMAKE_BUILD_TYPE MATCHES Debug)
-    message(STATUS "Configuring for Debug build...")
-    target_compile_options(${PROJECT_NAME} PRIVATE -g -O0 -Wall -Wextra)
-    target_link_options(${PROJECT_NAME} PRIVATE -g)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE VULKAN_VALIDATION_LAYERS=1)
+    message (STATUS "Configuring for Debug build...")
+    target_compile_options (${PROJECT_NAME} PRIVATE -g -O0 -Wall -Wextra)
+    target_link_options (${PROJECT_NAME} PRIVATE -g)
+    target_compile_definitions (${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE VULKAN_VALIDATION_LAYERS=1)
 elseif (CMAKE_BUILD_TYPE MATCHES Release)
-    message(STATUS "Configuring for Release build...")
-    target_compile_options(${PROJECT_NAME} PRIVATE -O3 -DNDEBUG -Wall -Wextra)
-    target_link_options(${PROJECT_NAME} PRIVATE -O3)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
+    message (STATUS "Configuring for Release build...")
+    target_compile_options (${PROJECT_NAME} PRIVATE -O3 -DNDEBUG -Wall -Wextra)
+    target_link_options (${PROJECT_NAME} PRIVATE -O3)
+    target_compile_definitions (${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
 elseif (CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
-    message(STATUS "Configuring for Release with Debug Info build...")
-    target_compile_options(${PROJECT_NAME} PRIVATE -O2 -g -DNDEBUG -Wall -Wextra)
-    target_link_options(${PROJECT_NAME} PRIVATE -O2 -g)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO VULKAN_VALIDATION_LAYERS=1)
+    message (STATUS "Configuring for Release with Debug Info build...")
+    target_compile_options (${PROJECT_NAME} PRIVATE -O2 -g -DNDEBUG -Wall -Wextra)
+    target_link_options (${PROJECT_NAME} PRIVATE -O2 -g)
+    target_compile_definitions (${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO VULKAN_VALIDATION_LAYERS=1)
 endif ()
 
-target_compile_options (${PROJECT_NAME} PRIVATE -Wno-deprecated-copy)
-target_compile_features (${PROJECT_NAME} PRIVATE cxx_std_20)
-
 add_subdirectory (shaders)
-target_include_directories (${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/)
-
 add_subdirectory (assets)
-target_include_directories (${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/assets/)
 

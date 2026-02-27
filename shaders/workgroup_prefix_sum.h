@@ -1,6 +1,6 @@
 // workgroup_prefix_sum.slang
 
-#include "common.h"
+#include "shader_common.hpp"
 
 groupshared uint s_data1 [PREFIX_SUM_WORKGROUP_SIZE];
 groupshared uint s_data2 [PREFIX_SUM_WORKGROUP_SIZE];

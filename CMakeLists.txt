@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
 
 project(sdf_raster LANGUAGES CXX)
 
@@ -69,117 +69,93 @@ else ()
     message(STATUS "Found Vulkan API version ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR} meets or exceeds the required minimum version ${REQUIRED_VULKAN_VERSION_STRING}.")
 endif ()
 
-include(FetchContent)
+message(STATUS "Checking for system glfw3...")
+set (REQUIRED_GLFW_VERSION "3.4.0")
+find_package(glfw3 CONFIG REQUIRED)
+if(glfw3_VERSION VERSION_GREATER REQUIRED_GLFW_VERSION)
+    message(WARNING 
+        "GLFW version ${glfw3_VERSION} > required ${REQUIRED_GLFW_VERSION}. "
+        "Tested with ${REQUIRED_GLFW_VERSION} only. Possible compatibility issues.")
+elseif(glfw3_VERSION VERSION_LESS REQUIRED_GLFW_VERSION)
+    message(FATAL_ERROR 
+        "GLFW version ${glfw3_VERSION} < required ${REQUIRED_GLFW_VERSION}")
+else()
+    message(STATUS "GLFW version ${glfw3_VERSION} - perfect match!")
+endif()
+add_library (glfw::glfw ALIAS glfw)
 
-message(STATUS "Checking for volk_project...")
-FetchContent_Declare(
-    volk_project
-    GIT_REPOSITORY https://github.com/zeux/volk.git
-    GIT_TAG        master
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(volk_project)
-message(STATUS "volk_project is available (SOURCE_DIR: ${volk_project_SOURCE_DIR})")
+add_subdirectory (submodules/volk)
 
-message(STATUS "Checking for glfw_project...")
-FetchContent_Declare(
-    glfw_project
-    GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG        3.3.9
-    CMAKE_ARGS
-        -DBUILD_SHARED_LIBS=OFF
-        -DGLFW_BUILD_EXAMPLES=OFF
-        -DGLFW_BUILD_TESTS=OFF
-        -DGLFW_BUILD_DOCS=OFF
-        -DGLFW_INSTALL=OFF
-)
-FetchContent_MakeAvailable(glfw_project)
-message(STATUS "glfw_project is available (SOURCE_DIR: ${glfw_project_SOURCE_DIR})")
+set (SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set (SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+set (SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set (SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
+set (SPDLOG_COMPILED_LIB_ASYNC ON CACHE BOOL "" FORCE)
+add_subdirectory (submodules/spdlog)
 
-message(STATUS "Checking for litemath...")
-FetchContent_Declare(
-    litemath
-    GIT_REPOSITORY https://github.com/msu-graphics-group/LiteMath.git
-    GIT_TAG        main
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(litemath)
-message(STATUS "litemath is available (SOURCE_DIR: ${litemath_SOURCE_DIR})")
+set (JSON_BuildTests OFF CACHE BOOL "" FORCE)
+set (JSON_Install OFF CACHE BOOL "" FORCE)
+set (JSON_MultipleHeaders ON CACHE BOOL "" FORCE)
+set (JSON_GlobalUDLs OFF CACHE BOOL "" FORCE)
+set (JSON_ImplicitConversions OFF CACHE BOOL "" FORCE)
+set (JSON_Diagnostics OFF CACHE BOOL "" FORCE)
+set (JSON_Diagnostic_Positions OFF CACHE BOOL "" FORCE)
+add_subdirectory (submodules/json)
 
-message(STATUS "Checking for vk_utils_project...")
-FetchContent_Declare(
-    vk_utils_project
-    GIT_REPOSITORY https://github.com/msu-graphics-group/vk-utils.git
-    GIT_TAG        master
-    GIT_SHALLOW    TRUE
+add_library (imgui STATIC
+    submodules/imgui/imgui.cpp
+    submodules/imgui/imgui_demo.cpp
+    submodules/imgui/imgui_draw.cpp
+    submodules/imgui/imgui_tables.cpp
+    submodules/imgui/imgui_widgets.cpp
 )
-FetchContent_MakeAvailable(vk_utils_project)
-message(STATUS "vk_utils_project is available (SOURCE_DIR: ${vk_utils_project_SOURCE_DIR})")
+target_include_directories (imgui PUBLIC
+    submodules/imgui
+    submodules/imgui/backends
+)
+target_compile_features (imgui PRIVATE cxx_std_20)
+add_library (imgui::imgui ALIAS imgui)
 
-message(STATUS "Checking for stb_project...")
-FetchContent_Declare(
-    stb_project
-    GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG        master
-    GIT_SHALLOW    TRUE
+add_library (vk_utils STATIC
+    submodules/vk-utils/vk_alloc_simple.cpp
+    submodules/vk-utils/vk_buffers.cpp
+    submodules/vk-utils/vk_context.cpp
+    submodules/vk-utils/vk_copy.cpp
+    submodules/vk-utils/vk_descriptor_sets.cpp
+    submodules/vk-utils/vk_images.cpp
+    submodules/vk-utils/vk_pipeline.cpp
+    submodules/vk-utils/vk_swapchain.cpp
+    submodules/vk-utils/vk_utils.cpp
 )
-FetchContent_MakeAvailable(stb_project) # Загрузит репозиторий и сделает его доступным
-message(STATUS "stb_project is available (SOURCE_DIR: ${stb_project_SOURCE_DIR})")
+target_include_directories (vk_utils PUBLIC submodules/vk-utils)
+target_compile_definitions (vk_utils PUBLIC USE_VOLK=1)
+target_link_libraries (vk_utils PUBLIC volk)
+add_library (vk_utils::vk_utils ALIAS vk_utils)
 
-message(STATUS "Checking for nlohmann_json...")
-FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.12.0
-)
-FetchContent_MakeAvailable(nlohmann_json)
-message(STATUS "nlohmann_json is available (SOURCE_DIR: ${nlohmann_json_SOURCE_DIR})")
+add_library (stb_image STATIC third_party/stb/stb_image.c)
+target_include_directories (stb_image PUBLIC third_party/stb)
+add_library (stb::image ALIAS stb_image)
 
-message(STATUS "Checking for imgui...")
-FetchContent_Declare(
-    imgui
-    GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG        v1.92.6
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(imgui)
-message(STATUS "imgui is available (SOURCE_DIR: ${imgui_SOURCE_DIR})")
+add_library (stb_image_write STATIC third_party/stb/stb_image_write.c)
+target_include_directories (stb_image_write PUBLIC third_party/stb)
+add_library (stb::image_write ALIAS stb_image_write)
 
-message(STATUS "Checking for spdlog...")
-FetchContent_Declare(
-    spdlog_project
-    GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG        v1.17.0
-    GIT_SHALLOW    TRUE
-    CMAKE_ARGS
-        -DSPDLOG_BUILD_SHARED=OFF
-        -DSPDLOG_BUILD_EXAMPLE=OFF
-        -DSPDLOG_BUILD_TESTS=OFF
-        -DSPDLOG_INSTALL=OFF
-        -DSPDLOG_COMPILED_LIB_ASYNC=ON
+add_library (LiteMath INTERFACE)
+target_include_directories (LiteMath INTERFACE
+    submodules/LiteMath
+    submodules/LiteMath/external
 )
-FetchContent_MakeAvailable(spdlog_project)
-message(STATUS "spdlog_project is available (SOURCE_DIR: ${spdlog_project_SOURCE_DIR})")
+add_library (LiteMath::LiteMath ALIAS LiteMath)
+add_library (LiteImage STATIC submodules/LiteMath/Image2d.cpp)
+target_compile_definitions (LiteImage PRIVATE
+    USE_STB_IMAGE=1
+    STB_IMAGE_STATIC=1
+    STB_IMAGE_WRITE_STATIC=1
+)
+target_link_libraries (LiteImage PUBLIC LiteMath stb::image_write stb::image)
+add_library (LiteMath::LiteImage ALIAS LiteImage)
 
 add_executable(${PROJECT_NAME}
-    ${litemath_SOURCE_DIR}/Image2d.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_alloc_simple.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_buffers.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_context.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_copy.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_descriptor_sets.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_images.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_pipeline.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_swapchain.cpp
-    ${vk_utils_project_SOURCE_DIR}/vk_utils.cpp
-
-    ${imgui_SOURCE_DIR}/imgui.cpp
-    ${imgui_SOURCE_DIR}/imgui_draw.cpp
-    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-    ${imgui_SOURCE_DIR}/imgui_tables.cpp
-    ${imgui_SOURCE_DIR}/imgui_demo.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
-
     src/application.cpp
     src/camera.cpp
     src/compute_shader_renderer.cpp
@@ -193,45 +169,42 @@ add_executable(${PROJECT_NAME}
     src/occlusion_culling.cpp
     src/sdf_octree.cpp
     src/vulkan_context.cpp
-
-    src/cpu_sandbox/task_generator.cpp
-    src/cpu_sandbox/mesh_sphere.cpp
-    src/cpu_sandbox/mesh_constructor.cpp
 )
 
 if (VULKAN_SDK_REQUIRED)
-    target_include_directories(${PROJECT_NAME} PRIVATE "${VULKAN_SDK_ROOT}/include")
-    link_directories("${VULKAN_SDK_ROOT}/lib")
+    target_include_directories (${PROJECT_NAME} PRIVATE "${VULKAN_SDK_ROOT}/include")
+    link_directories ("${VULKAN_SDK_ROOT}/lib")
 
     if (NOT EXISTS "${VULKAN_SDK_ROOT}/lib/libvulkan${VULKAN_LIB_EXT}")
-        message(FATAL_ERROR "Could not find Vulkan loader library at ${VULKAN_SDK_ROOT}/lib/libvulkan${VULKAN_LIB_EXT}. Please check your Vulkan SDK installation.")
+        message (FATAL_ERROR "Could not find Vulkan loader library at ${VULKAN_SDK_ROOT}/lib/libvulkan${VULKAN_LIB_EXT}. Please check your Vulkan SDK installation.")
     endif()
 
-    set_target_properties(${PROJECT_NAME} PROPERTIES
-        INSTALL_RPATH "$ENV{VULKAN_SDK}/lib")
-
+    set_target_properties (${PROJECT_NAME} PROPERTIES INSTALL_RPATH "$ENV{VULKAN_SDK}/lib")
 endif ()
 
-target_compile_definitions(${PROJECT_NAME} PUBLIC USE_STB_IMAGE)
-target_compile_definitions(${PROJECT_NAME} PRIVATE USE_VOLK)
-target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_DISABLE_OBSOLETE_FUNCTIONS=1)
+target_compile_definitions (${PROJECT_NAME} PRIVATE IMGUI_DISABLE_OBSOLETE_FUNCTIONS=1)
 
-target_include_directories(${PROJECT_NAME} PRIVATE
+target_include_directories (${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${vk_utils_project_SOURCE_DIR}
     ${litemath_SOURCE_DIR}
-    ${stb_project_SOURCE_DIR}
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    glfw
-    volk
+target_link_libraries (${PROJECT_NAME} PRIVATE
+    # ${Vulkan_LOADER_LIBRARY}
+    glfw::glfw
+    imgui::imgui
+    LiteMath::LiteImage
+    LiteMath::LiteMath
+    nlohmann_json::nlohmann_json
+    spdlog::spdlog
+    vk_utils::vk_utils
+    volk::volk
     Vulkan::Vulkan
-    nlohmann_json
-    ${Vulkan_LOADER_LIBRARY}
-    spdlog
+    stb::image_write
+    stb::image
 )
 
 if(CMAKE_BUILD_TYPE MATCHES Debug)
@@ -252,78 +225,11 @@ elseif(CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
 endif()
 
 target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-copy)
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
 
-set (SLANGC "")
-set (SLANG_COMPILER "" CACHE PATH "Path to the Slang compiler (slangc) executable. Overrides VULKAN_SDK's slangc if set.")
-if (SLANG_COMPILER)
-    if (EXISTS "${SLANG_COMPILER}" AND IS_EXECUTABLE "${SLANG_COMPILER}")
-        set (SLANGC "${SLANG_COMPILER}")
-        message (STATUS "Using user-specified slangc: ${SLANGC}")
-    else ()
-        message( FATAL_ERROR "User-specified Slang compiler '${SLANG_COMPILER}' is not a valid executable or does not exist.")
-    endif ()
-endif ()
+add_subdirectory (shaders)
+target_include_directories (${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/)
 
-if (NOT SLANGC AND VULKAN_SDK_REQUIRED)
-    set (SDK_SLANGC "$ENV{VULKAN_SDK}/bin/slangc")
-    if (EXISTS "${SDK_SLANGC}" AND IS_EXECUTABLE "${SDK_SLANGC}")
-        set (SLANGC "${SDK_SLANGC}")
-        message (STATUS "Using slangc from VULKAN_SDK: ${SLANGC}")
-    else ()
-        message (WARNING "VULKAN_SDK found (${VULKAN_SDK_ROOT}), but slangc not found at '${SDK_SLANGC}' or is not executable. Attempting to find slangc in system PATH.")
-    endif ()
-endif ()
-
-if (NOT SLANGC)
-    find_program (SLANG_COMPILER_EXECUTABLE slangc)
-    if (SLANG_COMPILER_EXECUTABLE)
-        set (SLANGC "${SLANG_COMPILER_EXECUTABLE}")
-        set (SLANG_COMPILER_EXECUTABLE ${SLANG_COMPILER_EXECUTABLE} CACHE PATH "Path to the Slang compiler (slangc) executable if not using Vulkan SDK's version." FORCE)
-        message (STATUS "Found slangc in PATH: ${SLANG_COMPILER_EXECUTABLE}")
-    else ()
-        message (FATAL_ERROR "slangc not found. Please set the SLANG_COMPILER CMake variable or ensure slangc is in your PATH.")
-    endif ()
-endif ()
-
-if (SLANGC)
-    set(SLANG_SHADERS_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders)
-    set(SPIRV_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/assets/shaders)
-
-    file(GLOB_RECURSE SLANG_SOURCE_FILES
-        "${SLANG_SHADERS_SOURCE_DIR}/*.slang"
-        )
-
-    list(APPEND BUILT_SPIRV_FILES)
-
-    foreach(SLANG_FILE ${SLANG_SOURCE_FILES})
-        get_filename_component(FILE_NAME ${SLANG_FILE} NAME)
-        set(OUTPUT_SPV_FILE "${SPIRV_OUTPUT_DIR}/${FILE_NAME}.spv")
-
-        add_custom_command(
-            OUTPUT ${OUTPUT_SPV_FILE}
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${SPIRV_OUTPUT_DIR}/"
-            COMMAND ${SLANGC} ${SLANG_FILE} -o ${OUTPUT_SPV_FILE} -target spirv -matrix-layout-column-major -O3
-            DEPENDS ${SLANG_FILE}
-            VERBATIM
-            )
-        list(APPEND BUILT_SPIRV_FILES ${OUTPUT_SPV_FILE})
-    endforeach()
-
-    add_custom_target(CompileSlangShaders ALL DEPENDS ${BUILT_SPIRV_FILES})
-
-    add_dependencies(${PROJECT_NAME} CompileSlangShaders)
-else()
-    message(WARNING "Slang compiler not found or specified. Shader compilation targets will be skipped.")
-endif()
-
-set(SDF_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/sdf")
-set(SDF_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/assets/sdf")
-add_custom_command(
-    TARGET ${PROJECT_NAME}
-    PRE_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${SDF_SOURCE_DIR}" "${SDF_BINARY_DIR}"
-    COMMENT "Copying assets/sdf to binary directory"
-)
-
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/assets/)
+add_subdirectory (assets)
+target_include_directories (${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/assets/)
 

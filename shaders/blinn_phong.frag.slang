@@ -1,6 +1,6 @@
-// simple_color.slang
+// blinn_phong.frag.slang
 
-#include "common.h"
+#include "shader_common.hpp"
 
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 

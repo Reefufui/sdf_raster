@@ -1,12 +1,13 @@
 #include <fstream>
 #include <vector>
 
-#include "camera.hpp"
-#include "logger.hpp"
 #include "nlohmann/json.hpp"
-#include "shaders/common.h"
 #include "vk_buffers.h"
 #include "vk_utils.h"
+
+#include "camera.hpp"
+#include "logger.hpp"
+#include "shader_common.hpp"
 
 namespace sdf_raster {
 

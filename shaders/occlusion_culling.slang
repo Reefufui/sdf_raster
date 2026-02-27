@@ -1,12 +1,12 @@
-// false if fully occluded
+// occlusion_culling.slang
 
-bool voxel_occluded (const float3 voxel_corners [8]) {
+bool voxel_occluded (Sampler2D <float> depth_sampler, float4x4 depth_view_proj, const float3 voxel_corners [8]) {
     float2 min_uv = float2 (1.0f);
     float2 max_uv = float2 (0.0f);
     float min_depth = 1.0f;
 
     for (int i = 0; i < 8; ++i) {
-        float4 clip = mul (pc.prev_view_proj, float4 (voxel_corners [i], 1.0f));
+        float4 clip = mul (depth_view_proj, float4 (voxel_corners [i], 1.0f));
         if (clip.w <= 0.0f) {
             return false;
         }
@@ -29,17 +29,16 @@ bool voxel_occluded (const float3 voxel_corners [8]) {
     uint mip_w, mip_h, mip_levels;
     depth_sampler.GetDimensions (0, mip_w, mip_h, mip_levels);
 
-    float2 hzb_resolution = float2 (mip_w, mip_h);
-    float2 aabb_pixels = (max_uv - min_uv) * hzb_resolution;
+    float2 aabb_pixels = float2 (max_uv - min_uv) * float2 (mip_w, mip_h);
     float max_dim = max (aabb_pixels.x, aabb_pixels.y);
 
-    float mip_f = floor (log2 (max_dim));
-    uint mip = (uint) clamp (mip_f, 0.0f, mip_levels); // NOTE: On this mip level: texel size >= AABB size
+    uint mip = (uint) floor (log2 (floor (max_dim))); // NOTE: On this mip level: texel size >= AABB size
+    mip = clamp (mip, 0u, mip_levels);
 
-    float hz0 = depth_sampler.SampleLevel (float2(min_uv.x, min_uv.y), mip);
-    float hz1 = depth_sampler.SampleLevel (float2(max_uv.x, min_uv.y), mip);
-    float hz2 = depth_sampler.SampleLevel (float2(min_uv.x, max_uv.y), mip);
-    float hz3 = depth_sampler.SampleLevel (float2(max_uv.x, max_uv.y), mip);
+    float hz0 = depth_sampler.SampleLevel (float2 (min_uv.x, min_uv.y), mip);
+    float hz1 = depth_sampler.SampleLevel (float2 (max_uv.x, min_uv.y), mip);
+    float hz2 = depth_sampler.SampleLevel (float2 (min_uv.x, max_uv.y), mip);
+    float hz3 = depth_sampler.SampleLevel (float2 (max_uv.x, max_uv.y), mip);
 
     float hz_depth = max (max (hz0, hz1), max (hz2, hz3));
     return min_depth > hz_depth;

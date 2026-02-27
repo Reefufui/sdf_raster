@@ -2,11 +2,10 @@
 #include <fstream>
 #include <stack>
 
-#include "cpu_sandbox/cpu_sandbox.h"
+#include "vk_buffers.h"
+
 #include "logger.hpp"
 #include "sdf_octree.hpp"
-#include "shaders/common.h" // NodeContext
-#include "vk_buffers.h"
 
 namespace sdf_raster {
 

@@ -5,13 +5,14 @@
 #include <string>
 
 #include "GLFW/glfw3.h"
+#include "vk_descriptor_sets.h"
+
+#include "shader_common.hpp"
 
 #include "camera.hpp"
 #include "marching_cubes_lookup_table.hpp"
 #include "mesh.hpp"
 #include "sdf_octree.hpp"
-#include "shaders/common.h"
-#include "vk_descriptor_sets.h"
 #include "renderer.hpp"
 #include "vulkan_context.hpp"
 

@@ -6,7 +6,6 @@
 #include "vk_pipeline.h"
 #include "compute_shader_renderer.hpp"
 #include "application.hpp"
-#include "cpu_sandbox/cpu_sandbox.h"
 #include "logger.hpp"
 
 namespace {
@@ -109,10 +108,11 @@ void ComputeShaderRenderer::init_push_constants () {
     this->push_constants.active_leafs_max_count = 78240; // TODO: settings
 
     const auto octree_depth = get_octree_max_depth (this->sdf_octree);
+    const auto max_octree_depth = 6; // TODO: set inital state from config
     LOG_INFO ("[{}] Provided sdf-octree's depth: {} levels.", RENDERER_NAME, octree_depth);
-    if (octree_depth > MAX_OCTREE_DEPTH) {
-        LOG_WARN ("[{}] Provided sdf-octree is too deep. Rendering as if it was {} levels deep.", RENDERER_NAME, uint32_t {MAX_OCTREE_DEPTH});
-        this->push_constants.max_octree_depth = MAX_OCTREE_DEPTH;
+    if (octree_depth > max_octree_depth) {
+        LOG_WARN ("[{}] Provided sdf-octree is too deep. Rendering as if it was {} levels deep.", RENDERER_NAME, uint32_t {max_octree_depth});
+        this->push_constants.max_octree_depth = max_octree_depth;
     } else {
         this->push_constants.max_octree_depth = octree_depth;
     }
@@ -192,7 +192,7 @@ void ComputeShaderRenderer::init_descriptor_sets () {
 
 void ComputeShaderRenderer::init_compute_hz_buffer_pipeline () {
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
-    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/mip_max_pooling.slang.spv");
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/mip_max_pooling.comp.slang.spv");
     this->compute_hz_buffer_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
         this->hz_buffer_ds.gen_descriptor_set_layout
         }, 0);
@@ -201,7 +201,7 @@ void ComputeShaderRenderer::init_compute_hz_buffer_pipeline () {
 
 void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
-    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/compute.slang.spv");
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/octree_traversal.comp.slang.spv");
     this->compute_active_leafs_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
             this->sdf_octree_ds.descriptor_set_layout
             , this->marching_cubes_lookup_table_ds.descriptor_set_layout
@@ -213,35 +213,41 @@ void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
 }
 
 void ComputeShaderRenderer::init_compute_prefix_sum_pass1_pipeline () {
+    /*
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
-    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/prefix_sum_pass1.slang.spv");
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/prefix_sum_pass1.slang.spv");
     this->compute_prefix_sum_pass1_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
             this->active_leafs_ds.descriptor_set_layout
         }, sizeof (PushConstantsData));
     this->compute_prefix_sum_pass1_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
+    */
 }
 
 void ComputeShaderRenderer::init_compute_prefix_sum_pass2_pipeline () {
+    /*
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
-    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/prefix_sum_pass2.slang.spv");
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/prefix_sum_pass2.slang.spv");
     this->compute_prefix_sum_pass2_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
             this->active_leafs_ds.descriptor_set_layout
         }, sizeof (PushConstantsData));
     this->compute_prefix_sum_pass2_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
+    */
 }
 
 void ComputeShaderRenderer::init_compute_prefix_sum_pass3_pipeline () {
+    /*
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
-    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/prefix_sum_pass3.slang.spv");
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/prefix_sum_pass3.slang.spv");
     this->compute_prefix_sum_pass3_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
             this->active_leafs_ds.descriptor_set_layout
         }, sizeof (PushConstantsData));
     this->compute_prefix_sum_pass3_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
+    */
 }
 
 void ComputeShaderRenderer::init_compute_geometry_pipeline () {
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
-    compute_pipeline_maker.LoadShader (this->context->get_device (), "./assets/shaders/triangles_gen.slang.spv");
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/marching_cubes.comp.slang.spv");
     this->compute_geometry_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
             this->sdf_octree_ds.descriptor_set_layout
             , this->mesh_ds.descriptor_set_layout
@@ -258,12 +264,12 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
 
     shader_stages [0] = vk_utils::loadShader (this->context->get_device ()
-            , "./assets/shaders/vert.slang.spv"
+            , "shaders/identity.vert.slang.spv"
             , VK_SHADER_STAGE_VERTEX_BIT
             , shader_modules);
 
     shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
-            , "./assets/shaders/simple_color.slang.spv"
+            , "shaders/blinn_phong.frag.slang.spv"
             , VK_SHADER_STAGE_FRAGMENT_BIT
             , shader_modules);
 
@@ -406,11 +412,11 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
     pipelineInfo.subpass = 0;
 
     VK_CHECK_RESULT (vkCreateGraphicsPipelines (this->context->get_device ()
-                , VK_NULL_HANDLE
-                , 1
-                , &pipelineInfo
-                , nullptr
-                , &this->graphics_pipeline));
+        , VK_NULL_HANDLE
+        , 1
+        , &pipelineInfo
+        , nullptr
+        , &this->graphics_pipeline));
 
     for (VkShaderModule module : shader_modules) {
         if (module != VK_NULL_HANDLE) {
@@ -426,14 +432,14 @@ void ComputeShaderRenderer::init_graphics_frustum_pipeline () {
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
 
     shader_stages [0] = vk_utils::loadShader (this->context->get_device ()
-            , "./assets/shaders/frustum_vert.slang.spv"
-            , VK_SHADER_STAGE_VERTEX_BIT
-            , shader_modules);
+        , "shaders/frustum_view.vert.slang.spv"
+        , VK_SHADER_STAGE_VERTEX_BIT
+        , shader_modules);
 
     shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
-            , "./assets/shaders/frustum_frag.slang.spv"
-            , VK_SHADER_STAGE_FRAGMENT_BIT
-            , shader_modules);
+        , "shaders/frustum_view.frag.slang.spv"
+        , VK_SHADER_STAGE_FRAGMENT_BIT
+        , shader_modules);
 
     VkPushConstantRange pushConstantRange {};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;

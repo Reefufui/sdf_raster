@@ -12,7 +12,7 @@
 #include "occlusion_culling.hpp"
 #include "renderer.hpp"
 #include "sdf_octree.hpp"
-#include "shaders/common.h"
+#include "shader_common.hpp"
 #include "vk_descriptor_sets.h"
 #include "vulkan_context.hpp"
 

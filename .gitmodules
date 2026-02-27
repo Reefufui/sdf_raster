@@ -1,0 +1,18 @@
+[submodule "submodules/volk"]
+	path = submodules/volk
+	url = https://github.com/zeux/volk
+[submodule "submodules/spdlog"]
+	path = submodules/spdlog
+	url = https://github.com/gabime/spdlog
+[submodule "submodules/json"]
+	path = submodules/json
+	url = https://github.com/nlohmann/json
+[submodule "submodules/imgui"]
+	path = submodules/imgui
+	url = https://github.com/ocornut/imgui
+[submodule "submodules/vk-utils"]
+	path = submodules/vk-utils
+	url = https://github.com/msu-graphics-group/vk-utils.git
+[submodule "submodules/LiteMath"]
+	path = submodules/LiteMath
+	url = https://github.com/msu-graphics-group/LiteMath.git

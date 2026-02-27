@@ -5,7 +5,6 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 
-
 namespace sdf_raster {
 
 static std::chrono::time_point <std::chrono::high_resolution_clock> g_app_start_time;

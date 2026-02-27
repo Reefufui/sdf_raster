@@ -2,7 +2,6 @@
 
 #include "marching_cubes_lookup_table.hpp"
 #include "marching_cubes.hpp"
-#include "cpu_sandbox/cpu_sandbox.h"
 
 namespace sdf_raster {
 
@@ -176,11 +175,10 @@ void process_leaf_node (const VoxelInfo& voxel_info , Mesh& mesh , const float i
         vertex.position = LiteMath::to_float4 (position, 1.f);
         vertex.normal = LiteMath::to_float4 (estimate_normal (scene, position), 1.f);
         mesh.add_vertex_fast (vertex);
-        cpu_sandbox::add_vertex (vertex.position);
 
         if ((i + 1) % 3 == 0) {
-            size_t offset = cpu_sandbox::get_vertex_count ();
-            cpu_sandbox::add_triangle (LiteMath::uint3 (0 + offset, 1 + offset, 2 + offset));
+            // size_t offset = cpu_sandbox::get_vertex_count ();
+            // cpu_sandbox::add_triangle (LiteMath::uint3 (0 + offset, 1 + offset, 2 + offset));
         }
     }
 }

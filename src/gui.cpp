@@ -14,14 +14,6 @@ namespace sdf_raster {
 
 namespace gui {
 
-static void check_vk_result (VkResult err) {
-    if (err == VK_SUCCESS)
-        return;
-    fprintf(stderr, "[vulkan] Error: VkResult = %d\n", err);
-    if (err < 0)
-        abort();
-}
-
 class UI {
 public:
     UI (const UI&) = delete;
@@ -298,34 +290,34 @@ void UI::init (const InitInfo& info) {
     );
     io.DeltaTime = 1.0f / 60.0f;
 
-    ImGui_ImplVulkan_InitInfo im_init_info {};
-    im_init_info.Instance           = m_instance;
-    im_init_info.PhysicalDevice     = m_physicalDevice;
-    im_init_info.Device             = m_device;
-    im_init_info.Queue              = m_queue;
-    im_init_info.QueueFamily        = m_graphics_queue_family_index;
-    // im_init_info.DescriptorPool     = m_imguiPool;
-    im_init_info.DescriptorPool     = VK_NULL_HANDLE;
-    im_init_info.DescriptorPoolSize = 1000;
-    im_init_info.MinImageCount      = 2;
-    im_init_info.ImageCount         = static_cast <uint32_t> (m_swapchainImageViews.size ());
-    im_init_info.PipelineInfoMain.RenderPass = m_imguiRenderPass;
-    im_init_info.PipelineInfoMain.Subpass = 0;
-    im_init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    im_init_info.UseDynamicRendering = VK_FALSE;
-    im_init_info.PipelineCache = VK_NULL_HANDLE;
-    im_init_info.Allocator = VK_NULL_HANDLE;
-    im_init_info.CheckVkResultFn = check_vk_result;
-    im_init_info.ApiVersion     = VK_API_VERSION_1_4;
+    // ImGui_ImplVulkan_InitInfo im_init_info {};
+    // im_init_info.Instance           = m_instance;
+    // im_init_info.PhysicalDevice     = m_physicalDevice;
+    // im_init_info.Device             = m_device;
+    // im_init_info.Queue              = m_queue;
+    // im_init_info.QueueFamily        = m_graphics_queue_family_index;
+    // // im_init_info.DescriptorPool     = m_imguiPool;
+    // im_init_info.DescriptorPool     = VK_NULL_HANDLE;
+    // im_init_info.DescriptorPoolSize = 1000;
+    // im_init_info.MinImageCount      = 2;
+    // im_init_info.ImageCount         = static_cast <uint32_t> (m_swapchainImageViews.size ());
+    // im_init_info.PipelineInfoMain.RenderPass = m_imguiRenderPass;
+    // im_init_info.PipelineInfoMain.Subpass = 0;
+    // im_init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    // im_init_info.UseDynamicRendering = VK_FALSE;
+    // im_init_info.PipelineCache = VK_NULL_HANDLE;
+    // im_init_info.Allocator = VK_NULL_HANDLE;
+    // im_init_info.CheckVkResultFn = check_vk_result;
+    // im_init_info.ApiVersion     = VK_API_VERSION_1_4;
 
     VkPhysicalDeviceProperties props {};
     vkGetPhysicalDeviceProperties (m_physicalDevice, &props);
     LOG_INFO ("Physical device: {}", props.deviceName);
 
 
-    LOG_INFO ("[UI] Initing vulkan for imgui...");
-    ImGui_ImplVulkan_Init (&im_init_info);
-    LOG_INFO ("[UI] Inited vulkan for imgui.");
+    // LOG_INFO ("[UI] Initing vulkan for imgui...");
+    // ImGui_ImplVulkan_Init (&im_init_info);
+    // LOG_INFO ("[UI] Inited vulkan for imgui.");
 
     ImGui::StyleColorsDark ();
 }
@@ -335,8 +327,8 @@ void UI::update (uint32_t width, uint32_t height, float delta_time) {
     io.DisplaySize = ImVec2 (static_cast <float> (width), static_cast <float> (height));
     io.DeltaTime = std::max (0.0001f, delta_time);
 
-    ImGui_ImplVulkan_NewFrame ();
-    ImGui::NewFrame ();
+    // ImGui_ImplVulkan_NewFrame ();
+    // ImGui::NewFrame ();
 
     ImGui::Begin ("Hello Vulkan ImGui");
     ImGui::Text ("Hello, Vulkan ImGui User!");
@@ -370,12 +362,12 @@ void UI::draw (uint32_t image_index, VkCommandBuffer cmd_buff) {
     ImGui::Render ();
 
     vkCmdBeginRenderPass (cmd_buff, &render_pass_begin, VK_SUBPASS_CONTENTS_INLINE);
-    ImGui_ImplVulkan_RenderDrawData (ImGui::GetDrawData (), cmd_buff);
+    // ImGui_ImplVulkan_RenderDrawData (ImGui::GetDrawData (), cmd_buff);
     vkCmdEndRenderPass (cmd_buff);
 }
 
 void UI::cleanup () {
-    ImGui_ImplVulkan_Shutdown ();
+    // ImGui_ImplVulkan_Shutdown ();
     ImGui::DestroyContext ();
 
     if (m_device == VK_NULL_HANDLE) {

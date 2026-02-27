@@ -1,6 +1,9 @@
-// compute.slang
+// octree_traversal.comp.slang
 
-#include "common.h"
+#include "shader_common.hpp"
+
+#include "frustum_culling.slang"
+#include "occlusion_culling.slang"
 
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 
@@ -23,13 +26,9 @@
 
 [[vk::binding (0, 4)]] Sampler2D <float> depth_sampler;
 
-#include "frustum_culling.h"
-#include "occlusion_culling.h"
-
 void process_voxel (uint3 group_id, NodeContext context, SdfOctreeNode leaf_node) {
     context.cube_index = 0;
 
-    #pragma unroll
     for (int i = 0; i < 8; ++i) {
         context.cube_index |= (leaf_node.values[i] < 0.0f ? (1 << i) : 0);
     }
@@ -63,9 +62,9 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
         return;
     }
 
-    int node_index_stack [MAX_OCTREE_DEPTH];
-    float3 coord_stack [MAX_OCTREE_DEPTH];
-    int path_stack [MAX_OCTREE_DEPTH];
+    int node_index_stack [16];
+    float3 coord_stack [16];
+    int path_stack [16];
 
     node_index_stack [0] = root.node_index;
     coord_stack [0] = float3 (root.min_corner_x, root.min_corner_y, root.min_corner_z);
@@ -101,11 +100,11 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
                 child_corners [i].z = child_coord.z + (((i >> 2) & 1) * child_voxel_size);
             }
 
-            if ((pc.frustum_culling == 1) && !voxel_frustum_intersects (child_corners)) {
+            if ((pc.frustum_culling == 1) && !voxel_frustum_intersects (frustum_geometry, child_corners)) {
                 continue;
             }
 
-            if ((pc.occlusion_culling == 1) && voxel_occluded (child_corners)) {
+            if ((pc.occlusion_culling == 1) && voxel_occluded (depth_sampler, pc.prev_view_proj, child_corners)) {
                 continue;
             }
         }

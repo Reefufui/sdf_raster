@@ -1,6 +1,6 @@
 // pass1_prefix_sum.slang
 
-#include "workgroup_prefix_sum.h"
+// #include "workgroup_prefix_sum.h"
 
 [[vk::binding (1, 0)]] RWStructuredBuffer <uint> g_count;
 [[vk::binding (2, 0)]] RWStructuredBuffer <uint> g_data1;

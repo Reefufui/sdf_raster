@@ -1,7 +1,8 @@
-// task_generator.slang
+// marching_cubes.slang
 
-#include "common.h"
-#include "colors.h"
+#include "shader_common.hpp"
+
+#include "colors.slang"
 
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 

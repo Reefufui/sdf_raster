@@ -5,10 +5,11 @@
 #include <vector>
 
 #include "LiteMath.h"
-#include "shaders/common.h"
 #include "vk_copy.h"
 #include "vk_descriptor_sets.h"
 #include "vk_utils.h"
+
+#include "shader_common.hpp"
 
 namespace sdf_raster {
 

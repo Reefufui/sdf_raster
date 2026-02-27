@@ -1,7 +1,7 @@
 // mesh_sphere.slang
 
-#include "common.h"
-//
+#include "shader_common.hpp"
+
 // [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 //
 // [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> g_octree_data;
@@ -32,7 +32,7 @@
 //     return (p);
 // }
 //
-// static const float4 colors [MESH_WORKGROUP_SIZE] = {
+// static const float4 colors [16] = {
 //     float4(1.0, 0.0, 0.0, 1.0),   // Красный
 //     float4(0.0, 1.0, 0.0, 1.0),   // Зеленый  
 //     float4(0.0, 0.0, 1.0, 1.0),   // Синий
@@ -53,17 +53,17 @@
 
 [shader ("mesh")]
 [outputtopology ("triangle")]
-[numthreads (MESH_WORKGROUP_SIZE, 1, 1)]
+[numthreads (16, 1, 1)]
 void main(
     in payload TaskPayload payload,
     in uint3 group_id : SV_GroupID,
     in uint3 thread_id : SV_GroupThreadID,
-    out vertices Vertex vertices [MAX_VERTS_PER_MESHLET],
-    out indices uint3 triangles [MAX_PRIMS_PER_MESHLET])
+    out vertices Vertex vertices [MAX_LEAF_VERTS],
+    out indices uint3 triangles [MAX_LEAF_PRIMS])
 {
 //     SetMeshOutputCounts (payload.vertices_count, payload.triangles_count);
 //
-//     const uint local_leaf_index = group_id.x * MESH_WORKGROUP_SIZE + thread_id.x;
+//     const uint local_leaf_index = group_id.x * 16 + thread_id.x;
 //     if (local_leaf_index >= payload.leaf_count) {
 //         return;
 //     }

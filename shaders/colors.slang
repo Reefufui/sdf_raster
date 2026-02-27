@@ -1,4 +1,7 @@
-#define COLORS_COUNT 64
+// colors.slang
+
+static const uint COLORS_COUNT = 64;
+
 static const float4 colors [COLORS_COUNT] = {
     // === 1. Мягкие нейтральные и пастельные основы ===
     float4(0.96, 0.76, 0.76, 1.0),   // 00 - Нежно-розовый / Пудровый (Light Pink / Powder)

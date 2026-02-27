@@ -1,6 +1,6 @@
-// frustrum_vert.slang
+// frustum_view.vert.slang
 
-#include "common.h"
+#include "shader_common.hpp"
 
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 
@@ -14,3 +14,4 @@ VertexStageOutput main (float4 position) {
     output.sv_position = mul (pc.view_proj, position);
     return output;
 }
+

@@ -6,7 +6,6 @@
 
 #include "application.hpp"
 #include "compute_shader_renderer.hpp"
-#include "cpu_sandbox/cpu_sandbox.h"
 #include "gui.hpp"
 #include "logger.hpp"
 #include "marching_cubes.hpp"
@@ -39,21 +38,11 @@ void Application::marching_cubes_cpu (const std::string& a_octree_filename, cons
     SdfOctree scene {};
     load_sdf_octree (scene, a_octree_filename);
 
-    ///
     MarchingCubesSettings settings;
     settings.iso_level = 0.0f;
     settings.max_threads = 1;
     const std::vector <Mesh> meshes = create_mesh_marching_cubes (settings, scene);
     save_mesh_as_obj (meshes [0], a_mesh_filename); // TODO: mesh concatenation
-
-    ///
-    // Payload root_payload;
-    // root_payload.node_index = 0;
-    // root_payload.voxel_size = 2.f;
-    // root_payload.min_corner = {-1.0f, -1.0f, -1.0f};
-    // auto subtrees = get_octree_subtrees_payloads (scene, 0);
-    // cpu_sandbox::task_generator (subtrees [0], scene.nodes);
-    // cpu_sandbox::dump_obj ("result.obj");
 }
 
 void Application::run (bool single_frame) {
@@ -164,7 +153,7 @@ void Application::init_renderer () {
     this->renderer = std::make_unique <ComputeShaderRenderer> (this->vulkan_context);
 
     SdfOctree scene {};
-    load_sdf_octree (scene, "./assets/sdf/lowpoly_bunny.octree");
+    load_sdf_octree (scene, "./assets/lowpoly_bunny.octree"); // TODO: set from config
     this->renderer->init (std::move (scene));
 }
 

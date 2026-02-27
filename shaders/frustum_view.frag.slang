@@ -1,6 +1,4 @@
-// frustum_frag.slang
-
-#include "common.h"
+// frustum_view.frag.slang
 
 [shader("fragment")]
 float4 main () : SV_Target {

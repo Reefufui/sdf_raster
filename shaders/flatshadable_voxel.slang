@@ -1,3 +1,5 @@
+// flatshadable_voxel.slang
+
 static const float3 VoxelCubeNormals [] = {
     float3 ( 0.0f,  0.0f, -1.0f),
     float3 ( 0.0f,  0.0f,  1.0f),

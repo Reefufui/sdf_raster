@@ -5,8 +5,9 @@
 #include <unordered_map>
 #include <vector>
 
+#include "shader_common.hpp"
+
 #include "LiteMath.h"
-#include "shaders/common.h"
 #include "vk_copy.h"
 #include "vk_descriptor_sets.h"
 

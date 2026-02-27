@@ -1,7 +1,7 @@
 // task_generator.slang
 
-#include "common.h"
-//
+#include "shader_common.hpp"
+
 // [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 //
 // [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> g_octree_data;

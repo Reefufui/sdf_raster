@@ -4,7 +4,6 @@
 #include <stdexcept>
 
 #include "application.hpp"
-#include "cpu_sandbox/cpu_sandbox.h"
 #include "logger.hpp"
 #include "mesh_shader_renderer.hpp"
 

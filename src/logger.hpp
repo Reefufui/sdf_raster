@@ -2,8 +2,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include "shaders/common.h" // NodeContext
-
 namespace sdf_raster {
 
 #define APP_NAME "sdf_raster"

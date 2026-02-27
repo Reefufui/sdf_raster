@@ -1,6 +1,6 @@
-// vert.slang
+// identity.vert.slang
 
-#include "common.h"
+#include "shader_common.hpp"
 
 struct VertexStageOutput {
     Vertex frament_input : FragmentInput;
@@ -16,3 +16,4 @@ VertexStageOutput main (Vertex input) {
     output.frament_input.color = input.color;
     return output;
 }
+

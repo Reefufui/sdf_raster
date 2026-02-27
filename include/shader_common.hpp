@@ -1,15 +1,7 @@
-#ifndef COMMON_H
-#define COMMON_H
+// shader_common.h
 
-#define PREFIX_SUM_WORKGROUP_SIZE 256
-#define MESH_WORKGROUP_SIZE 16
-#define MAX_VERTS_PER_MESHLET (MESH_WORKGROUP_SIZE * 12)
-#define MAX_PRIMS_PER_MESHLET (MESH_WORKGROUP_SIZE * 5)
-
-#define MAX_LEAF_VERTS 12
-#define MAX_LEAF_INDICES 12
-#define MAX_LEAF_PRIMS 4
-#define MAX_OCTREE_DEPTH 13 // 16 - 3
+#ifndef SHADER_COMMON_H
+#define SHADER_COMMON_H
 
 #ifdef __cplusplus
 
@@ -37,6 +29,9 @@ struct VkDispatchIndirectCommand {
 };
 
 #endif // __cplusplus
+
+static const uint MAX_LEAF_VERTS = 12;
+static const uint MAX_LEAF_PRIMS = 4;
 
 struct Vertex {
     float4 position;
@@ -87,5 +82,5 @@ struct FrustumGeometry {
     float4 edges [12];
 };
 
-#endif // COMMON_H
+#endif // SHADER_COMMON_H
 

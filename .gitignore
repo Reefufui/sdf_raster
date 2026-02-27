@@ -1,4 +1,5 @@
 build/
 debug-build/
+logs/
 release-build/
 release-packages/

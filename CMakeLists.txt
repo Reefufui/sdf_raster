@@ -1,42 +1,38 @@
-cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
+cmake_minimum_required (VERSION 3.21 FATAL_ERROR)
 
-project(sdf_raster LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+project (sdf_raster LANGUAGES CXX)
+set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CXX_STANDARD_REQUIRED ON)
+set (CMAKE_CXX_EXTENSIONS OFF)
+set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+set (CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+set (CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 if (CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
-    set(VULKAN_SDK_REQUIRED TRUE)
-else()
-    set(VULKAN_SDK_REQUIRED FALSE)
-endif()
+    set (VULKAN_SDK_REQUIRED TRUE)
+else ()
+    set (VULKAN_SDK_REQUIRED FALSE)
+endif ()
 
 if (VULKAN_SDK_REQUIRED)
     if (NOT DEFINED ENV{VULKAN_SDK})
-        message(FATAL_ERROR "VULKAN_SDK environment variable not set. Please set it before running cmake (e.g., source /etc/profile.d/vulkan_sdk.sh).")
-    endif()
+        message (FATAL_ERROR "VULKAN_SDK environment variable not set. Vulkan SDK is required for this build configuration (${CMAKE_BUILD_TYPE}).")
+    endif ()
 
     if (NOT EXISTS "$ENV{VULKAN_SDK}")
-        message(FATAL_ERROR "VULKAN_SDK path does not exist: $ENV{VULKAN_SDK}. Please check your environment variable.")
-    endif()
+        message (FATAL_ERROR "VULKAN_SDK path does not exist: $ENV{VULKAN_SDK}. Please check your environment variable.")
+    endif ()
 
-    set(VULKAN_SDK_ROOT "$ENV{VULKAN_SDK}")
-else()
-    message(STATUS "Vulkan SDK is not required for this build configuration (${CMAKE_BUILD_TYPE}).")
-endif()
+    set (VULKAN_SDK_ROOT "$ENV{VULKAN_SDK}")
+else ()
+    message (STATUS "Vulkan SDK is not required for this build configuration (${CMAKE_BUILD_TYPE}).")
+endif ()
 
 if (APPLE)
-    set(VULKAN_LIB_EXT ".dylib")
-elseif (WIN32)
-    set(VULKAN_LIB_EXT ".dll")
-else()
-    set(VULKAN_LIB_EXT ".so")
-endif()
+    set (VULKAN_LIB_EXT ".dylib")
+else ()
+    set (VULKAN_LIB_EXT ".so")
+endif ()
 
 find_package(Vulkan REQUIRED)
 message(STATUS "Vulkan ${Vulkan_VERSION} found: ${Vulkan_FOUND}")
@@ -132,14 +128,6 @@ target_compile_definitions (vk_utils PUBLIC USE_VOLK=1)
 target_link_libraries (vk_utils PUBLIC volk)
 add_library (vk_utils::vk_utils ALIAS vk_utils)
 
-add_library (stb_image STATIC third_party/stb/stb_image.c)
-target_include_directories (stb_image PUBLIC third_party/stb)
-add_library (stb::image ALIAS stb_image)
-
-add_library (stb_image_write STATIC third_party/stb/stb_image_write.c)
-target_include_directories (stb_image_write PUBLIC third_party/stb)
-add_library (stb::image_write ALIAS stb_image_write)
-
 add_library (LiteMath INTERFACE)
 target_include_directories (LiteMath INTERFACE
     submodules/LiteMath
@@ -147,12 +135,8 @@ target_include_directories (LiteMath INTERFACE
 )
 add_library (LiteMath::LiteMath ALIAS LiteMath)
 add_library (LiteImage STATIC submodules/LiteMath/Image2d.cpp)
-target_compile_definitions (LiteImage PRIVATE
-    USE_STB_IMAGE=1
-    STB_IMAGE_STATIC=1
-    STB_IMAGE_WRITE_STATIC=1
-)
-target_link_libraries (LiteImage PUBLIC LiteMath stb::image_write stb::image)
+target_compile_definitions (LiteImage PRIVATE USE_STB_IMAGE=0)
+target_link_libraries (LiteImage PUBLIC LiteMath)
 add_library (LiteMath::LiteImage ALIAS LiteImage)
 
 add_executable(${PROJECT_NAME}
@@ -203,29 +187,27 @@ target_link_libraries (${PROJECT_NAME} PRIVATE
     vk_utils::vk_utils
     volk::volk
     Vulkan::Vulkan
-    stb::image_write
-    stb::image
 )
 
-if(CMAKE_BUILD_TYPE MATCHES Debug)
+if (CMAKE_BUILD_TYPE MATCHES Debug)
     message(STATUS "Configuring for Debug build...")
     target_compile_options(${PROJECT_NAME} PRIVATE -g -O0 -Wall -Wextra)
     target_link_options(${PROJECT_NAME} PRIVATE -g)
     target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE VULKAN_VALIDATION_LAYERS=1)
-elseif(CMAKE_BUILD_TYPE MATCHES Release)
+elseif (CMAKE_BUILD_TYPE MATCHES Release)
     message(STATUS "Configuring for Release build...")
     target_compile_options(${PROJECT_NAME} PRIVATE -O3 -DNDEBUG -Wall -Wextra)
     target_link_options(${PROJECT_NAME} PRIVATE -O3)
     target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG)
-elseif(CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
+elseif (CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
     message(STATUS "Configuring for Release with Debug Info build...")
     target_compile_options(${PROJECT_NAME} PRIVATE -O2 -g -DNDEBUG -Wall -Wextra)
     target_link_options(${PROJECT_NAME} PRIVATE -O2 -g)
     target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO VULKAN_VALIDATION_LAYERS=1)
-endif()
+endif ()
 
-target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-copy)
-target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
+target_compile_options (${PROJECT_NAME} PRIVATE -Wno-deprecated-copy)
+target_compile_features (${PROJECT_NAME} PRIVATE cxx_std_20)
 
 add_subdirectory (shaders)
 target_include_directories (${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/)

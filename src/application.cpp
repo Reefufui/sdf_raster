@@ -9,7 +9,7 @@
 #include "gui.hpp"
 #include "logger.hpp"
 #include "marching_cubes.hpp"
-#include "mesh_shader_renderer.hpp"
+// DEPRECATED: #include "mesh_shader_renderer.hpp"
 #include "sdf_octree.hpp"
 
 namespace sdf_raster {
@@ -20,7 +20,7 @@ Application::Application ()
         init_window ();
         init_vulkan ();
         init_renderer ();
-        // init_gui ();
+        init_gui ();
     } catch (...) {
         cleanup ();
         throw;
@@ -28,7 +28,7 @@ Application::Application ()
 }
 
 Application::~Application () {
-    this->camera.dump ("/tmp/cached_camera.json");
+    this->settings.camera.dump ("/tmp/cached_camera.json"); // TODO: dump whole settings
     glfwSetWindowShouldClose (this->window, true);
 
     cleanup ();
@@ -52,7 +52,7 @@ void Application::run (bool single_frame) {
     }
 
     try {
-        this->camera.load ("/tmp/cached_camera.json");
+        this->settings.camera.load ("/tmp/cached_camera.json");
         this->last_frame = glfwGetTime ();
 
         do {
@@ -81,8 +81,12 @@ void Application::run (bool single_frame) {
             this->delta_time = static_cast <float> (current_time - last_frame);
             this->last_frame = current_time;
 
-            this->camera.update ();
-            this->renderer->render (this->camera);
+            int width, height;
+            glfwGetWindowSize (this->window, &width, &height);
+            gui::update (settings, static_cast <uint32_t> (width), static_cast <uint32_t> (height), this->delta_time);
+
+            this->settings.camera.update ();
+            this->renderer->render (this->settings);
 
             if (this->dump_snapshot) {
                 float current_fps = (total_frame_time > 0.0f && !frame_times.empty()) ? (static_cast<float>(frame_times.size()) / total_frame_time) : 0.0f;
@@ -125,8 +129,8 @@ void Application::init_window () {
     float f_width = static_cast <float> (width);
     float f_height = static_cast <float> (height);
 
-    this->camera = Camera ();
-    this->camera.set_aspect_ratio (f_width / f_height);
+    this->settings.camera = Camera ();
+    this->settings.camera.set_aspect_ratio (f_width / f_height);
 
     this->last_x = f_width / 2.0f;
     this->last_y = f_height / 2.0f;
@@ -144,7 +148,7 @@ void Application::init_vulkan () {
 
     auto resize_camera = [&] () {
         auto extent = this->vulkan_context->get_swapchain_extent ();
-        this->camera.set_aspect_ratio (static_cast <float> (extent.width) / static_cast <float> (extent.height));
+        this->settings.camera.set_aspect_ratio (static_cast <float> (extent.width) / static_cast <float> (extent.height));
     };
     this->vulkan_context->register_resizable (resize_camera);
 }
@@ -180,6 +184,8 @@ void Application::init_gui () {
 }
 
 void Application::cleanup () {
+    gui::cleanup ();
+
     if (this->renderer) {
         this->renderer->shutdown ();
     }
@@ -197,17 +203,17 @@ void Application::cleanup () {
 void Application::process_input () {
     if (this->camera_mode_active) {
         if (glfwGetKey (this->window, GLFW_KEY_W) == GLFW_PRESS)
-            this->camera.process_keyboard_input (Camera::Movement::FORWARD, this->delta_time);
+            this->settings.camera.process_keyboard_input (Camera::Movement::FORWARD, this->delta_time);
         if (glfwGetKey (this->window, GLFW_KEY_S) == GLFW_PRESS)
-            this->camera.process_keyboard_input (Camera::Movement::BACKWARD, this->delta_time);
+            this->settings.camera.process_keyboard_input (Camera::Movement::BACKWARD, this->delta_time);
         if (glfwGetKey (this->window, GLFW_KEY_A) == GLFW_PRESS)
-            this->camera.process_keyboard_input (Camera::Movement::LEFT, this->delta_time);
+            this->settings.camera.process_keyboard_input (Camera::Movement::LEFT, this->delta_time);
         if (glfwGetKey (this->window, GLFW_KEY_D) == GLFW_PRESS)
-            this->camera.process_keyboard_input (Camera::Movement::RIGHT, this->delta_time);
+            this->settings.camera.process_keyboard_input (Camera::Movement::RIGHT, this->delta_time);
         if (glfwGetKey (this->window, GLFW_KEY_SPACE) == GLFW_PRESS)
-            this->camera.process_keyboard_input (Camera::Movement::UP, this->delta_time);
+            this->settings.camera.process_keyboard_input (Camera::Movement::UP, this->delta_time);
         if (glfwGetKey (this->window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
-            this->camera.process_keyboard_input (Camera::Movement::DOWN, this->delta_time);
+            this->settings.camera.process_keyboard_input (Camera::Movement::DOWN, this->delta_time);
     }
 }
 
@@ -227,14 +233,14 @@ void Application::mouse_callback (GLFWwindow* a_window, double xpos, double ypos
         app->last_x = static_cast <float> (xpos);
         app->last_y = static_cast <float> (ypos);
 
-        app->camera.process_mouse_movement (xoffset, yoffset);
+        app->settings.camera.process_mouse_movement (xoffset, yoffset);
     }
 }
 
 void Application::scroll_callback (GLFWwindow* a_window, double, double yoffset) {
     auto app = get_app_ptr (a_window);
     if (app) {
-        app->camera.process_scroll (static_cast <float> (yoffset));
+        app->settings.camera.process_scroll (static_cast <float> (yoffset));
     }
 }
 
@@ -251,7 +257,7 @@ void Application::key_callback (GLFWwindow* a_window, int key, int, int action, 
     }
 
     if (key == GLFW_KEY_R && action == GLFW_PRESS) {
-        app->camera.reset ();
+        app->settings.camera.reset ();
         app->first_mouse = true;
     }
 
@@ -260,7 +266,7 @@ void Application::key_callback (GLFWwindow* a_window, int key, int, int action, 
             app->c_key_pressed_this_frame = true;
         } else if (action == GLFW_RELEASE) {
             if (app->c_key_pressed_this_frame) {
-                app->renderer->toggle_frustum_buffer (app->camera);
+                app->renderer->toggle_frustum_buffer (app->settings.camera);
                 LOG_INFO ("Toggled frustum buffer visibility.");
                 app->c_key_pressed_this_frame = false;
             }

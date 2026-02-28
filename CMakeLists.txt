@@ -78,12 +78,40 @@ add_library (imgui STATIC
     submodules/imgui/imgui_draw.cpp
     submodules/imgui/imgui_tables.cpp
     submodules/imgui/imgui_widgets.cpp
+
+    submodules/imgui/backends/imgui_impl_glfw.cpp
+    submodules/imgui/backends/imgui_impl_vulkan.cpp
+
+    submodules/imgui/misc/freetype/imgui_freetype.cpp
 )
 target_include_directories (imgui PUBLIC
     submodules/imgui
     submodules/imgui/backends
+    submodules/volk
 )
+target_link_libraries (imgui PRIVATE glfw::glfw)
+target_compile_definitions (imgui PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK=1 IMGUI_ENABLE_FREETYPE=1)
 add_library (imgui::imgui ALIAS imgui)
+
+find_package (Freetype QUIET)
+if (Freetype_FOUND)
+    target_link_libraries (imgui PRIVATE Freetype::Freetype)
+    target_compile_definitions (imgui PRIVATE IMGUI_FREETYPE)
+    message (STATUS "FreeType was found and will be used for ImGUI font rendering.")
+else ()
+    message (STATUS "FreeType was not found and won't be used for ImGUI font rendering.")
+endif ()
+
+if (CMAKE_BUILD_TYPE MATCHES Debug)
+    target_compile_options (imgui PRIVATE -g -O0 -Wall -Wextra)
+    target_link_options (imgui PRIVATE -g)
+elseif (CMAKE_BUILD_TYPE MATCHES Release)
+    target_compile_options (imgui PRIVATE -O3 -DNDEBUG -Wall -Wextra)
+    target_link_options (imgui PRIVATE -O3)
+elseif (CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
+    target_compile_options (imgui PRIVATE -O2 -g -DNDEBUG -Wall -Wextra)
+    target_link_options (imgui PRIVATE -O2 -g)
+endif ()
 
 add_library (vk_utils STATIC
     submodules/vk-utils/vk_alloc_simple.cpp

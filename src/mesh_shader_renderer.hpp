@@ -9,11 +9,12 @@
 
 #include "shader_common.hpp"
 
+#include "application.hpp"
 #include "camera.hpp"
 #include "marching_cubes_lookup_table.hpp"
 #include "mesh.hpp"
-#include "sdf_octree.hpp"
 #include "renderer.hpp"
+#include "sdf_octree.hpp"
 #include "vulkan_context.hpp"
 
 namespace sdf_raster {
@@ -24,7 +25,7 @@ public:
     ~MeshShaderRenderer ();
 
     void init (SdfOctree&& a_sdf_octree) override;
-    void render (const Camera& a_camera) override;
+    void render (const Application::Settings& settings) override;
     void shutdown () override;
     void toggle_frustum_buffer (Camera& camera) override;
 

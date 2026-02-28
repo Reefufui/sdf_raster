@@ -8,6 +8,7 @@
 
 #include "camera.hpp"
 #include "renderer.hpp"
+#include "settings.hpp"
 #include "vulkan_context.hpp"
 
 namespace sdf_raster {
@@ -40,7 +41,7 @@ private:
     bool camera_mode_active = true;
     bool c_key_pressed_this_frame = false;
 
-    Camera camera;
+    Settings settings;
     float last_x = 0.0f;
     float last_y = 0.0f;
     bool first_mouse = true;

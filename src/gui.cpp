@@ -1,13 +1,14 @@
-#include "gui.hpp"
+#include <algorithm>
+#include <cassert>
+#include <chrono>
 
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
-#include <cassert>
-#include <chrono>
-#include <algorithm>
-
+#include <imgui_impl_glfw.h>
 #include <GLFW/glfw3.h>
 
+#include "application.hpp"
+#include "gui.hpp"
 #include "logger.hpp"
 
 namespace sdf_raster {
@@ -18,7 +19,6 @@ class UI {
 public:
     UI (const UI&) = delete;
     UI& operator= (const UI&) = delete;
-    ~UI ();
 
     static UI& instance () {
         static UI ui;
@@ -26,7 +26,7 @@ public:
     }
 
     void init (const InitInfo& info);
-    void update (uint32_t width, uint32_t height, float delta_time);
+    void update (Settings& settings, uint32_t width, uint32_t height, float delta_time);
     void draw (uint32_t image_index, VkCommandBuffer cmd_buff);
     void cleanup ();
 
@@ -60,10 +60,6 @@ private:
     VkRenderPass     m_imguiRenderPass   = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> m_imguiFramebuffers;
 };
-
-UI::~UI () {
-    this->cleanup ();
-}
 
 void UI::create_imgui_render_pass () {
     std::array <VkAttachmentDescription, 2> attachments {};
@@ -198,6 +194,44 @@ void UI::create_depth_buffer () {
         throw std::runtime_error("Failed to create depth image view!");
     }
 
+    VkCommandBufferBeginInfo begin_info {};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags = 0;
+    begin_info.pInheritanceInfo = nullptr;
+
+    // VkCommandBuffer cmd_buff = vk_utils::createCommandBuffer (m_device, m_imguiPool);
+    // VK_CHECK_RESULT (vkBeginCommandBuffer (cmd_buff, &begin_info));
+    //
+    // VkImageSubresourceRange whole_image {};
+    // whole_image.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    // whole_image.baseMipLevel = 0;
+    // whole_image.levelCount = 1;
+    // whole_image.baseArrayLayer = 0;
+    // whole_image.layerCount = 1;
+    //
+    // VkImageMemoryBarrier barr = {};
+    // barr.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    // barr.pNext = nullptr;
+    // barr.srcAccessMask = 0;
+    // barr.dstAccessMask = 0;
+    // barr.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    // barr.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    // barr.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    // barr.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    // barr.subresourceRange = whole_image;
+    // barr.image = m_depthBuffer.image;
+    //
+    // vkCmdPipelineBarrier (cmd_buff
+    //     , VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
+    //     , VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
+    //     , 0
+    //     , 0, nullptr
+    //     , 0, nullptr
+    //     , 1, &barr);
+    //
+    // VK_CHECK_RESULT (vkEndCommandBuffer (cmd_buff));
+    // vk_utils::executeCommandBufferNow (cmd_buff, m_queue, m_device);
+
     LOG_INFO ("[UI] Created depth buffer.");
 }
 
@@ -290,48 +324,67 @@ void UI::init (const InitInfo& info) {
     );
     io.DeltaTime = 1.0f / 60.0f;
 
-    // ImGui_ImplVulkan_InitInfo im_init_info {};
-    // im_init_info.Instance           = m_instance;
-    // im_init_info.PhysicalDevice     = m_physicalDevice;
-    // im_init_info.Device             = m_device;
-    // im_init_info.Queue              = m_queue;
-    // im_init_info.QueueFamily        = m_graphics_queue_family_index;
-    // // im_init_info.DescriptorPool     = m_imguiPool;
-    // im_init_info.DescriptorPool     = VK_NULL_HANDLE;
-    // im_init_info.DescriptorPoolSize = 1000;
-    // im_init_info.MinImageCount      = 2;
-    // im_init_info.ImageCount         = static_cast <uint32_t> (m_swapchainImageViews.size ());
-    // im_init_info.PipelineInfoMain.RenderPass = m_imguiRenderPass;
-    // im_init_info.PipelineInfoMain.Subpass = 0;
-    // im_init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    // im_init_info.UseDynamicRendering = VK_FALSE;
-    // im_init_info.PipelineCache = VK_NULL_HANDLE;
-    // im_init_info.Allocator = VK_NULL_HANDLE;
+    ImGui_ImplVulkan_InitInfo im_init_info {};
+    im_init_info.Instance           = m_instance;
+    im_init_info.PhysicalDevice     = m_physicalDevice;
+    im_init_info.Device             = m_device;
+    im_init_info.Queue              = m_queue;
+    im_init_info.QueueFamily        = m_graphics_queue_family_index;
+    // im_init_info.DescriptorPool     = m_imguiPool;
+    im_init_info.DescriptorPool     = VK_NULL_HANDLE;
+    im_init_info.DescriptorPoolSize = 1000;
+    im_init_info.MinImageCount      = 2;
+    im_init_info.ImageCount         = static_cast <uint32_t> (m_swapchainImageViews.size ());
+    im_init_info.PipelineInfoMain.RenderPass = m_imguiRenderPass;
+    im_init_info.PipelineInfoMain.Subpass = 0;
+    im_init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    im_init_info.UseDynamicRendering = VK_FALSE;
+    im_init_info.PipelineCache = VK_NULL_HANDLE;
+    im_init_info.Allocator = VK_NULL_HANDLE;
     // im_init_info.CheckVkResultFn = check_vk_result;
-    // im_init_info.ApiVersion     = VK_API_VERSION_1_4;
+    im_init_info.ApiVersion     = VK_API_VERSION_1_4;
 
     VkPhysicalDeviceProperties props {};
     vkGetPhysicalDeviceProperties (m_physicalDevice, &props);
     LOG_INFO ("Physical device: {}", props.deviceName);
 
+    ImGui_ImplGlfw_InitForVulkan (m_window, true);
+    LOG_INFO ("[UI] Initing vulkan for imgui...");
+    ImGui_ImplVulkan_Init (&im_init_info);
+    LOG_INFO ("[UI] Inited vulkan for imgui.");
 
-    // LOG_INFO ("[UI] Initing vulkan for imgui...");
-    // ImGui_ImplVulkan_Init (&im_init_info);
-    // LOG_INFO ("[UI] Inited vulkan for imgui.");
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.FontSizeBase = 20.0f;
+
+    static ImWchar exclude_ranges[] = { '0', '9', 0 };
+    ImFontConfig cfg1;
+    cfg1.GlyphExcludeRanges = exclude_ranges;
+
+    ImFont* font = io.Fonts->AddFontFromFileTTF ("./assets/fonts/CodecPro-Regular.ttf", 0.0f, &cfg1);
+    IM_ASSERT (font != nullptr);
+
+    ImFontConfig cfg2;
+    cfg2.MergeMode = true;
+    cfg2.ExtraSizeScale = 1.2f;
+    io.Fonts->AddFontFromFileTTF ("./assets/fonts/FiraMono-Medium.ttf", 0.0f, &cfg2);
 
     ImGui::StyleColorsDark ();
 }
 
-void UI::update (uint32_t width, uint32_t height, float delta_time) {
+void UI::update (Settings& settings, uint32_t width, uint32_t height, float delta_time) {
     ImGuiIO& io = ImGui::GetIO ();
     io.DisplaySize = ImVec2 (static_cast <float> (width), static_cast <float> (height));
     io.DeltaTime = std::max (0.0001f, delta_time);
 
-    // ImGui_ImplVulkan_NewFrame ();
-    // ImGui::NewFrame ();
-
-    ImGui::Begin ("Hello Vulkan ImGui");
-    ImGui::Text ("Hello, Vulkan ImGui User!");
+    ImGui_ImplVulkan_NewFrame ();
+    ImGui_ImplGlfw_NewFrame ();
+    ImGui::NewFrame ();
+    ImGui::Begin ("sdf_raster");
+    ImGui::SeparatorText ("Culling");
+    ImGui::Checkbox ("occlusion culling", &settings.occlusion_culling);
+    ImGui::Checkbox ("frustum culling", &settings.frustum_culling);
+    ImGui::SeparatorText ("Statistics");
+    ImGui::Text ("FPS: %.1f", io.Framerate);
     ImGui::End ();
 
     ImGui::EndFrame ();
@@ -362,12 +415,18 @@ void UI::draw (uint32_t image_index, VkCommandBuffer cmd_buff) {
     ImGui::Render ();
 
     vkCmdBeginRenderPass (cmd_buff, &render_pass_begin, VK_SUBPASS_CONTENTS_INLINE);
-    // ImGui_ImplVulkan_RenderDrawData (ImGui::GetDrawData (), cmd_buff);
+    ImGui_ImplVulkan_RenderDrawData (ImGui::GetDrawData (), cmd_buff);
     vkCmdEndRenderPass (cmd_buff);
 }
 
 void UI::cleanup () {
-    // ImGui_ImplVulkan_Shutdown ();
+    if (m_device == VK_NULL_HANDLE) {
+        return;
+    }
+
+    vkDeviceWaitIdle (m_device);
+    ImGui_ImplVulkan_Shutdown ();
+    ImGui_ImplGlfw_Shutdown ();
     ImGui::DestroyContext ();
 
     if (m_device == VK_NULL_HANDLE) {
@@ -416,8 +475,8 @@ void init (const InitInfo& info) {
     UI::instance ().init (info);
 }
 
-void update (uint32_t width, uint32_t height, float delta_time) {
-    UI::instance ().update (width, height, delta_time);
+void update (Settings& settings, uint32_t width, uint32_t height, float delta_time) {
+    UI::instance ().update (settings, width, height, delta_time);
 }
 
 void draw (uint32_t image_index, VkCommandBuffer cmd_buff) {

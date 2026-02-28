@@ -12,6 +12,7 @@
 #include "occlusion_culling.hpp"
 #include "renderer.hpp"
 #include "sdf_octree.hpp"
+#include "settings.hpp"
 #include "shader_common.hpp"
 #include "vk_descriptor_sets.h"
 #include "vulkan_context.hpp"
@@ -24,7 +25,7 @@ public:
     ~ComputeShaderRenderer ();
 
     void init (SdfOctree&& a_sdf_octree) override;
-    void render (const Camera& a_camera) override;
+    void render (const Settings& settings) override;
     void shutdown () override;
 
 private:
@@ -43,7 +44,7 @@ private:
     void init_graphics_frustum_pipeline ();
     void toggle_frustum_buffer (Camera& camera) override;
 
-    void update_push_constants (const Camera& camera);
+    void update_push_constants (const Settings& settings);
     void update_frustum_buffer (const Camera& camera);
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
     void clear_geometry (VkCommandBuffer cmd_buff);

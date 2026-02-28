@@ -46,6 +46,7 @@ public:
     inline const vk_utils::VulkanImageMem& get_depth_buffer () const { return this->depth_buffers [this->acquired_image_index]; }
     inline VkImageView get_swapchain_image_view (uint32_t i) const { return this->swapchain.GetAttachment (i).view; }
     inline uint32_t get_swapchain_image_count () const { return this->swapchain.GetImageCount (); }
+    inline uint32_t get_swapchain_image_index () const { return this->acquired_image_index; }
     inline VkFormat get_depth_format () const { return this->depth_format; }
 
     VkCommandBuffer begin_frame (uint32_t frame_idx);

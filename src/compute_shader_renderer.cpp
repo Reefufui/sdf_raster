@@ -4,9 +4,11 @@
 #include <stdexcept>
 
 #include "vk_pipeline.h"
+
 #include "compute_shader_renderer.hpp"
 #include "application.hpp"
 #include "logger.hpp"
+#include "gui.hpp"
 
 namespace {
 
@@ -590,13 +592,13 @@ void ComputeShaderRenderer::toggle_frustum_buffer (Camera& camera) {
         , camera);
 }
 
-void ComputeShaderRenderer::update_push_constants (const Camera& camera) {
-    this->push_constants.view_proj = camera.get_view_projection_matrix ();
-    this->push_constants.camera_pos = LiteMath::to_float4 (camera.get_position (), 1.0f);
+void ComputeShaderRenderer::update_push_constants (const Settings& settings) {
+    this->push_constants.view_proj = settings.camera.get_view_projection_matrix ();
+    this->push_constants.camera_pos = LiteMath::to_float4 (settings.camera.get_position (), 1.0f);
     this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
 
-    this->push_constants.occlusion_culling = true; // TODO: ui handle
-    this->push_constants.frustum_culling = true; // TODO: ui handle
+    this->push_constants.occlusion_culling = settings.occlusion_culling;
+    this->push_constants.frustum_culling = settings.frustum_culling;
 
     // TODO: fix for multiple in flight frames
     if (fetch_active_leaf_overflow_flag (this->context->get_copy_helper (), this->active_leafs_ds)) {
@@ -1221,7 +1223,7 @@ void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void ComputeShaderRenderer::render (const Camera& camera) {
+void ComputeShaderRenderer::render (const Settings& settings) {
     if (!this->initialized) {
         LOG_ERROR ("render called before initialization");
         return;
@@ -1232,9 +1234,9 @@ void ComputeShaderRenderer::render (const Camera& camera) {
         return;
     }
 
-    this->update_push_constants (camera);
+    this->update_push_constants (settings);
     if (!this->frustum_draw_buffer) {
-        this->update_frustum_buffer (camera);
+        this->update_frustum_buffer (settings.camera);
     }
 
     this->clear_geometry (cmd_buff);
@@ -1261,6 +1263,8 @@ void ComputeShaderRenderer::render (const Camera& camera) {
     if (this->frustum_draw_buffer) {
         this->draw_frustum (cmd_buff);
     }
+
+    gui::draw (this->context->get_swapchain_image_index (), cmd_buff);
 
     this->context->end_frame (cmd_buff, this->frame_index);
 
@@ -1291,7 +1295,7 @@ void ComputeShaderRenderer::render (const Camera& camera) {
     }
 
     if (!this->frustum_draw_buffer) {
-        prepare_next_frame_data (this->hz_buffer_ds, this->frame_index, this->context->get_depth_buffer ().image, camera.get_view_projection_matrix ());
+        prepare_next_frame_data (this->hz_buffer_ds, this->frame_index, this->context->get_depth_buffer ().image, settings.camera.get_view_projection_matrix ());
     }
     this->frame_index = (this->frame_index + 1) % this->context->get_total_frames ();
 }

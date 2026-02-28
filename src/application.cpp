@@ -119,7 +119,7 @@ void Application::init_window () {
     glfwSetMouseButtonCallback (this->window, mouse_button_callback);
 
     glfwSetInputMode (this->window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    this->camera_mode_active = true;
+    this->settings.disabled_cursor = true;
     this->first_mouse = true;
 
     int width, height;
@@ -150,7 +150,14 @@ void Application::init_vulkan () {
         auto extent = this->vulkan_context->get_swapchain_extent ();
         this->settings.camera.set_aspect_ratio (static_cast <float> (extent.width) / static_cast <float> (extent.height));
     };
+
+    auto resize_gui = [&] () {
+        gui::cleanup ();
+        init_gui ();
+    };
+
     this->vulkan_context->register_resizable (resize_camera);
+    this->vulkan_context->register_resizable (resize_gui);
 }
 
 void Application::init_renderer () {
@@ -201,27 +208,29 @@ void Application::cleanup () {
 }
 
 void Application::process_input () {
-    if (this->camera_mode_active) {
-        if (glfwGetKey (this->window, GLFW_KEY_W) == GLFW_PRESS)
-            this->settings.camera.process_keyboard_input (Camera::Movement::FORWARD, this->delta_time);
-        if (glfwGetKey (this->window, GLFW_KEY_S) == GLFW_PRESS)
-            this->settings.camera.process_keyboard_input (Camera::Movement::BACKWARD, this->delta_time);
-        if (glfwGetKey (this->window, GLFW_KEY_A) == GLFW_PRESS)
-            this->settings.camera.process_keyboard_input (Camera::Movement::LEFT, this->delta_time);
-        if (glfwGetKey (this->window, GLFW_KEY_D) == GLFW_PRESS)
-            this->settings.camera.process_keyboard_input (Camera::Movement::RIGHT, this->delta_time);
-        if (glfwGetKey (this->window, GLFW_KEY_SPACE) == GLFW_PRESS)
-            this->settings.camera.process_keyboard_input (Camera::Movement::UP, this->delta_time);
-        if (glfwGetKey (this->window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
-            this->settings.camera.process_keyboard_input (Camera::Movement::DOWN, this->delta_time);
+    if (!settings.disabled_cursor) {
+        return;
     }
+
+    if (glfwGetKey (this->window, GLFW_KEY_W) == GLFW_PRESS)
+        this->settings.camera.process_keyboard_input (Camera::Movement::FORWARD, this->delta_time);
+    if (glfwGetKey (this->window, GLFW_KEY_S) == GLFW_PRESS)
+        this->settings.camera.process_keyboard_input (Camera::Movement::BACKWARD, this->delta_time);
+    if (glfwGetKey (this->window, GLFW_KEY_A) == GLFW_PRESS)
+        this->settings.camera.process_keyboard_input (Camera::Movement::LEFT, this->delta_time);
+    if (glfwGetKey (this->window, GLFW_KEY_D) == GLFW_PRESS)
+        this->settings.camera.process_keyboard_input (Camera::Movement::RIGHT, this->delta_time);
+    if (glfwGetKey (this->window, GLFW_KEY_SPACE) == GLFW_PRESS)
+        this->settings.camera.process_keyboard_input (Camera::Movement::UP, this->delta_time);
+    if (glfwGetKey (this->window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
+        this->settings.camera.process_keyboard_input (Camera::Movement::DOWN, this->delta_time);
 }
 
 void Application::mouse_callback (GLFWwindow* a_window, double xpos, double ypos) {
     auto app = get_app_ptr (a_window);
     if (!app) return;
 
-    if (app->camera_mode_active) {
+    if (app->settings.disabled_cursor) {
         if (app->first_mouse) {
             app->last_x = static_cast <float> (xpos);
             app->last_y = static_cast <float> (ypos);
@@ -249,8 +258,8 @@ void Application::key_callback (GLFWwindow* a_window, int key, int, int action, 
     if (!app) return;
 
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-        if (app->camera_mode_active) {
-            app->camera_mode_active = false;
+        if (app->settings.disabled_cursor) {
+            app->settings.disabled_cursor = false;
             glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             LOG_INFO ("Exited camera mode. Cursor NORMAL.");
         }
@@ -266,8 +275,7 @@ void Application::key_callback (GLFWwindow* a_window, int key, int, int action, 
             app->c_key_pressed_this_frame = true;
         } else if (action == GLFW_RELEASE) {
             if (app->c_key_pressed_this_frame) {
-                app->renderer->toggle_frustum_buffer (app->settings.camera);
-                LOG_INFO ("Toggled frustum buffer visibility.");
+                app->renderer->toggle_frustum_buffer (app->settings);
                 app->c_key_pressed_this_frame = false;
             }
         }
@@ -282,15 +290,15 @@ void Application::mouse_button_callback (GLFWwindow* a_window, int button, int a
     Application* app = get_app_ptr (a_window);
     if (!app) return;
 
-    if (app->camera_mode_active) {
+    if (app->settings.disabled_cursor) {
         if ((button == GLFW_MOUSE_BUTTON_RIGHT || button == GLFW_MOUSE_BUTTON_LEFT) && action == GLFW_PRESS) {
-            app->camera_mode_active = false;
+            app->settings.disabled_cursor = false;
             glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             LOG_INFO ("Exited camera mode. Cursor NORMAL.");
         }
     } else {
         if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
-            app->camera_mode_active = true;
+            app->settings.disabled_cursor = true;
             glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             app->first_mouse = true;
             LOG_INFO ("Entered camera mode. Cursor DISABLED.");

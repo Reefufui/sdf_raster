@@ -38,7 +38,6 @@ private:
 private:
     GLFWwindow* window;
 
-    bool camera_mode_active = true;
     bool c_key_pressed_this_frame = false;
 
     Settings settings;

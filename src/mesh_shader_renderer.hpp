@@ -4,7 +4,8 @@
 #include <vector>
 #include <string>
 
-#include "GLFW/glfw3.h"
+#include <GLFW/glfw3.h>
+
 #include "vk_descriptor_sets.h"
 
 #include "shader_common.hpp"

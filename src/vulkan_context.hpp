@@ -8,7 +8,7 @@
 #include "vk_swapchain.h"
 #include "vk_utils.h"
 
-#include "GLFW/glfw3.h" // NOTE: must be included after Vulkan
+#include <GLFW/glfw3.h> // NOTE: must be included after Vulkan
 
 struct GLFWwindow;
 

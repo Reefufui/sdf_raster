@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 
-#include "GLFW/glfw3.h"
+#include <GLFW/glfw3.h>
 
 #include "camera.hpp"
 #include "marching_cubes_lookup_table.hpp"
@@ -42,7 +42,7 @@ private:
     void register_resizable ();
 
     void init_graphics_frustum_pipeline ();
-    void toggle_frustum_buffer (Camera& camera) override;
+    void toggle_frustum_buffer (Settings& settings) override;
 
     void update_push_constants (const Settings& settings);
     void update_frustum_buffer (const Camera& camera);
@@ -57,7 +57,7 @@ private:
     void prefix_sum_pass3 (VkCommandBuffer cmd_buff);
     void compute_geometry (VkCommandBuffer cmd_buff);
     void geometry_barrier (VkCommandBuffer cmd_buff);
-    void draw_geometry (VkCommandBuffer cmd_buff);
+    void draw_geometry (VkCommandBuffer cmd_buff, const Settings& settings);
     void draw_frustum (VkCommandBuffer cmd_buff);
     void copy_depth (VkCommandBuffer cmd_buff);
 

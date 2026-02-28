@@ -579,17 +579,20 @@ void ComputeShaderRenderer::init_graphics_frustum_pipeline () {
     shader_modules.clear ();
 }
 
-void ComputeShaderRenderer::toggle_frustum_buffer (Camera& camera) {
-    if (this->frustum_draw_buffer) {
-        camera = this->frustum_draw_buffer->get_camera ();
+void ComputeShaderRenderer::toggle_frustum_buffer (Settings& settings) {
+    if (settings.frustum_view) {
+        settings.frustum_view = false;
+        settings.camera = this->frustum_draw_buffer->get_camera ();
         this->frustum_draw_buffer.reset ();
-        return;
+    } else {
+        settings.frustum_view = true;
+        this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_copy_helper ()
+            , settings.camera);
     }
 
-    this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
-        , this->context->get_physical_device ()
-        , this->context->get_copy_helper ()
-        , camera);
+    LOG_INFO ("[{}] Frustum view mode: {}.", RENDERER_NAME, (settings.frustum_view) ? "ON" : "OFF");
 }
 
 void ComputeShaderRenderer::update_push_constants (const Settings& settings) {
@@ -1133,11 +1136,11 @@ void ComputeShaderRenderer::geometry_barrier (VkCommandBuffer cmd_buff) {
     );
 }
 
-void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff) {
+void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, const Settings& settings) {
     const auto extent = this->context->get_swapchain_extent ();
 
     std::array <VkClearValue, 2> clear_values {};
-    if (this->frustum_draw_buffer) {
+    if (settings.frustum_view) {
         clear_values [0].color = {{0.0f, 0.1f, 0.1f, 1.0f}};
     } else {
         clear_values [0].color = {{0.2f, 0.3f, 0.3f, 1.0f}};
@@ -1235,7 +1238,7 @@ void ComputeShaderRenderer::render (const Settings& settings) {
     }
 
     this->update_push_constants (settings);
-    if (!this->frustum_draw_buffer) {
+    if (!settings.frustum_view) {
         this->update_frustum_buffer (settings.camera);
     }
 
@@ -1258,9 +1261,9 @@ void ComputeShaderRenderer::render (const Settings& settings) {
     this->compute_geometry (cmd_buff);
 
     this->geometry_barrier (cmd_buff);
-    this->draw_geometry (cmd_buff);
+    this->draw_geometry (cmd_buff, settings);
 
-    if (this->frustum_draw_buffer) {
+    if (settings.frustum_view) {
         this->draw_frustum (cmd_buff);
     }
 
@@ -1294,7 +1297,7 @@ void ComputeShaderRenderer::render (const Settings& settings) {
         vkDeviceWaitIdle (this->context->get_device ());
     }
 
-    if (!this->frustum_draw_buffer) {
+    if (!settings.frustum_view) {
         prepare_next_frame_data (this->hz_buffer_ds, this->frame_index, this->context->get_depth_buffer ().image, settings.camera.get_view_projection_matrix ());
     }
     this->frame_index = (this->frame_index + 1) % this->context->get_total_frames ();

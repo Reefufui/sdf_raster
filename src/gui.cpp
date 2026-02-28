@@ -2,25 +2,29 @@
 #include <cassert>
 #include <chrono>
 
-#include <imgui.h>
-#include <imgui_impl_vulkan.h>
-#include <imgui_impl_glfw.h>
-#include <GLFW/glfw3.h>
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_vulkan.h"
 
 #include "application.hpp"
 #include "gui.hpp"
 #include "logger.hpp"
+#include "vk_images.h"
 
 namespace sdf_raster {
 
 namespace gui {
+
+void vk_check_result (VkResult err) {
+    VK_CHECK_RESULT (err);
+}
 
 class UI {
 public:
     UI (const UI&) = delete;
     UI& operator= (const UI&) = delete;
 
-    static UI& instance () {
+    static UI& get_instance () {
         static UI ui;
         return ui;
     }
@@ -33,232 +37,104 @@ public:
 private:
     UI () = default;
 
-    struct DepthBuffer {
-        VkImage image = VK_NULL_HANDLE;
-        VkDeviceMemory memory = VK_NULL_HANDLE;
-        VkImageView view = VK_NULL_HANDLE;
-    } m_depthBuffer;
-
-    void create_imgui_render_pass ();
+    void create_render_pass ();
     void create_depth_buffer ();
     void create_imgui_framebuffers ();
 
 private:
-    VkDevice       m_device           = VK_NULL_HANDLE;
-    GLFWwindow*    m_window           = nullptr;
-    VkInstance     m_instance         = VK_NULL_HANDLE;
-    VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
-    VkQueue        m_queue            = VK_NULL_HANDLE;
-    uint32_t       m_graphics_queue_family_index;
+    VkDevice device = VK_NULL_HANDLE;
+    GLFWwindow* window = nullptr;
+    VkInstance instance = VK_NULL_HANDLE;
+    VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+    VkQueue queue = VK_NULL_HANDLE;
+    uint32_t graphics_queue_family_index;
 
-    std::vector <VkImageView> m_swapchainImageViews;
-    VkExtent2D m_surfaceExtent        = {0, 0};
-    VkFormat   m_surfaceFormat        = VK_FORMAT_UNDEFINED;
-    VkFormat   m_depthFormat          = VK_FORMAT_UNDEFINED;
+    std::vector <VkImageView> swapchain_image_views;
+    VkExtent2D surface_extent = {0, 0};
+    VkFormat surface_format = VK_FORMAT_UNDEFINED;
+    VkFormat depth_format = VK_FORMAT_UNDEFINED;
+    vk_utils::VulkanImageMem depth_buffer;
 
-    VkDescriptorPool m_imguiPool         = VK_NULL_HANDLE;
-    VkRenderPass     m_imguiRenderPass   = VK_NULL_HANDLE;
-    std::vector<VkFramebuffer> m_imguiFramebuffers;
+    VkRenderPass render_pass = VK_NULL_HANDLE;
+    std::vector <VkFramebuffer> framebuffers;
+
+private:
+    void init_style ();
+
+    void menu_bar ();
+    void occlusion_window (Settings& settings);
+    void status_bar (Settings& settings);
+
+private:
+    bool show_ui = true;
+    Settings previous_frame_settings;
+    float alpha = .8f;
+
+    bool show_occlusion_window = false;
+    bool lock_occlusion_culling = false;
 };
 
-void UI::create_imgui_render_pass () {
-    std::array <VkAttachmentDescription, 2> attachments {};
-
-    attachments [0].format         = m_surfaceFormat;
-    attachments [0].samples        = VK_SAMPLE_COUNT_1_BIT;
-    attachments [0].loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD;
-    attachments [0].storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-    attachments [0].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachments [0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments [0].initialLayout  = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    attachments [0].finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    attachments [1].format         = m_depthFormat;
-    attachments [1].samples        = VK_SAMPLE_COUNT_1_BIT;
-    attachments [1].loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD;
-    attachments [1].storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments [1].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachments [1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments [1].initialLayout  = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    attachments [1].finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference colorReference = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    VkAttachmentReference depthReference = {1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
-
-    VkSubpassDescription subpass {};
-    subpass.pipelineBindPoint        = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount     = 1;
-    subpass.pColorAttachments        = &colorReference;
-    subpass.pDepthStencilAttachment  = &depthReference;
-
-    VkSubpassDependency dependency {};
-    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass    = 0;
-    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-    VkRenderPassCreateInfo renderPassInfo {};
-    renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = static_cast <uint32_t> (attachments.size ());
-    renderPassInfo.pAttachments    = attachments.data ();
-    renderPassInfo.subpassCount    = 1;
-    renderPassInfo.pSubpasses      = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies   = &dependency;
-
-    if (vkCreateRenderPass (m_device, &renderPassInfo, nullptr, &m_imguiRenderPass) != VK_SUCCESS) {
-        throw std::runtime_error ("Failed to create ImGui render pass!");
-    }
-
-    LOG_INFO ("[UI] Created render pass.");
+void UI::create_render_pass () {
+    vk_utils::RenderTargetInfo2D color_target_info {
+        .size = this->surface_extent,
+        .format = this->surface_format,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+    };
+    vk_utils::RenderTargetInfo2D depth_target_info {
+        .size = this->surface_extent,
+        .format = this->depth_format,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    };
+    this->render_pass = vk_utils::createRenderPass (this->device, color_target_info, depth_target_info);
 }
 
 void UI::create_depth_buffer () {
-    assert (m_physicalDevice != VK_NULL_HANDLE && "Physical device must be valid to create depth buffer.");
-    assert (m_device != VK_NULL_HANDLE && "Device must be valid to create depth buffer.");
-    assert (m_surfaceExtent.width > 0 && m_surfaceExtent.height > 0 && "Surface extent must be valid to create depth buffer.");
-    assert (m_depthFormat != VK_FORMAT_UNDEFINED && "Depth format must be defined to create depth buffer.");
+    assert (this->physical_device != VK_NULL_HANDLE && "Physical device must be valid to create depth buffer.");
+    assert (this->device != VK_NULL_HANDLE && "Device must be valid to create depth buffer.");
+    assert (this->surface_extent.width > 0 && this->surface_extent.height > 0 && "Surface extent must be valid to create depth buffer.");
+    assert (this->depth_format != VK_FORMAT_UNDEFINED && "Depth format must be defined to create depth buffer.");
 
-    VkFormatProperties format_properties;
-    vkGetPhysicalDeviceFormatProperties (m_physicalDevice, m_depthFormat, &format_properties);
-
-    VkImageCreateInfo image_info {};
-    image_info.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    image_info.imageType     = VK_IMAGE_TYPE_2D;
-    image_info.format        = m_depthFormat;
-    image_info.extent.width  = m_surfaceExtent.width;
-    image_info.extent.height = m_surfaceExtent.height;
-    image_info.extent.depth  = 1;
-    image_info.mipLevels     = 1;
-    image_info.arrayLayers   = 1;
-    image_info.samples       = VK_SAMPLE_COUNT_1_BIT;
-    image_info.usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    image_info.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-    image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    if (vkCreateImage (m_device, &image_info, nullptr, &m_depthBuffer.image) != VK_SUCCESS) {
-        throw std::runtime_error ("Failed to create depth image!");
+    if (this->depth_buffer.image == VK_NULL_HANDLE) {
+        vk_utils::deleteImg (this->device, &this->depth_buffer);
     }
 
-    VkMemoryRequirements mem_req;
-    vkGetImageMemoryRequirements (m_device, m_depthBuffer.image, &mem_req);
+    this->depth_buffer = vk_utils::createDepthTexture (this->device
+        , this->physical_device
+        , this->surface_extent.width
+        , this->surface_extent.height
+        , this->depth_format);
 
-    VkPhysicalDeviceMemoryProperties mem_props;
-    vkGetPhysicalDeviceMemoryProperties (m_physicalDevice, &mem_props);
-
-    uint32_t type_index = UINT32_MAX;
-    VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    for (uint32_t i = 0; i < mem_props.memoryTypeCount; i++) {
-        if ((mem_req.memoryTypeBits & (1 << i)) &&
-            (mem_props.memoryTypes[i].propertyFlags & properties) == properties) {
-            type_index = i;
-            break;
-        }
-    }
-
-    if (type_index == UINT32_MAX) {
-        throw std::runtime_error ("Failed to find suitable memory type for depth buffer!");
-    }
-
-    VkMemoryAllocateInfo alloc_info {};
-    alloc_info.sType          = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    alloc_info.allocationSize = mem_req.size;
-    alloc_info.memoryTypeIndex = type_index;
-
-    if (vkAllocateMemory (m_device, &alloc_info, nullptr, &m_depthBuffer.memory) != VK_SUCCESS) {
-        throw std::runtime_error ("Failed to allocate depth image memory!");
-    }
-
-     if (vkBindImageMemory (m_device, m_depthBuffer.image, m_depthBuffer.memory, 0) != VK_SUCCESS) {
-        throw std::runtime_error ("Failed to bind depth image memory!");
-    }
-
-    VkImageViewCreateInfo view_info {};
-    view_info.sType           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view_info.image           = m_depthBuffer.image;
-    view_info.viewType        = VK_IMAGE_VIEW_TYPE_2D;
-    view_info.format          = m_depthFormat;
-    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    if (m_depthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT || m_depthFormat == VK_FORMAT_D24_UNORM_S8_UINT) {
-         view_info.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-    }
-    view_info.subresourceRange.baseMipLevel   = 0;
-    view_info.subresourceRange.levelCount     = 1;
-    view_info.subresourceRange.baseArrayLayer = 0;
-    view_info.subresourceRange.layerCount     = 1;
-
-    if (vkCreateImageView (m_device, &view_info, nullptr, &m_depthBuffer.view) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create depth image view!");
-    }
-
-    VkCommandBufferBeginInfo begin_info {};
-    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin_info.flags = 0;
-    begin_info.pInheritanceInfo = nullptr;
-
-    // VkCommandBuffer cmd_buff = vk_utils::createCommandBuffer (m_device, m_imguiPool);
-    // VK_CHECK_RESULT (vkBeginCommandBuffer (cmd_buff, &begin_info));
-    //
-    // VkImageSubresourceRange whole_image {};
-    // whole_image.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    // whole_image.baseMipLevel = 0;
-    // whole_image.levelCount = 1;
-    // whole_image.baseArrayLayer = 0;
-    // whole_image.layerCount = 1;
-    //
-    // VkImageMemoryBarrier barr = {};
-    // barr.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    // barr.pNext = nullptr;
-    // barr.srcAccessMask = 0;
-    // barr.dstAccessMask = 0;
-    // barr.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    // barr.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    // barr.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    // barr.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    // barr.subresourceRange = whole_image;
-    // barr.image = m_depthBuffer.image;
-    //
-    // vkCmdPipelineBarrier (cmd_buff
-    //     , VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-    //     , VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-    //     , 0
-    //     , 0, nullptr
-    //     , 0, nullptr
-    //     , 1, &barr);
-    //
-    // VK_CHECK_RESULT (vkEndCommandBuffer (cmd_buff));
-    // vk_utils::executeCommandBufferNow (cmd_buff, m_queue, m_device);
-
-    LOG_INFO ("[UI] Created depth buffer.");
+    LOG_TRACE ("[UI] Created depth buffer.");
 }
 
 void UI::create_imgui_framebuffers () {
-    assert (m_device != VK_NULL_HANDLE && "Device must be valid to create framebuffers.");
-    assert (m_imguiRenderPass != VK_NULL_HANDLE && "ImGui RenderPass must be valid to create framebuffers.");
-    assert (!m_swapchainImageViews.empty() && "Swapchain Image Views must not be empty.");
-    assert (m_depthBuffer.view != VK_NULL_HANDLE && "Depth buffer view must be valid to create framebuffers.");
-    assert (m_surfaceExtent.width > 0 && m_surfaceExtent.height > 0 && "Surface extent must be valid to create framebuffers.");
+    assert (this->device != VK_NULL_HANDLE && "Device must be valid to create framebuffers.");
+    assert (this->render_pass != VK_NULL_HANDLE && "ImGui RenderPass must be valid to create framebuffers.");
+    assert (!this->swapchain_image_views.empty() && "Swapchain Image Views must not be empty.");
+    assert (this->depth_buffer.view != VK_NULL_HANDLE && "Depth buffer view must be valid to create framebuffers.");
+    assert (this->surface_extent.width > 0 && this->surface_extent.height > 0 && "Surface extent must be valid to create framebuffers.");
 
-    m_imguiFramebuffers.resize (m_swapchainImageViews.size ());
+    this->framebuffers.resize (this->swapchain_image_views.size ());
 
-    for (size_t i = 0; i < m_swapchainImageViews.size (); ++i) {
+    for (size_t i = 0; i < this->swapchain_image_views.size (); ++i) {
         std::array <VkImageView, 2> attachments;
-        attachments [0] = m_swapchainImageViews [i];
-        attachments [1] = m_depthBuffer.view;
+        attachments [0] = this->swapchain_image_views [i];
+        attachments [1] = this->depth_buffer.view;
 
         VkFramebufferCreateInfo framebuffer_info {};
         framebuffer_info.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebuffer_info.renderPass      = m_imguiRenderPass;
+        framebuffer_info.renderPass      = this->render_pass;
         framebuffer_info.attachmentCount = static_cast <uint32_t> (attachments.size ());
         framebuffer_info.pAttachments    = attachments.data ();
-        framebuffer_info.width           = m_surfaceExtent.width;
-        framebuffer_info.height          = m_surfaceExtent.height;
+        framebuffer_info.width           = this->surface_extent.width;
+        framebuffer_info.height          = this->surface_extent.height;
         framebuffer_info.layers          = 1;
 
-        if (vkCreateFramebuffer (m_device, &framebuffer_info, nullptr, &m_imguiFramebuffers [i]) != VK_SUCCESS) {
+        if (vkCreateFramebuffer (this->device, &framebuffer_info, nullptr, &this->framebuffers [i]) != VK_SUCCESS) {
             throw std::runtime_error ("Failed to create ImGui framebuffer for swapchain image " + std::to_string (i) + "!");
         }
     }
@@ -278,35 +154,20 @@ void UI::init (const InitInfo& info) {
     assert (info.surface_format != VK_FORMAT_UNDEFINED && "InitInfo.surface_format must be defined.");
     assert (info.depth_format != VK_FORMAT_UNDEFINED && "InitInfo.depth_format must be defined.");
 
-    m_device            = info.device;
-    m_window            = info.window;
-    m_instance          = info.instance;
-    m_physicalDevice    = info.physical_device;
-    m_queue             = info.graphics_queue;
-    m_graphics_queue_family_index = info.graphics_queue_family_index;
-    m_swapchainImageViews = info.swapchain_image_views;
-    m_surfaceExtent     = info.surface_extent;
-    m_surfaceFormat     = info.surface_format;
-    m_depthFormat       = info.depth_format;
+    this->device = info.device;
+    this->window = info.window;
+    this->instance = info.instance;
+    this->physical_device = info.physical_device;
+    this->queue = info.graphics_queue;
+    this->graphics_queue_family_index = info.graphics_queue_family_index;
+    this->swapchain_image_views = info.swapchain_image_views;
+    this->surface_extent = info.surface_extent;
+    this->surface_format = info.surface_format;
+    this->depth_format = info.depth_format;
 
     this->create_depth_buffer ();
-    this->create_imgui_render_pass ();
+    this->create_render_pass ();
     this->create_imgui_framebuffers ();
-
-    VkDescriptorPoolSize pool_size {};
-    pool_size.type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    pool_size.descriptorCount = 1000;
-
-    VkDescriptorPoolCreateInfo pool_info {};
-    pool_info.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_info.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    pool_info.maxSets       = 1000;
-    pool_info.poolSizeCount = 1;
-    pool_info.pPoolSizes    = &pool_size;
-
-    if (vkCreateDescriptorPool (m_device, &pool_info, nullptr, &m_imguiPool) != VK_SUCCESS) {
-        throw std::runtime_error ("Failed to create ImGui descriptor pool!");
-    }
 
     ImGui::CreateContext ();
     LOG_INFO ("[UI] Created ImGui context.");
@@ -314,10 +175,10 @@ void UI::init (const InitInfo& info) {
 
     int window_w, window_h;
     int framebuffer_w, framebuffer_h;
-    glfwGetWindowSize (m_window, &window_w, &window_h);
-    glfwGetFramebufferSize (m_window, &framebuffer_w, &framebuffer_h);
+    glfwGetWindowSize (this->window, &window_w, &window_h);
+    glfwGetFramebufferSize (this->window, &framebuffer_w, &framebuffer_h);
 
-    io.DisplaySize           = ImVec2 (static_cast <float> (window_w), static_cast <float> (window_h));
+    io.DisplaySize = ImVec2 (static_cast <float> (window_w), static_cast <float> (window_h));
     io.DisplayFramebufferScale = ImVec2 (
         static_cast <float> (framebuffer_w) / static_cast <float> (window_w),
         static_cast <float> (framebuffer_h) / static_cast <float> (window_h)
@@ -325,77 +186,192 @@ void UI::init (const InitInfo& info) {
     io.DeltaTime = 1.0f / 60.0f;
 
     ImGui_ImplVulkan_InitInfo im_init_info {};
-    im_init_info.Instance           = m_instance;
-    im_init_info.PhysicalDevice     = m_physicalDevice;
-    im_init_info.Device             = m_device;
-    im_init_info.Queue              = m_queue;
-    im_init_info.QueueFamily        = m_graphics_queue_family_index;
-    // im_init_info.DescriptorPool     = m_imguiPool;
-    im_init_info.DescriptorPool     = VK_NULL_HANDLE;
+    im_init_info.Instance = this->instance;
+    im_init_info.PhysicalDevice = this->physical_device;
+    im_init_info.Device = this->device;
+    im_init_info.Queue = this->queue;
+    im_init_info.QueueFamily = this->graphics_queue_family_index;
+    im_init_info.DescriptorPool = VK_NULL_HANDLE;
     im_init_info.DescriptorPoolSize = 1000;
-    im_init_info.MinImageCount      = 2;
-    im_init_info.ImageCount         = static_cast <uint32_t> (m_swapchainImageViews.size ());
-    im_init_info.PipelineInfoMain.RenderPass = m_imguiRenderPass;
+    im_init_info.MinImageCount = 2;
+    im_init_info.ImageCount = static_cast <uint32_t> (this->swapchain_image_views.size ());
+    im_init_info.PipelineInfoMain.RenderPass = this->render_pass;
     im_init_info.PipelineInfoMain.Subpass = 0;
     im_init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     im_init_info.UseDynamicRendering = VK_FALSE;
     im_init_info.PipelineCache = VK_NULL_HANDLE;
     im_init_info.Allocator = VK_NULL_HANDLE;
-    // im_init_info.CheckVkResultFn = check_vk_result;
-    im_init_info.ApiVersion     = VK_API_VERSION_1_4;
+    im_init_info.CheckVkResultFn = vk_check_result;
+    im_init_info.ApiVersion = VK_API_VERSION_1_4;
 
-    VkPhysicalDeviceProperties props {};
-    vkGetPhysicalDeviceProperties (m_physicalDevice, &props);
-    LOG_INFO ("Physical device: {}", props.deviceName);
-
-    ImGui_ImplGlfw_InitForVulkan (m_window, true);
-    LOG_INFO ("[UI] Initing vulkan for imgui...");
+    ImGui_ImplGlfw_InitForVulkan (this->window, true);
+    LOG_TRACE ("[UI] Initing vulkan for imgui...");
     ImGui_ImplVulkan_Init (&im_init_info);
-    LOG_INFO ("[UI] Inited vulkan for imgui.");
+    LOG_TRACE ("[UI] Inited vulkan for imgui.");
 
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.FontSizeBase = 20.0f;
+    this->init_style ();
+}
 
-    static ImWchar exclude_ranges[] = { '0', '9', 0 };
-    ImFontConfig cfg1;
-    cfg1.GlyphExcludeRanges = exclude_ranges;
+void UI::menu_bar () {
+    if (ImGui::BeginMainMenuBar ()) {
+        if (ImGui::BeginMenu ("File")) {
+            if (ImGui::MenuItem ("Open...", "Ctrl+O")) {
+                // TODO: open sdf scene
+            }
+            ImGui::Separator ();
+            if (ImGui::MenuItem ("Quit", "")) {
+                glfwSetWindowShouldClose (this->window, true);
+            }
+            ImGui::EndMenu ();
+        }
 
-    ImFont* font = io.Fonts->AddFontFromFileTTF ("./assets/fonts/CodecPro-Regular.ttf", 0.0f, &cfg1);
-    IM_ASSERT (font != nullptr);
+        if (ImGui::BeginMenu ("View")) {
+            if (ImGui::MenuItem ("Show Culling Window", "", &this->show_occlusion_window)) { }
+            ImGui::EndMenu ();
+        }
 
-    ImFontConfig cfg2;
-    cfg2.MergeMode = true;
-    cfg2.ExtraSizeScale = 1.2f;
-    io.Fonts->AddFontFromFileTTF ("./assets/fonts/FiraMono-Medium.ttf", 0.0f, &cfg2);
+        ImGui::EndMainMenuBar ();
+    }
+}
 
-    ImGui::StyleColorsDark ();
+void UI::occlusion_window (Settings& settings) {
+    ImGui::Begin ("Culling");
+
+    ImGui::SeparatorText ("Culling types");
+
+    ImGui::Checkbox ("frustum culling", &settings.frustum_culling);
+    if (ImGui::IsItemHovered ()) {
+        ImGui::SetTooltip ("Disables rendering of objects outside the camera's view frustum.");
+    }
+
+    if (!this->previous_frame_settings.frustum_view && settings.frustum_view && !settings.occlusion_culling) {
+        LOG_WARN ("[UI] Frustum view mode entered w/o occlusion culling. Toggling disabled: depth data missing.");
+        this->lock_occlusion_culling = true;
+    } else if (!settings.frustum_view) {
+        this->lock_occlusion_culling = false;
+    }
+
+    if (this->lock_occlusion_culling) {
+        ImGui::BeginDisabled ();
+    }
+
+    ImGui::Checkbox ("occlusion culling", &settings.occlusion_culling);
+    if (ImGui::IsItemHovered (ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::BeginTooltip ();
+        ImGui::SetTooltip ("Disables rendering of objects hidden behind other objects.");
+        if (this->lock_occlusion_culling) {
+            ImGui::TextColored (ImVec4 (1.0f, 1.0f, 0.0f, 1.0f), "Frustum view mode entered w/o occlusion culling. Depth data missing.");
+        }
+        ImGui::EndTooltip ();
+    }
+
+    if (this->lock_occlusion_culling) {
+        ImGui::EndDisabled ();
+    }
+
+    ImGui::End ();
+}
+
+void UI::status_bar (Settings& settings) {
+    ImGuiIO& io = ImGui::GetIO ();
+
+    struct StatusBarElement {
+        std::string text;
+    };
+
+    std::vector <StatusBarElement> elements;
+    elements.push_back (StatusBarElement {
+        .text = std::format ("Mode:{}", (settings.frustum_view) ? "frustum" : "camera")
+    });
+    elements.push_back (StatusBarElement {
+        .text = std::format ("Cursor:{}", (settings.disabled_cursor) ? "disabled" : "normal")
+    });
+    elements.push_back (StatusBarElement {
+        .text = std::format ("FPS:{:.1f}", io.Framerate)
+    });
+
+    ImGuiViewport* viewport = ImGui::GetMainViewport ();
+    ImVec2 viewport_pos = viewport->Pos;
+    ImVec2 viewport_size = viewport->Size;
+
+    float status_bar_height = ImGui::GetFrameHeight () * 1.2f;
+
+    ImVec2 status_bar_pos = ImVec2 (viewport_pos.x, viewport_pos.y + viewport_size.y - status_bar_height);
+    ImVec2 status_bar_size = ImVec2 (viewport_size.x, status_bar_height);
+
+    ImGui::SetNextWindowPos (status_bar_pos);
+    ImGui::SetNextWindowSize (status_bar_size);
+
+    ImGuiWindowFlags status_bar_flags = ImGuiWindowFlags_NoDecoration
+        | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoResize
+        | ImGuiWindowFlags_NoSavedSettings
+        | ImGuiWindowFlags_NoBringToFrontOnFocus
+        | ImGuiWindowFlags_NoFocusOnAppearing
+        | ImGuiWindowFlags_NoScrollbar
+        | ImGuiWindowFlags_NoNavInputs
+        | ImGuiWindowFlags_NoNavFocus;
+
+    ImGui::PushStyleVar (ImGuiStyleVar_WindowPadding, ImVec2 (8, 4));
+
+    if (ImGui::Begin ("##StatusBar", nullptr, status_bar_flags)) {
+        for (size_t i = 0; i < elements.size (); ++i) {
+            ImGui::Text ("%s", elements [i].text.c_str ());
+            if (i < elements.size () - 1) {
+                ImGui::SameLine ();
+                ImGui::Text ("|");
+                ImGui::SameLine ();
+            }
+        }
+    }
+    ImGui::End ();
+    ImGui::PopStyleVar ();
 }
 
 void UI::update (Settings& settings, uint32_t width, uint32_t height, float delta_time) {
+    if (!this->show_ui) {
+        return;
+    }
+
     ImGuiIO& io = ImGui::GetIO ();
     io.DisplaySize = ImVec2 (static_cast <float> (width), static_cast <float> (height));
     io.DeltaTime = std::max (0.0001f, delta_time);
 
+    if (settings.disabled_cursor) {
+        ImGui::SetWindowFocus (NULL);
+        io.WantCaptureMouse = false;
+        io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
+    } else {
+        io.WantCaptureMouse = true;
+        io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+    }
+
     ImGui_ImplVulkan_NewFrame ();
     ImGui_ImplGlfw_NewFrame ();
-    ImGui::NewFrame ();
-    ImGui::Begin ("sdf_raster");
-    ImGui::SeparatorText ("Culling");
-    ImGui::Checkbox ("occlusion culling", &settings.occlusion_culling);
-    ImGui::Checkbox ("frustum culling", &settings.frustum_culling);
-    ImGui::SeparatorText ("Statistics");
-    ImGui::Text ("FPS: %.1f", io.Framerate);
-    ImGui::End ();
 
-    ImGui::EndFrame ();
+    ImGui::NewFrame ();
+
+    this->menu_bar ();
+
+    if (this->show_occlusion_window) {
+        this->occlusion_window (settings);
+    }
+
+    this->status_bar (settings);
+
+    this->previous_frame_settings = settings;
 }
 
 void UI::draw (uint32_t image_index, VkCommandBuffer cmd_buff) {
-    if (image_index >= m_imguiFramebuffers.size ()) {
-        throw std::out_of_range ("Invalid image index for ImGui framebuffer. Index: " + std::to_string (image_index) +
-                                ", available framebuffers: " + std::to_string (m_imguiFramebuffers.size ()));
+    if (!show_ui) {
+        return;
     }
-    VkFramebuffer current_framebuffer = m_imguiFramebuffers [image_index];
+
+    if (image_index >= this->framebuffers.size ()) {
+        throw std::out_of_range ("Invalid image index for ImGui framebuffer. Index: " + std::to_string (image_index) +
+                                ", available framebuffers: " + std::to_string (this->framebuffers.size ()));
+    }
+    VkFramebuffer current_framebuffer = this->framebuffers [image_index];
 
     std::array <VkClearValue, 2> clear_value {};
     clear_value [0].color.float32 [0] = 0.0f; clear_value [0].color.float32 [1] = 0.0f;
@@ -405,10 +381,10 @@ void UI::draw (uint32_t image_index, VkCommandBuffer cmd_buff) {
 
     VkRenderPassBeginInfo render_pass_begin {};
     render_pass_begin.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_begin.renderPass      = m_imguiRenderPass;
+    render_pass_begin.renderPass      = this->render_pass;
     render_pass_begin.framebuffer     = current_framebuffer;
     render_pass_begin.renderArea.offset = {0, 0};
-    render_pass_begin.renderArea.extent = m_surfaceExtent;
+    render_pass_begin.renderArea.extent = this->surface_extent;
     render_pass_begin.clearValueCount = static_cast <uint32_t> (clear_value.size ());
     render_pass_begin.pClearValues    = clear_value.data ();
 
@@ -420,74 +396,146 @@ void UI::draw (uint32_t image_index, VkCommandBuffer cmd_buff) {
 }
 
 void UI::cleanup () {
-    if (m_device == VK_NULL_HANDLE) {
+    if (this->device == VK_NULL_HANDLE) {
         return;
     }
 
-    vkDeviceWaitIdle (m_device);
+    vkDeviceWaitIdle (this->device);
     ImGui_ImplVulkan_Shutdown ();
     ImGui_ImplGlfw_Shutdown ();
     ImGui::DestroyContext ();
 
-    if (m_device == VK_NULL_HANDLE) {
+    if (this->device == VK_NULL_HANDLE) {
         return;
     }
 
-    for (VkFramebuffer fb : m_imguiFramebuffers) {
+    for (VkFramebuffer fb : this->framebuffers) {
         if (fb != VK_NULL_HANDLE) {
-            vkDestroyFramebuffer (m_device, fb, nullptr);
+            vkDestroyFramebuffer (this->device, fb, nullptr);
         }
     }
-    m_imguiFramebuffers.clear ();
+    this->framebuffers.clear ();
 
-    if (m_imguiRenderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass (m_device, m_imguiRenderPass, nullptr);
-        m_imguiRenderPass = VK_NULL_HANDLE;
-    }
-
-    if (m_depthBuffer.view != VK_NULL_HANDLE) {
-        vkDestroyImageView (m_device, m_depthBuffer.view, nullptr);
-        m_depthBuffer.view = VK_NULL_HANDLE;
-    }
-    if (m_depthBuffer.image != VK_NULL_HANDLE) {
-        vkDestroyImage (m_device, m_depthBuffer.image, nullptr);
-        m_depthBuffer.image = VK_NULL_HANDLE;
-    }
-     if (m_depthBuffer.memory != VK_NULL_HANDLE) {
-        vkFreeMemory (m_device, m_depthBuffer.memory, nullptr);
-        m_depthBuffer.memory = VK_NULL_HANDLE;
+    if (this->render_pass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass (this->device, this->render_pass, nullptr);
+        this->render_pass = VK_NULL_HANDLE;
     }
 
-    if (m_imguiPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool (m_device, m_imguiPool, nullptr);
-        m_imguiPool = VK_NULL_HANDLE;
-    }
+    vk_utils::deleteImg (this->device, &this->depth_buffer);
 
-    m_swapchainImageViews.clear ();
-    m_device = VK_NULL_HANDLE;
-    m_window = nullptr;
-    m_instance = VK_NULL_HANDLE;
-    m_physicalDevice = VK_NULL_HANDLE;
-    m_queue = VK_NULL_HANDLE;
+    this->swapchain_image_views.clear ();
+    this->device = VK_NULL_HANDLE;
+    this->window = nullptr;
+    this->instance = VK_NULL_HANDLE;
+    this->physical_device = VK_NULL_HANDLE;
+    this->queue = VK_NULL_HANDLE;
+}
+
+void UI::init_style () {
+    ImGuiStyle& style = ImGui::GetStyle ();
+    ImGuiIO& io = ImGui::GetIO ();
+
+    style.FontSizeBase = 12.0f;
+    static ImWchar exclude_ranges [] = { '0', '9', 0 };
+
+    ImFontConfig cfg1;
+    cfg1.GlyphExcludeRanges = exclude_ranges;
+    ImFont* font1 = io.Fonts->AddFontFromFileTTF ("./assets/fonts/CodecPro-Regular.ttf", 0.0f, &cfg1);
+    IM_ASSERT (font1 != nullptr);
+
+    ImFontConfig cfg2;
+    cfg2.MergeMode = true;
+    cfg2.ExtraSizeScale = 1.2f;
+    ImFont* font2 = io.Fonts->AddFontFromFileTTF ("./assets/fonts/FiraMono-Medium.ttf", 0.0f, &cfg2);
+    IM_ASSERT (font2 != nullptr);
+
+    // light style from Pacôme Danhiez (user itamago) https://github.com/ocornut/imgui/pull/511#issuecomment-175719267
+    style.Alpha = 1.0f;
+    style.FrameRounding = 3.0f;
+    style.Colors [ImGuiCol_Text]                  = ImVec4 (0.00f, 0.00f, 0.00f, 1.00f);
+    style.Colors [ImGuiCol_TextDisabled]          = ImVec4 (0.60f, 0.60f, 0.60f, 1.00f);
+    style.Colors [ImGuiCol_WindowBg]              = ImVec4 (0.94f, 0.94f, 0.94f, 0.94f);
+    style.Colors [ImGuiCol_ChildBg]               = ImVec4 (0.00f, 0.00f, 0.00f, 0.00f);
+    style.Colors [ImGuiCol_PopupBg]               = ImVec4 (1.00f, 1.00f, 1.00f, 0.94f);
+    style.Colors [ImGuiCol_Border]                = ImVec4 (0.00f, 0.00f, 0.00f, 0.39f);
+    style.Colors [ImGuiCol_BorderShadow]          = ImVec4 (1.00f, 1.00f, 1.00f, 0.10f);
+    style.Colors [ImGuiCol_FrameBg]               = ImVec4 (1.00f, 1.00f, 1.00f, 0.94f);
+    style.Colors [ImGuiCol_FrameBgHovered]        = ImVec4 (0.26f, 0.59f, 0.98f, 0.40f);
+    style.Colors [ImGuiCol_FrameBgActive]         = ImVec4 (0.26f, 0.59f, 0.98f, 0.67f);
+    style.Colors [ImGuiCol_TitleBg]               = ImVec4 (0.96f, 0.96f, 0.96f, 1.00f);
+    style.Colors [ImGuiCol_TitleBgCollapsed]      = ImVec4 (1.00f, 1.00f, 1.00f, 0.51f);
+    style.Colors [ImGuiCol_TitleBgActive]         = ImVec4 (0.82f, 0.82f, 0.82f, 1.00f);
+    style.Colors [ImGuiCol_MenuBarBg]             = ImVec4 (0.86f, 0.86f, 0.86f, 1.00f);
+    style.Colors [ImGuiCol_ScrollbarBg]           = ImVec4 (0.98f, 0.98f, 0.98f, 0.53f);
+    style.Colors [ImGuiCol_ScrollbarGrab]         = ImVec4 (0.69f, 0.69f, 0.69f, 1.00f);
+    style.Colors [ImGuiCol_ScrollbarGrabHovered]  = ImVec4 (0.59f, 0.59f, 0.59f, 1.00f);
+    style.Colors [ImGuiCol_ScrollbarGrabActive]   = ImVec4 (0.49f, 0.49f, 0.49f, 1.00f);
+    style.Colors [ImGuiCol_ChildBg]               = ImVec4 (0.86f, 0.86f, 0.86f, 0.99f);
+    style.Colors [ImGuiCol_CheckMark]             = ImVec4 (0.26f, 0.59f, 0.98f, 1.00f);
+    style.Colors [ImGuiCol_SliderGrab]            = ImVec4 (0.24f, 0.52f, 0.88f, 1.00f);
+    style.Colors [ImGuiCol_SliderGrabActive]      = ImVec4 (0.26f, 0.59f, 0.98f, 1.00f);
+    style.Colors [ImGuiCol_Button]                = ImVec4 (0.26f, 0.59f, 0.98f, 0.40f);
+    style.Colors [ImGuiCol_ButtonHovered]         = ImVec4 (0.26f, 0.59f, 0.98f, 1.00f);
+    style.Colors [ImGuiCol_ButtonActive]          = ImVec4 (0.06f, 0.53f, 0.98f, 1.00f);
+    style.Colors [ImGuiCol_Header]                = ImVec4 (0.26f, 0.59f, 0.98f, 0.31f);
+    style.Colors [ImGuiCol_HeaderHovered]         = ImVec4 (0.26f, 0.59f, 0.98f, 0.80f);
+    style.Colors [ImGuiCol_HeaderActive]          = ImVec4 (0.26f, 0.59f, 0.98f, 1.00f);
+    style.Colors [ImGuiCol_Separator]             = ImVec4 (0.39f, 0.39f, 0.39f, 1.00f);
+    style.Colors [ImGuiCol_SeparatorHovered]      = ImVec4 (0.26f, 0.59f, 0.98f, 0.78f);
+    style.Colors [ImGuiCol_SeparatorActive]       = ImVec4 (0.26f, 0.59f, 0.98f, 1.00f);
+    style.Colors [ImGuiCol_ResizeGrip]            = ImVec4 (1.00f, 1.00f, 1.00f, 0.50f);
+    style.Colors [ImGuiCol_ResizeGripHovered]     = ImVec4 (0.26f, 0.59f, 0.98f, 0.67f);
+    style.Colors [ImGuiCol_ResizeGripActive]      = ImVec4 (0.26f, 0.59f, 0.98f, 0.95f);
+    style.Colors [ImGuiCol_PlotLines]             = ImVec4 (0.39f, 0.39f, 0.39f, 1.00f);
+    style.Colors [ImGuiCol_PlotLinesHovered]      = ImVec4 (1.00f, 0.43f, 0.35f, 1.00f);
+    style.Colors [ImGuiCol_PlotHistogram]         = ImVec4 (0.90f, 0.70f, 0.00f, 1.00f);
+    style.Colors [ImGuiCol_PlotHistogramHovered]  = ImVec4 (1.00f, 0.60f, 0.00f, 1.00f);
+    style.Colors [ImGuiCol_TextSelectedBg]        = ImVec4 (0.26f, 0.59f, 0.98f, 0.35f);
+    style.Colors [ImGuiCol_ModalWindowDimBg]      = ImVec4 (0.20f, 0.20f, 0.20f, 0.35f);
+
+    if (true) { // TODO: set in config?
+        for (int i = 0; i <= ImGuiCol_COUNT; i++) {
+            ImVec4& col = style.Colors [i];
+            float H, S, V;
+            ImGui::ColorConvertRGBtoHSV ( col.x, col.y, col.z, H, S, V );
+
+            if (S < 0.1f) {
+                V = 1.0f - V;
+            }
+            ImGui::ColorConvertHSVtoRGB ( H, S, V, col.x, col.y, col.z );
+            if ( col.w < 1.00f ) {
+                col.w *= this->alpha;
+            }
+        }
+    } else {
+        for (int i = 0; i <= ImGuiCol_COUNT; i++) {
+            ImVec4& col = style.Colors [i];
+            if ( col.w < 1.00f ) {
+                col.x *= this->alpha;
+                col.y *= this->alpha;
+                col.z *= this->alpha;
+                col.w *= this->alpha;
+            }
+        }
+    }
 }
 
 void init (const InitInfo& info) {
-    UI::instance ().init (info);
+    UI::get_instance ().init (info);
 }
 
 void update (Settings& settings, uint32_t width, uint32_t height, float delta_time) {
-    UI::instance ().update (settings, width, height, delta_time);
+    UI::get_instance ().update (settings, width, height, delta_time);
 }
 
 void draw (uint32_t image_index, VkCommandBuffer cmd_buff) {
-    UI::instance ().draw (image_index, cmd_buff);
+    UI::get_instance ().draw (image_index, cmd_buff);
 }
 
 void cleanup () {
-    UI::instance ().cleanup ();
+    UI::get_instance ().cleanup ();
 }
 
 }
-
 }
 

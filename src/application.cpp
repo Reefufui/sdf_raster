@@ -165,7 +165,8 @@ void Application::init_renderer () {
     this->renderer = std::make_unique <ComputeShaderRenderer> (this->vulkan_context);
 
     SdfOctree scene {};
-    load_sdf_octree (scene, "./assets/lowpoly_bunny.octree"); // TODO: set from config
+    // load_sdf_octree (scene, "./assets/lowpoly_bunny.octree"); // TODO: set from config
+    load_sdf_octree (scene, "./assets/detail.octree"); // TODO: set from config
     this->renderer->init (std::move (scene));
 }
 

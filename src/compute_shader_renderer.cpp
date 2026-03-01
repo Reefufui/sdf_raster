@@ -51,17 +51,17 @@ void ComputeShaderRenderer::init (SdfOctree&& a_sdf_octree) {
         throw std::runtime_error ("Missing SDF OCTREE. Make sure './assets/sdf/lowpoly_bunny.octree' is present in launch location");
     }
 
-    const size_t cpu_traversed = 1;
+    const size_t cpu_traversed = 3;
     {
         spdlog::stopwatch sw;
         this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, cpu_traversed); // TODO: rebuild each frame
         LOG_INFO ("[get_octree_subtrees_payloads]: lvl={} count={} (took {:.3}s)", cpu_traversed, this->subtrees.size (), sw);
     }
-    {
-        spdlog::stopwatch sw;
-        this->subtrees = get_octree_subtrees_payloads_parallel (this->sdf_octree, cpu_traversed); // TODO: rebuild each frame
-        LOG_INFO ("[get_octree_subtrees_payloads_parallel]: lvl={} count={} (took {:.3}s)", cpu_traversed, this->subtrees.size (), sw);
-    }
+    // {
+    //     spdlog::stopwatch sw;
+    //     this->subtrees = get_octree_subtrees_payloads_parallel (this->sdf_octree, cpu_traversed); // TODO: rebuild each frame
+    //     LOG_INFO ("[get_octree_subtrees_payloads_parallel]: lvl={} count={} (took {:.3}s)", cpu_traversed, this->subtrees.size (), sw);
+    // }
 
     this->init_push_constants ();
     this->init_descriptor_sets ();
@@ -117,7 +117,7 @@ void ComputeShaderRenderer::init_push_constants () {
         throw std::runtime_error ("sizeof (PushConstantsData) exceeds VkPhysicalDeviceProperties::maxPushConstantsSize");
     }
 
-    this->push_constants.active_leafs_max_count = 9999; // TODO: settings
+    this->push_constants.active_leafs_max_count = 999999; // TODO: settings
 
     const uint32_t octree_depth = get_octree_max_depth (this->sdf_octree);
     // const uint32_t max_octree_depth = 4u; // TODO: set inital state from config
@@ -923,7 +923,7 @@ void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff) {
 
     vkCmdPushConstants (cmd_buff, this->compute_active_leafs_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-    vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1); // TODO: (cpu_leafs, 8, 8)
+    vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 8, 8);
 }
 
 void ComputeShaderRenderer::hz_buffer_barrier (VkCommandBuffer cmd_buff) {

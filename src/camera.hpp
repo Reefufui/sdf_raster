@@ -52,7 +52,7 @@ private:
     float mouse_sensitivity {0.1f};
 
     float fov_y {45.0f};
-    float near_plane {0.1f};
+    float near_plane {0.01f};
     float far_plane {10.0f};
     float aspect_ratio {1.0f};
 

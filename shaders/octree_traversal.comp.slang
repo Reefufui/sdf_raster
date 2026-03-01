@@ -25,9 +25,10 @@
 
 [[vk::binding (0, 4)]] Sampler2D <float> depth_sampler;
 
-void process_voxel (uint3 group_id, NodeContext context, SdfOctreeNode leaf_node) {
+void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
     context.cube_index = 0;
 
+    [unroll]
     for (int i = 0; i < 8; ++i) {
         context.cube_index |= (leaf_node.values[i] < 0.0f ? (1 << i) : 0);
     }
@@ -50,9 +51,33 @@ void process_voxel (uint3 group_id, NodeContext context, SdfOctreeNode leaf_node
     g_active_leaf_indices_count [active_leaf_offset] = mesh_counts.y * 3;
 }
 
-void dfs_octree (in uint3 group_id, NodeContext root) {
+bool is_visible_node (float3 node_coord, float node_size) {
+    if ((pc.frustum_culling == 0) && (pc.occlusion_culling == 0)) {
+        return true;
+    }
+
+    if ((pc.frustum_culling == 1) && !aabb_cube_frustum_intersects (frustum_geometry, node_coord, node_size)) {
+        return false;
+    }
+
+    float3 child_corners [8];
+    [unroll]
+    for (int i = 0; i < 8; ++i) {
+        child_corners [i].x = node_coord.x + (((i >> 0) & 1) * node_size);
+        child_corners [i].y = node_coord.y + (((i >> 1) & 1) * node_size);
+        child_corners [i].z = node_coord.z + (((i >> 2) & 1) * node_size);
+    }
+
+    if ((pc.occlusion_culling == 1) && voxel_occluded (depth_sampler, pc.prev_view_proj, child_corners)) {
+        return false;
+    }
+
+    return true;
+}
+
+void dfs_octree (NodeContext root) {
     if (g_octree_data [root.node_index].offset == 0) {
-        process_voxel (group_id, root, g_octree_data [root.node_index]);
+        process_voxel (root, g_octree_data [root.node_index]);
         return;
     }
 
@@ -86,21 +111,8 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
 
         float3 child_coord = coord_stack [level - 1] + child_corner_offset;
 
-        if (pc.frustum_culling == 1 || pc.occlusion_culling == 1) {
-            if ((pc.frustum_culling == 1) && !aabb_cube_frustum_intersects (frustum_geometry, child_coord, child_voxel_size)) {
-                continue;
-            }
-
-            float3 child_corners [8];
-            for (int i = 0; i < 8; ++i) {
-                child_corners [i].x = child_coord.x + (((i >> 0) & 1) * child_voxel_size);
-                child_corners [i].y = child_coord.y + (((i >> 1) & 1) * child_voxel_size);
-                child_corners [i].z = child_coord.z + (((i >> 2) & 1) * child_voxel_size);
-            }
-
-            if ((pc.occlusion_culling == 1) && voxel_occluded (depth_sampler, pc.prev_view_proj, child_corners)) {
-                continue;
-            }
+        if (!is_visible_node (child_coord, child_voxel_size)) {
+            continue;
         }
 
         if (child_node.offset == 0) { // leaf
@@ -110,7 +122,7 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
             context.min_corner_y = child_coord.y;
             context.min_corner_z = child_coord.z;
             context.node_index = child_node_index;
-            process_voxel (group_id, context, child_node);
+            process_voxel (context, child_node);
         } else { // internal node
             node_index_stack [level] = child_node_index;
             coord_stack [level] = child_coord;
@@ -121,14 +133,54 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
     }
 }
 
-[shader ("compute")]
-[numthreads (1, 1, 1)]
-void main (uint3 thread_id : SV_DispatchThreadID) {
-    if (thread_id.x == 0) {
-        g_active_leaf_counter [0].y = 1;
-        g_active_leaf_counter [0].z = 1;
+bool descend_path (uint path [5], inout NodeContext current_context) {
+    [unroll]
+    for (uint level = 0; level < 5; ++level) {
+        uint child_index = path [level];
+        SdfOctreeNode parent_node = g_octree_data [current_context.node_index];
+
+        if (parent_node.offset == 0) {
+            [unroll]
+            for (; level < 5; ++level) {
+                if (path [level] != 0u) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        const float node_size = current_context.voxel_size / 2.f;
+
+        current_context.voxel_size = node_size;
+        current_context.min_corner_x += (((child_index >> 0) & 1) * node_size);
+        current_context.min_corner_y += (((child_index >> 1) & 1) * node_size);
+        current_context.min_corner_z += (((child_index >> 2) & 1) * node_size);
+        current_context.node_index = parent_node.offset + child_index;
+
+        float3 node_coord = float3 (current_context.min_corner_x, current_context.min_corner_y, current_context.min_corner_z);
+        if (!is_visible_node (node_coord, node_size)) {
+            return false;
+        }
     }
-    dfs_octree (thread_id, g_roots [thread_id.x]);
+
+    return true;
+}
+
+[shader ("compute")]
+[numthreads (8, 8, 8)]
+void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : SV_GroupThreadID) {
+    if (dti.x == 0u && dti.y == 0u && dti.z == 0u) {
+        g_active_leaf_counter [0].y = 1u;
+        g_active_leaf_counter [0].z = 1u;
+    }
+
+    NodeContext current_context = g_roots [gi.x];
+    const uint path [5] = {gti.z, gti.y, gti.x, gi.z, gi.y};
+
+    if (descend_path (path, current_context)) {
+        dfs_octree (current_context);
+    }
+
     return;
 }
 

@@ -290,7 +290,7 @@ void UI::status_bar (Settings& settings, const Stats& stats) {
         .text = std::format ("FPS:{:.1f}", io.Framerate)
     });
     elements.push_back (StatusBarElement {
-        .text = std::format ("Leafs:{:04}", stats.active_leafs_count)
+        .text = std::format ("Leafs:{:06}", stats.active_leafs_count)
     });
 
     ImGuiViewport* viewport = ImGui::GetMainViewport ();

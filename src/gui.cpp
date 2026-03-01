@@ -5,6 +5,7 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
+#include "imfilebrowser.h"
 
 #include "application.hpp"
 #include "gui.hpp"
@@ -62,10 +63,13 @@ private:
     void init_style ();
 
     void menu_bar ();
+    void file_dialog (Settings& settings);
     void occlusion_window (Settings& settings);
     void status_bar (Settings& settings, const Stats& stats);
 
 private:
+    ImGui::FileBrowser file_browser;
+
     bool show_ui = true;
     Settings previous_frame_settings;
     float alpha = .8f;
@@ -210,13 +214,16 @@ void UI::init (const InitInfo& info) {
     LOG_TRACE ("[UI] Inited vulkan for imgui.");
 
     this->init_style ();
+
+    this->file_browser.SetTitle ("Pick SDF-octree file");
+    this->file_browser.SetTypeFilters ({ ".octree" });
 }
 
 void UI::menu_bar () {
     if (ImGui::BeginMainMenuBar ()) {
         if (ImGui::BeginMenu ("File")) {
             if (ImGui::MenuItem ("Open...", "Ctrl+O")) {
-                // TODO: open sdf scene
+                this->file_browser.Open ();
             }
             ImGui::Separator ();
             if (ImGui::MenuItem ("Quit", "")) {
@@ -231,6 +238,16 @@ void UI::menu_bar () {
         }
 
         ImGui::EndMainMenuBar ();
+    }
+}
+
+void UI::file_dialog (Settings& settings) {
+    this->file_browser.Display ();
+    if (this->file_browser.HasSelected ()) {
+        settings.scene_path = this->file_browser.GetSelected ();
+        LOG_INFO ("[UI] selected SDF filename: {}", settings.scene_path.string ());
+        this->file_browser.ClearSelected ();
+        settings.scene_name = settings.scene_path.stem ().string ();
     }
 }
 
@@ -280,6 +297,9 @@ void UI::status_bar (Settings& settings, const Stats& stats) {
     };
 
     std::vector <StatusBarElement> elements;
+    elements.push_back (StatusBarElement {
+        .text = std::format ("Scene:{}", settings.scene_name)
+    });
     elements.push_back (StatusBarElement {
         .text = std::format ("Mode:{}", (settings.frustum_view) ? "frustum" : "camera")
     });
@@ -355,6 +375,7 @@ void UI::update (Settings& settings, const Stats& stats, uint32_t width, uint32_
     ImGui::NewFrame ();
 
     this->menu_bar ();
+    this->file_dialog (settings);
 
     if (this->show_occlusion_window) {
         this->occlusion_window (settings);

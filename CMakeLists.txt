@@ -87,6 +87,7 @@ add_library (imgui STATIC
 target_include_directories (imgui PUBLIC
     submodules/imgui
     submodules/imgui/backends
+    submodules/imgui-filebrowser
     submodules/volk
 )
 target_link_libraries (imgui PRIVATE glfw::glfw)

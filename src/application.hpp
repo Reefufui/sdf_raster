@@ -4,10 +4,11 @@
 #include <string>
 #include <vector>
 
-#include "GLFW/glfw3.h"
+#include <GLFW/glfw3.h>
 
 #include "camera.hpp"
 #include "renderer.hpp"
+#include "sdf_octree.hpp"
 #include "settings.hpp"
 #include "vulkan_context.hpp"
 
@@ -41,6 +42,7 @@ private:
     bool c_key_pressed_this_frame = false;
 
     Settings settings;
+    SdfOctree scene;
     float last_x = 0.0f;
     float last_y = 0.0f;
     bool first_mouse = true;

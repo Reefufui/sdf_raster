@@ -24,7 +24,8 @@ public:
     explicit ComputeShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context);
     ~ComputeShaderRenderer ();
 
-    void init (SdfOctree&& a_sdf_octree) override;
+    void init (const SdfOctree& default_scene) override;
+    void update_scene (const SdfOctree& scene) override;
     void render (const Settings& settings) override;
     void shutdown () override;
     const Stats& get_stats () override;
@@ -92,7 +93,6 @@ private:
     VkPipelineLayout compute_prefix_sum_pass2_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_prefix_sum_pass3_pipeline_layout {VK_NULL_HANDLE};
 
-    SdfOctree sdf_octree {};
     std::vector <NodeContext> subtrees {};
     std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer {nullptr};
 

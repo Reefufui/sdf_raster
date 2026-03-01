@@ -86,6 +86,11 @@ void Application::run (bool single_frame) {
             const auto& stats = this->renderer->get_stats ();
             gui::update (settings, stats, static_cast <uint32_t> (width), static_cast <uint32_t> (height), this->delta_time);
 
+            if (this->scene.name != settings.scene_name) {
+                load_sdf_octree (this->scene, settings.scene_path);
+                this->renderer->update_scene (this->scene);
+            }
+
             this->settings.camera.update ();
             this->renderer->render (this->settings);
 
@@ -164,10 +169,11 @@ void Application::init_vulkan () {
 void Application::init_renderer () {
     this->renderer = std::make_unique <ComputeShaderRenderer> (this->vulkan_context);
 
-    SdfOctree scene {};
-    // load_sdf_octree (scene, "./assets/lowpoly_bunny.octree"); // TODO: set from config
-    load_sdf_octree (scene, "./assets/detail.octree"); // TODO: set from config
-    this->renderer->init (std::move (scene));
+    std::filesystem::path default_scene_path ("./assets/lowpoly_bunny.octree"); // TODO: set from config
+    load_sdf_octree (this->scene, default_scene_path);
+    this->settings.scene_name = default_scene_path.stem ().string ();
+    this->settings.scene_path = default_scene_path;
+    this->renderer->init (this->scene);
 }
 
 void Application::init_gui () {

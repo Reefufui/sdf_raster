@@ -40,29 +40,20 @@ ComputeShaderRenderer::ComputeShaderRenderer (std::shared_ptr <VulkanContext> vu
 ComputeShaderRenderer::~ComputeShaderRenderer () {
 }
 
-void ComputeShaderRenderer::init (SdfOctree&& a_sdf_octree) {
+void ComputeShaderRenderer::init (const SdfOctree& default_scene) {
     if (!this->context || !this->context->is_initialized ()) {
-        throw std::runtime_error ("[ComputeShaderRenderer::init] VulkanContext is not initialized before renderer init.");
+        throw std::runtime_error ("VulkanContext is not initialized before renderer init.");
     }
 
-    if (a_sdf_octree.nodes.size ()) {
-        this->sdf_octree = std::move (a_sdf_octree);
-    } else {
-        throw std::runtime_error ("Missing SDF OCTREE. Make sure './assets/sdf/lowpoly_bunny.octree' is present in launch location");
-    }
+    vk_utils::DescriptorTypesVec ds_type_vec {};
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000);
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000);
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000);
 
-    const size_t cpu_traversed = 3;
-    {
-        spdlog::stopwatch sw;
-        this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, cpu_traversed); // TODO: rebuild each frame
-        LOG_INFO ("[get_octree_subtrees_payloads]: lvl={} count={} (took {:.3}s)", cpu_traversed, this->subtrees.size (), sw);
-    }
-    // {
-    //     spdlog::stopwatch sw;
-    //     this->subtrees = get_octree_subtrees_payloads_parallel (this->sdf_octree, cpu_traversed); // TODO: rebuild each frame
-    //     LOG_INFO ("[get_octree_subtrees_payloads_parallel]: lvl={} count={} (took {:.3}s)", cpu_traversed, this->subtrees.size (), sw);
-    // }
+    this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
 
+    this->update_scene (default_scene);
     this->init_push_constants ();
     this->init_descriptor_sets ();
     this->init_compute_hz_buffer_pipeline ();
@@ -72,14 +63,40 @@ void ComputeShaderRenderer::init (SdfOctree&& a_sdf_octree) {
     this->init_compute_prefix_sum_pass3_pipeline ();
     this->init_compute_geometry_pipeline ();
     this->init_graphics_shading_pipeline ();
-
     this->init_graphics_frustum_pipeline ();
-
     this->register_resizable ();
 
     this->initialized = true;
 }
 
+void ComputeShaderRenderer::update_scene (const SdfOctree& scene) {
+    vkDeviceWaitIdle (this->context->get_device ());
+
+    const size_t cpu_traversed = 3;
+    {
+        spdlog::stopwatch sw;
+        this->subtrees = get_octree_subtrees_payloads (scene, cpu_traversed); // TODO: rebuild each frame
+        LOG_INFO ("[{}] get_octree_subtrees_payloads: lvl={} count={} (took {:.3}s)", RENDERER_NAME, cpu_traversed, this->subtrees.size (), sw);
+    }
+    // {
+    //     spdlog::stopwatch sw;
+    //     this->subtrees = get_octree_subtrees_payloads_parallel (scene, cpu_traversed); // TODO: rebuild each frame
+    //     LOG_INFO ("[get_octree_subtrees_payloads_parallel]: lvl={} count={} (took {:.3}s)", cpu_traversed, this->subtrees.size (), sw);
+    // }
+
+    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
+
+	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
+	    , this->context->get_physical_device ()
+	    , this->context->get_copy_helper ()
+	    , *descriptor_maker
+	    , VK_SHADER_STAGE_COMPUTE_BIT
+	    , scene
+	    , this->subtrees);
+
+    const uint32_t octree_depth = get_octree_max_depth (scene);
+    LOG_INFO ("[{}] Loaded sdf-octree scene '{}'. Depth: {}.", RENDERER_NAME, scene.name, octree_depth);
+}
 
 void ComputeShaderRenderer::register_resizable () {
     auto resize_hz_buffer = [&] () {
@@ -118,42 +135,11 @@ void ComputeShaderRenderer::init_push_constants () {
     }
 
     this->push_constants.active_leafs_max_count = 999999; // TODO: settings
-
-    const uint32_t octree_depth = get_octree_max_depth (this->sdf_octree);
-    // const uint32_t max_octree_depth = 4u; // TODO: set inital state from config
-    const uint32_t cpu_traversed = 3u;
-    LOG_INFO ("[{}] Provided sdf-octree's depth: {} levels.", RENDERER_NAME, octree_depth);
-    this->push_constants.max_octree_depth = octree_depth;
-    // if (octree_depth > max_octree_depth) {
-    //     LOG_WARN ("[{}] Provided sdf-octree is too deep. Rendering as if it was {} levels deep.", RENDERER_NAME, uint32_t {max_octree_depth});
-    //     // this->push_constants.max_octree_depth = max_octree_depth - cpu_traversed;
-    //     this->push_constants.max_octree_depth = 3u;
-    // } else {
-    //     // this->push_constants.max_octree_depth = octree_depth - cpu_traversed;
-    //     this->push_constants.max_octree_depth = max_octree_depth - cpu_traversed;
-    // }
-
     this->push_constants.occlusion_culling = true; // TODO: set inital state from config
     this->push_constants.frustum_culling = true; // TODO: set inital state from config
 }
 
 void ComputeShaderRenderer::init_descriptor_sets () {
-    vk_utils::DescriptorTypesVec ds_type_vec {};
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000);
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000);
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000);
-
-    this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
-
-	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
-	    , this->context->get_physical_device ()
-	    , this->context->get_copy_helper ()
-	    , *descriptor_maker
-	    , VK_SHADER_STAGE_COMPUTE_BIT
-	    , this->sdf_octree
-	    , this->subtrees);
-
 	this->mesh_ds = create_mesh_descriptor_set (this->context->get_device ()
 	    , this->context->get_physical_device ()
 	    , this->context->get_copy_helper ()

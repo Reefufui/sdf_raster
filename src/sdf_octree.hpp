@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -14,10 +15,11 @@
 namespace sdf_raster {
 
 struct SdfOctree {
+    std::string name;
     std::vector <SdfOctreeNode> nodes;
 };
 
-void load_sdf_octree (SdfOctree &scene, const std::string &path);
+void load_sdf_octree (SdfOctree& scene, const std::filesystem::path& path);
 void save_sdf_octree (const SdfOctree &scene, const std::string &path);
 void dump_sdf_octree_text (const SdfOctree &scene, const std::string &path_to_dump);
 float sample_sdf (const SdfOctree& scene, const LiteMath::float3& p);

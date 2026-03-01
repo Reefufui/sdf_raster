@@ -1,11 +1,16 @@
 #pragma once
 
+#include <filesystem>
+#include <string>
+
 #include "camera.hpp"
 
 namespace sdf_raster {
 
 struct Settings {
     Camera camera;
+    std::string scene_name;
+    std::filesystem::path scene_path;
 
     bool frustum_culling = true;
     bool occlusion_culling = true;

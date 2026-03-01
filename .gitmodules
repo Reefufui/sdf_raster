@@ -16,3 +16,6 @@
 [submodule "submodules/LiteMath"]
 	path = submodules/LiteMath
 	url = https://github.com/msu-graphics-group/LiteMath.git
+[submodule "submodules/imgui-filebrowser"]
+	path = submodules/imgui-filebrowser
+	url = https://github.com/AirGuanZ/imgui-filebrowser.git

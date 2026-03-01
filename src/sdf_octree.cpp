@@ -10,13 +10,14 @@
 
 namespace sdf_raster {
 
-void load_sdf_octree (SdfOctree &scene, const std::string &path) {
+void load_sdf_octree (SdfOctree& scene, const std::filesystem::path& path) {
     std::ifstream fs (path, std::ios::binary);
     unsigned sz = 0;
     fs.read ((char *) &sz, sizeof (unsigned));
     scene.nodes.resize (sz);
     fs.read ((char *) scene.nodes.data (), scene.nodes.size () * sizeof (SdfOctreeNode));
     fs.close ();
+    scene.name = path.stem ().string ();
 }
 
 void save_sdf_octree (const SdfOctree &scene, const std::string &path) {

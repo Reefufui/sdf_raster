@@ -166,7 +166,6 @@ void Application::init_renderer () {
 
     SdfOctree scene {};
     load_sdf_octree (scene, "./assets/lowpoly_bunny.octree"); // TODO: set from config
-    // load_sdf_octree (scene, "./assets/example_octree_large.octree"); // TODO: set from config
     this->renderer->init (std::move (scene));
 }
 

@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <stdexcept>
 
+#include "spdlog/stopwatch.h"
 #include "vk_pipeline.h"
 
 #include "compute_shader_renderer.hpp"
@@ -50,7 +51,17 @@ void ComputeShaderRenderer::init (SdfOctree&& a_sdf_octree) {
         throw std::runtime_error ("Missing SDF OCTREE. Make sure './assets/sdf/lowpoly_bunny.octree' is present in launch location");
     }
 
-    this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, 3); // TODO: rebuild each frame
+    const size_t cpu_traversed = 1;
+    {
+        spdlog::stopwatch sw;
+        this->subtrees = get_octree_subtrees_payloads (this->sdf_octree, cpu_traversed); // TODO: rebuild each frame
+        LOG_INFO ("[get_octree_subtrees_payloads]: lvl={} count={} (took {:.3}s)", cpu_traversed, this->subtrees.size (), sw);
+    }
+    {
+        spdlog::stopwatch sw;
+        this->subtrees = get_octree_subtrees_payloads_parallel (this->sdf_octree, cpu_traversed); // TODO: rebuild each frame
+        LOG_INFO ("[get_octree_subtrees_payloads_parallel]: lvl={} count={} (took {:.3}s)", cpu_traversed, this->subtrees.size (), sw);
+    }
 
     this->init_push_constants ();
     this->init_descriptor_sets ();
@@ -67,7 +78,6 @@ void ComputeShaderRenderer::init (SdfOctree&& a_sdf_octree) {
     this->register_resizable ();
 
     this->initialized = true;
-    // throw std::runtime_error {"STOP."};
 }
 
 
@@ -634,16 +644,6 @@ void ComputeShaderRenderer::update_frustum_buffer (const Camera& camera) {
     ptr->normals [3] = LiteMath::to_float4 (face_normal (vertices [5], vertices [1], vertices [3]), 1.f); // Right
     ptr->normals [4] = LiteMath::to_float4 (face_normal (vertices [2], vertices [3], vertices [7]), 1.f); // Top
     ptr->normals [5] = LiteMath::to_float4 (face_normal (vertices [4], vertices [0], vertices [1]), 1.f); // Bottom
-
-    static const int edge_indices [12][2] = {
-        {0,1}, {1,3}, {3,2}, {2,0}, // Near plane edges
-        {4,5}, {5,7}, {7,6}, {6,4}, // Far plane edges
-        {0,4}, {1,5}, {2,6}, {3,7}  // Side edges
-    };
-
-    for (int i = 0; i < 12; i++) {
-        ptr->edges [i] = LiteMath::to_float4 (normalize (LiteMath::to_float3 (vertices [edge_indices [i][1]] - vertices [edge_indices [i][0]])), 1.0f);
-    }
 }
 
 void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff) {
@@ -923,7 +923,7 @@ void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff) {
 
     vkCmdPushConstants (cmd_buff, this->compute_active_leafs_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-    vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
+    vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1); // TODO: (cpu_leafs, 8, 8)
 }
 
 void ComputeShaderRenderer::hz_buffer_barrier (VkCommandBuffer cmd_buff) {

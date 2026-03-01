@@ -72,14 +72,13 @@ struct PushConstantsData {
 };
 
 struct SdfOctreeNode {
-    float values [8];
-    uint offset; // offset for children (they are stored together). 0 offset means it's a leaf
+    float values [8]; // NOTE: for each internal node
+    uint offset; // NOTE: offset for children (they are stored together). 0 offset means it's a leaf
 };
 
 struct FrustumGeometry {
     float4 vertices [8];
     float4 normals [6];
-    float4 edges [12];
 };
 
 #endif // SHADER_COMMON_H

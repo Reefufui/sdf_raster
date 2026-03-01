@@ -87,15 +87,15 @@ void dfs_octree (in uint3 group_id, NodeContext root) {
         float3 child_coord = coord_stack [level - 1] + child_corner_offset;
 
         if (pc.frustum_culling == 1 || pc.occlusion_culling == 1) {
+            if ((pc.frustum_culling == 1) && !aabb_cube_frustum_intersects (frustum_geometry, child_coord, child_voxel_size)) {
+                continue;
+            }
+
             float3 child_corners [8];
             for (int i = 0; i < 8; ++i) {
                 child_corners [i].x = child_coord.x + (((i >> 0) & 1) * child_voxel_size);
                 child_corners [i].y = child_coord.y + (((i >> 1) & 1) * child_voxel_size);
                 child_corners [i].z = child_coord.z + (((i >> 2) & 1) * child_voxel_size);
-            }
-
-            if ((pc.frustum_culling == 1) && !voxel_frustum_intersects (frustum_geometry, child_corners)) {
-                continue;
             }
 
             if ((pc.occlusion_culling == 1) && voxel_occluded (depth_sampler, pc.prev_view_proj, child_corners)) {

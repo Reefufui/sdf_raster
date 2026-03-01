@@ -40,7 +40,6 @@ struct ActiveLeafsDescriptorSetInfo {
     std::vector <VkBuffer> active_leaf_counter_buffers;
     std::vector <VkBuffer> active_leaf_vertices_count_buffers;
     std::vector <VkBuffer> active_leaf_indices_count_buffers;
-    VkBuffer active_leaf_overflow_flag_buffer = VK_NULL_HANDLE;
 
     VkDeviceMemory memory = VK_NULL_HANDLE;
 };
@@ -87,10 +86,9 @@ std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, 
 int get_octree_max_depth (const SdfOctree& scene);
 
 std::vector <NodeContext> fetch_active_leafs (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t active_leafs_count, size_t frame);
-size_t fetch_active_leaf_counter (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t frame);
+uint32_t fetch_active_leaf_counter (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t frame);
 std::vector <uint> fetch_vertices_count (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t active_leafs_count, size_t frame);
 std::vector <uint> fetch_indices_count (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t active_leafs_count, size_t frame);
-LiteMath::uint fetch_active_leaf_overflow_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info);
 
 }
 

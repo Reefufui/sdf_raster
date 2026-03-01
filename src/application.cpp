@@ -83,7 +83,8 @@ void Application::run (bool single_frame) {
 
             int width, height;
             glfwGetWindowSize (this->window, &width, &height);
-            gui::update (settings, static_cast <uint32_t> (width), static_cast <uint32_t> (height), this->delta_time);
+            const auto& stats = this->renderer->get_stats ();
+            gui::update (settings, stats, static_cast <uint32_t> (width), static_cast <uint32_t> (height), this->delta_time);
 
             this->settings.camera.update ();
             this->renderer->render (this->settings);
@@ -165,6 +166,7 @@ void Application::init_renderer () {
 
     SdfOctree scene {};
     load_sdf_octree (scene, "./assets/lowpoly_bunny.octree"); // TODO: set from config
+    // load_sdf_octree (scene, "./assets/example_octree_large.octree"); // TODO: set from config
     this->renderer->init (std::move (scene));
 }
 

@@ -23,7 +23,6 @@
 [[vk::binding (1, 3)]] RWStructuredBuffer <VkDispatchIndirectCommand> g_active_leaf_counter;
 [[vk::binding (2, 3)]] RWStructuredBuffer <uint> g_active_leaf_vertices_offsets;
 [[vk::binding (3, 3)]] RWStructuredBuffer <uint> g_active_leaf_indices_offsets;
-[[vk::binding (4, 3)]] RWStructuredBuffer <uint> g_active_leaf_overflow_flag;
 
 [[vk::binding (0, 4)]] RWStructuredBuffer <VkDrawIndexedIndirectCommand> g_draw_indexed_indirect_command;
 

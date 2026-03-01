@@ -20,7 +20,6 @@
 [[vk::binding (1, 2)]] RWStructuredBuffer <VkDispatchIndirectCommand> g_active_leaf_counter;
 [[vk::binding (2, 2)]] RWStructuredBuffer <uint> g_active_leaf_vertices_count;
 [[vk::binding (3, 2)]] RWStructuredBuffer <uint> g_active_leaf_indices_count;
-[[vk::binding (4, 2)]] RWStructuredBuffer <uint> g_active_leaf_overflow_flag;
 
 [[vk::binding (0, 3)]] ConstantBuffer <FrustumGeometry> frustum_geometry;
 
@@ -37,15 +36,10 @@ void process_voxel (uint3 group_id, NodeContext context, SdfOctreeNode leaf_node
         return;
     }
 
-    if (g_active_leaf_overflow_flag [0] > 0) {
-        return;
-    }
-
     uint active_leaf_offset = 0;
     InterlockedAdd (g_active_leaf_counter [0].x, 1, active_leaf_offset);
 
     if (active_leaf_offset >= pc.active_leafs_max_count) {
-        g_active_leaf_overflow_flag [0] = 1;
         return;
     }
 

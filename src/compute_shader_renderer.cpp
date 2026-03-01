@@ -67,7 +67,7 @@ void ComputeShaderRenderer::init (SdfOctree&& a_sdf_octree) {
     this->register_resizable ();
 
     this->initialized = true;
-    // throw std::runtime_error ("STOP.");
+    // throw std::runtime_error {"STOP."};
 }
 
 
@@ -107,17 +107,21 @@ void ComputeShaderRenderer::init_push_constants () {
         throw std::runtime_error ("sizeof (PushConstantsData) exceeds VkPhysicalDeviceProperties::maxPushConstantsSize");
     }
 
-    this->push_constants.active_leafs_max_count = 78240; // TODO: settings
+    this->push_constants.active_leafs_max_count = 9999; // TODO: settings
 
-    const auto octree_depth = get_octree_max_depth (this->sdf_octree);
-    const auto max_octree_depth = 6; // TODO: set inital state from config
+    const uint32_t octree_depth = get_octree_max_depth (this->sdf_octree);
+    // const uint32_t max_octree_depth = 4u; // TODO: set inital state from config
+    const uint32_t cpu_traversed = 3u;
     LOG_INFO ("[{}] Provided sdf-octree's depth: {} levels.", RENDERER_NAME, octree_depth);
-    if (octree_depth > max_octree_depth) {
-        LOG_WARN ("[{}] Provided sdf-octree is too deep. Rendering as if it was {} levels deep.", RENDERER_NAME, uint32_t {max_octree_depth});
-        this->push_constants.max_octree_depth = max_octree_depth;
-    } else {
-        this->push_constants.max_octree_depth = octree_depth;
-    }
+    this->push_constants.max_octree_depth = octree_depth;
+    // if (octree_depth > max_octree_depth) {
+    //     LOG_WARN ("[{}] Provided sdf-octree is too deep. Rendering as if it was {} levels deep.", RENDERER_NAME, uint32_t {max_octree_depth});
+    //     // this->push_constants.max_octree_depth = max_octree_depth - cpu_traversed;
+    //     this->push_constants.max_octree_depth = 3u;
+    // } else {
+    //     // this->push_constants.max_octree_depth = octree_depth - cpu_traversed;
+    //     this->push_constants.max_octree_depth = max_octree_depth - cpu_traversed;
+    // }
 
     this->push_constants.occlusion_culling = true; // TODO: set inital state from config
     this->push_constants.frustum_culling = true; // TODO: set inital state from config
@@ -595,6 +599,10 @@ void ComputeShaderRenderer::toggle_frustum_buffer (Settings& settings) {
     LOG_INFO ("[{}] Frustum view mode: {}.", RENDERER_NAME, (settings.frustum_view) ? "ON" : "OFF");
 }
 
+void ComputeShaderRenderer::update_stats () {
+    this->stats.active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
+}
+
 void ComputeShaderRenderer::update_push_constants (const Settings& settings) {
     this->push_constants.view_proj = settings.camera.get_view_projection_matrix ();
     this->push_constants.camera_pos = LiteMath::to_float4 (settings.camera.get_position (), 1.0f);
@@ -602,17 +610,6 @@ void ComputeShaderRenderer::update_push_constants (const Settings& settings) {
 
     this->push_constants.occlusion_culling = settings.occlusion_culling;
     this->push_constants.frustum_culling = settings.frustum_culling;
-
-    // TODO: fix for multiple in flight frames
-    if (fetch_active_leaf_overflow_flag (this->context->get_copy_helper (), this->active_leafs_ds)) {
-        vkDeviceWaitIdle (this->context->get_device ());
-        this->push_constants.max_octree_depth -= 1;
-        LOG_WARN ("acitve leaf overflow (exceeds {}).", this->push_constants.active_leafs_max_count);
-        LOG_INFO ("sdf-octree's depth permanently reduced: {}->{}", this->push_constants.max_octree_depth + 1, this->push_constants.max_octree_depth);
-        if (this->push_constants.max_octree_depth == 0) {
-            throw std::runtime_error ("sdf-octree's depth must be greater than zero.");
-        }
-    }
 }
 
 namespace {
@@ -1232,6 +1229,8 @@ void ComputeShaderRenderer::render (const Settings& settings) {
         return;
     }
 
+    this->update_stats ();
+
     auto cmd_buff = this->context->begin_frame (this->frame_index);
     if (cmd_buff == VK_NULL_HANDLE) {
         return;
@@ -1275,7 +1274,7 @@ void ComputeShaderRenderer::render (const Settings& settings) {
     if (!dump) {
         vkDeviceWaitIdle (this->context->get_device ());
 
-        size_t active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
+        uint32_t active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
         const auto active_leafs = fetch_active_leafs (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, this->frame_index);
         const auto vertices_count = fetch_vertices_count (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, this->frame_index);
         const auto indices_count = fetch_indices_count (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, this->frame_index);
@@ -1301,6 +1300,10 @@ void ComputeShaderRenderer::render (const Settings& settings) {
         prepare_next_frame_data (this->hz_buffer_ds, this->frame_index, this->context->get_depth_buffer ().image, settings.camera.get_view_projection_matrix ());
     }
     this->frame_index = (this->frame_index + 1) % this->context->get_total_frames ();
+}
+
+const Stats& ComputeShaderRenderer::get_stats () {
+    return this->stats;
 }
 
 void ComputeShaderRenderer::shutdown () {

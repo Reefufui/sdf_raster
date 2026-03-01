@@ -14,5 +14,9 @@ struct Settings {
     bool disabled_cursor = true;
 };
 
+struct Stats {
+    uint32_t active_leafs_count = 0;
+};
+
 }
 

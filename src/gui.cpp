@@ -30,7 +30,7 @@ public:
     }
 
     void init (const InitInfo& info);
-    void update (Settings& settings, uint32_t width, uint32_t height, float delta_time);
+    void update (Settings& settings, const Stats& stats, uint32_t width, uint32_t height, float delta_time);
     void draw (uint32_t image_index, VkCommandBuffer cmd_buff);
     void cleanup ();
 
@@ -63,7 +63,7 @@ private:
 
     void menu_bar ();
     void occlusion_window (Settings& settings);
-    void status_bar (Settings& settings);
+    void status_bar (Settings& settings, const Stats& stats);
 
 private:
     bool show_ui = true;
@@ -272,7 +272,7 @@ void UI::occlusion_window (Settings& settings) {
     ImGui::End ();
 }
 
-void UI::status_bar (Settings& settings) {
+void UI::status_bar (Settings& settings, const Stats& stats) {
     ImGuiIO& io = ImGui::GetIO ();
 
     struct StatusBarElement {
@@ -288,6 +288,9 @@ void UI::status_bar (Settings& settings) {
     });
     elements.push_back (StatusBarElement {
         .text = std::format ("FPS:{:.1f}", io.Framerate)
+    });
+    elements.push_back (StatusBarElement {
+        .text = std::format ("Leafs:{:04}", stats.active_leafs_count)
     });
 
     ImGuiViewport* viewport = ImGui::GetMainViewport ();
@@ -328,7 +331,7 @@ void UI::status_bar (Settings& settings) {
     ImGui::PopStyleVar ();
 }
 
-void UI::update (Settings& settings, uint32_t width, uint32_t height, float delta_time) {
+void UI::update (Settings& settings, const Stats& stats, uint32_t width, uint32_t height, float delta_time) {
     if (!this->show_ui) {
         return;
     }
@@ -357,7 +360,7 @@ void UI::update (Settings& settings, uint32_t width, uint32_t height, float delt
         this->occlusion_window (settings);
     }
 
-    this->status_bar (settings);
+    this->status_bar (settings, stats);
 
     this->previous_frame_settings = settings;
 }
@@ -524,8 +527,8 @@ void init (const InitInfo& info) {
     UI::get_instance ().init (info);
 }
 
-void update (Settings& settings, uint32_t width, uint32_t height, float delta_time) {
-    UI::get_instance ().update (settings, width, height, delta_time);
+void update (Settings& settings, const Stats& stats, uint32_t width, uint32_t height, float delta_time) {
+    UI::get_instance ().update (settings, stats, width, height, delta_time);
 }
 
 void draw (uint32_t image_index, VkCommandBuffer cmd_buff) {

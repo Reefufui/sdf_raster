@@ -148,10 +148,9 @@ ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
     const VkDeviceSize active_leaf_counter_size = sizeof (VkDispatchIndirectCommand);
     const VkDeviceSize active_leaf_vertices_count_size = active_leafs_count * sizeof (uint);
     const VkDeviceSize active_leaf_indices_count_size = active_leafs_count * sizeof (uint);
-    const VkDeviceSize active_leaf_overflow_flag_size = sizeof (uint);
 
-    std::vector <VkBuffer> buffers (max_frames_in_flight * 4 + 1);
-    std::vector <VkMemoryRequirements> mem_reqs (max_frames_in_flight * 4 + 1);
+    std::vector <VkBuffer> buffers (max_frames_in_flight * 4);
+    std::vector <VkMemoryRequirements> mem_reqs (max_frames_in_flight * 4);
 
     info.active_leafs_buffers.clear ();
     info.active_leaf_counter_buffers.clear ();
@@ -170,14 +169,7 @@ ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
         info.active_leaf_indices_count_buffers.push_back (buffers [i * 4 + 3]);
     }
 
-    buffers [max_frames_in_flight * 4] = vk_utils::createBuffer (device, active_leaf_overflow_flag_size
-            , VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [max_frames_in_flight * 4]);
-    info.active_leaf_overflow_flag_buffer = buffers [max_frames_in_flight * 4];
-
     info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
-
-    const uint overflow_flag = 0;
-    copy_helper->UpdateBuffer (info.active_leaf_overflow_flag_buffer, 0, &overflow_flag, active_leaf_overflow_flag_size);
 
     info.descriptor_sets.resize (max_frames_in_flight);
     for (size_t i = 0; i < max_frames_in_flight; ++i) {
@@ -186,7 +178,6 @@ ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
         ds_maker.BindBuffer (1, info.active_leaf_counter_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         ds_maker.BindBuffer (2, info.active_leaf_vertices_count_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         ds_maker.BindBuffer (3, info.active_leaf_indices_count_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        ds_maker.BindBuffer (4, info.active_leaf_overflow_flag_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
     }
 
@@ -263,11 +254,6 @@ void cleanup_active_leafs_descriptor_set (VkDevice device, ActiveLeafsDescriptor
             vkDestroyBuffer (device, info.active_leaf_indices_count_buffers [i], nullptr);
             info.active_leaf_indices_count_buffers [i] = VK_NULL_HANDLE;
         }
-    }
-
-    if (info.active_leaf_overflow_flag_buffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer (device, info.active_leaf_overflow_flag_buffer, nullptr);
-        info.active_leaf_overflow_flag_buffer = VK_NULL_HANDLE;
     }
 
     if (info.memory != VK_NULL_HANDLE) {
@@ -420,10 +406,10 @@ std::vector <NodeContext> fetch_active_leafs (std::shared_ptr <vk_utils::ICopyEn
     return active_leafs_cpu;
 }
 
-size_t fetch_active_leaf_counter (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t frame) {
+uint32_t fetch_active_leaf_counter (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t frame) {
     VkDispatchIndirectCommand command = {0, 0, 0};
     copy_helper->ReadBuffer (info.active_leaf_counter_buffers [frame], 0, &command, sizeof (VkDispatchIndirectCommand));
-    return static_cast <size_t> (command.x);
+    return static_cast <uint32_t> (command.x);
 }
 
 std::vector <uint> fetch_vertices_count (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t active_leafs_count, size_t frame) {
@@ -436,16 +422,6 @@ std::vector <uint> fetch_indices_count (std::shared_ptr <vk_utils::ICopyEngine> 
     std::vector <uint> indices_count (active_leafs_count);
     copy_helper->ReadBuffer (info.active_leaf_indices_count_buffers [frame], 0, indices_count.data (), active_leafs_count * sizeof (uint));
     return indices_count;
-}
-
-uint fetch_active_leaf_overflow_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info) {
-    uint data;
-    copy_helper->ReadBuffer (info.active_leaf_overflow_flag_buffer, 0, &data, sizeof (uint));
-
-    const uint overflow_flag = 0;
-    copy_helper->UpdateBuffer (info.active_leaf_overflow_flag_buffer, 0, &overflow_flag, sizeof (uint));
-
-    return data;
 }
 
 }

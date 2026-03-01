@@ -27,6 +27,7 @@ public:
     void init (SdfOctree&& a_sdf_octree) override;
     void render (const Settings& settings) override;
     void shutdown () override;
+    const Stats& get_stats () override;
 
 private:
     void init_push_constants ();
@@ -43,6 +44,7 @@ private:
 
     void init_graphics_frustum_pipeline ();
     void toggle_frustum_buffer (Settings& settings) override;
+    void update_stats ();
 
     void update_push_constants (const Settings& settings);
     void update_frustum_buffer (const Camera& camera);
@@ -94,7 +96,8 @@ private:
     std::vector <NodeContext> subtrees {};
     std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer {nullptr};
 
-    PushConstantsData push_constants;
+    PushConstantsData push_constants {};
+    Stats stats {};
 
     uint32_t frame_index {0};
     bool initialized {false};

@@ -29,6 +29,7 @@ public:
     void render (const Application::Settings& settings) override;
     void shutdown () override;
     void toggle_frustum_buffer (Camera& camera) override;
+    const Stats& get_stats () override;
 
 private:
     void init_mesh_shading_pipeline ();

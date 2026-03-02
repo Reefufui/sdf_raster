@@ -15,7 +15,7 @@ Camera::Camera () {
 }
 
 const LiteMath::float3& Camera::get_position () const {
-    return this->camera_position;
+    return this->position;
 }
 
 const LiteMath::float4x4& Camera::get_view_projection_matrix () const {
@@ -45,37 +45,37 @@ void Camera::set_far_plane (float far_plane) {
 void Camera::process_keyboard_input (Camera::Movement direction, float delta_time) {
     float velocity = this->movement_speed * delta_time;
     if (direction == Camera::Movement::FORWARD)
-        this->camera_position += camera_front * velocity;
+        this->position += front * velocity;
     if (direction == Camera::Movement::BACKWARD)
-        this->camera_position -= camera_front * velocity;
+        this->position -= front * velocity;
     if (direction == Camera::Movement::LEFT)
-        this->camera_position -= camera_right * velocity;
+        this->position -= right * velocity;
     if (direction == Camera::Movement::RIGHT)
-        this->camera_position += camera_right * velocity;
+        this->position += right * velocity;
     if (direction == Camera::Movement::UP)
-        this->camera_position += LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
+        this->position += LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
     if (direction == Camera::Movement::DOWN)
-        this->camera_position -= LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
+        this->position -= LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
 }
 
-void Camera::process_mouse_movement (float x_offset, float y_offset, bool constrain_pitch) {
+void Camera::process_mouse_movement (float x_offset, float y_offset) {
     x_offset *= this->mouse_sensitivity;
     y_offset *= this->mouse_sensitivity;
 
     this->yaw_angle -= x_offset;
     this->pitch_angle += y_offset;
 
-    if (constrain_pitch) {
-        if (this->pitch_angle > 89.9f) this->pitch_angle = 89.9f;
-        if (this->pitch_angle < -89.9f) this->pitch_angle = -89.9f;
-    }
+    if (this->pitch_angle > 89.9f) this->pitch_angle = 89.9f;
+    if (this->pitch_angle < -89.9f) this->pitch_angle = -89.9f;
+    if (this->yaw_angle > 180.0f) this->yaw_angle -= 360.f;
+    if (this->yaw_angle < -180.0f) this->yaw_angle += 360.f;
 }
 
 void Camera::process_scroll (float offset, bool constrain_fov) {
     this->fov_y -= offset;
     if (constrain_fov) {
         if (this->fov_y < 1.0f) this->fov_y = 1.0f;
-        if (this->fov_y > 60.0f) this->fov_y = 60.0f;
+        if (this->fov_y > 120.0f) this->fov_y = 120.0f;
     }
 }
 
@@ -85,11 +85,11 @@ void Camera::update () {
     new_front.y = std::sin (LiteMath::DEG_TO_RAD * pitch_angle);
     new_front.z = std::sin (LiteMath::DEG_TO_RAD * yaw_angle) * std::cos (LiteMath::DEG_TO_RAD * pitch_angle);
 
-    this->camera_front = LiteMath::normalize (new_front);
-    this->camera_right = LiteMath::normalize (LiteMath::cross (this->camera_front, LiteMath::float3 (0.0f, -1.0f, 0.0f)));
-    this->camera_up    = LiteMath::normalize (LiteMath::cross (this->camera_right, this->camera_front));
+    this->front = LiteMath::normalize (new_front);
+    this->right = LiteMath::normalize (LiteMath::cross (this->front, LiteMath::float3 (0.0f, -1.0f, 0.0f)));
+    this->up    = LiteMath::normalize (LiteMath::cross (this->right, this->front));
 
-    this->view_matrix = LiteMath::lookAt (this->camera_position, this->camera_position + this->camera_front, this->camera_up);
+    this->view_matrix = LiteMath::lookAt (this->position, this->position + this->front, this->up);
     this->projection_matrix = LiteMath::perspectiveMatrix (this->fov_y, this->aspect_ratio, this->near_plane, this->far_plane);
     this->view_projection_matrix = this->projection_matrix * this->view_matrix;
     this->inv_view_projection_matrix = LiteMath::inverse4x4 (this->view_projection_matrix);
@@ -118,7 +118,7 @@ inline LiteMath::float3 json_to_float3 (const nlohmann::json& j) {
 
 void Camera::dump (const std::string& filename) const {
     nlohmann::json j;
-    j ["camera_position"] = float3_to_json (camera_position);
+    j ["position"] = float3_to_json (position);
     j ["yaw_angle"] = yaw_angle;
     j ["pitch_angle"] = pitch_angle;
     j ["fov_y"] = fov_y;
@@ -142,7 +142,7 @@ void Camera::load (const std::string& filename) {
             nlohmann::json j;
             i >> j;
 
-            camera_position = json_to_float3 (j.at ("camera_position"));
+            position = json_to_float3 (j.at ("position"));
             yaw_angle = j.at ("yaw_angle").get <float> ();
             pitch_angle = j.at ("pitch_angle").get <float> ();
             fov_y = j.at ("fov_y").get <float> ();
@@ -161,12 +161,10 @@ void Camera::load (const std::string& filename) {
 }
 
 void Camera::reset () {
-    this->camera_position = LiteMath::float3 (2.0f, 0.5f, -1.0f);
-    this->camera_up = LiteMath::float3 (0.0f, -1.0f, 0.0f);
-    this->camera_front = LiteMath::float3 (0.0f, 0.0f, -1.0f);
-    this->yaw_angle = -200.0f;
-    this->pitch_angle = -15.0f;
-    this->fov_y = 45.0f;
+    this->position = this->default_position;
+    this->yaw_angle = this->default_yaw_angle;
+    this->pitch_angle = this->default_pitch_angle;
+    this->fov_y = this->default_fov_y;
     this->movement_speed = 2.5f;
     this->mouse_sensitivity = 0.1f;
 }

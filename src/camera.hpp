@@ -10,6 +10,11 @@
 
 namespace sdf_raster {
 
+class Camera;
+namespace gui {
+    void camera_window (Camera& camera);
+}
+
 class Camera {
 public:
     Camera ();
@@ -27,7 +32,7 @@ public:
         FORWARD, BACKWARD, LEFT, RIGHT, UP, DOWN
     };
     void process_keyboard_input (Movement direction, float delta_time);
-    void process_mouse_movement (float x_offset, float y_offset, bool constrain_pitch = true);
+    void process_mouse_movement (float x_offset, float y_offset);
     void process_scroll (float offset, bool constrain_fov = true);
 
     void dump (const std::string& filename) const;
@@ -35,31 +40,37 @@ public:
     void reset ();
     void update ();
 
+    friend void gui::camera_window (Camera& camera);
+
 private:
-    LiteMath::float3 camera_position {2.0f, 0.5f, -1.0f};
-    LiteMath::float3 camera_up {0.0f, -1.0f, 0.0f};
-    LiteMath::float3 camera_front {0.f, 0.f, -1.f};
+    // TODO: create static camera instance with default values
+    LiteMath::float3 default_position {1.f};
+    float default_yaw_angle {-135.0f};
+    float default_pitch_angle {-35.5f};
+    float default_fov_y {45.5f};
+
+    LiteMath::float3 position {default_position};
+    float yaw_angle {default_yaw_angle};
+    float pitch_angle {default_pitch_angle};
+
+    LiteMath::float3 front {}; // NOTE: front = (cos(yaw)*cos(pitch),sin(pitch),sin(yaw)*cos(pitch))
+    LiteMath::float3 right {}; // NOTE: right = [front×(0,-1,0)]
+    LiteMath::float3 up {}; // NOTE: right and front
 
     LiteMath::float4x4 view_matrix;
     LiteMath::float4x4 projection_matrix;
     LiteMath::float4x4 view_projection_matrix;
     LiteMath::float4x4 inv_view_projection_matrix;
 
-    float yaw_angle {-200.0f};
-    float pitch_angle {-15.0f};
-
     float movement_speed {2.5f};
     float mouse_sensitivity {0.1f};
 
-    float fov_y {45.0f};
+    float fov_y {default_fov_y};
     float near_plane {0.01f};
     float far_plane {10.0f};
     float aspect_ratio {1.0f};
 
     std::array <LiteMath::float4, 8> frustum_corners;
-
-private:
-    LiteMath::float3 camera_right;
 };
 
 class FrustumDrawBuffer {

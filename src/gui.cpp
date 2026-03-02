@@ -74,6 +74,7 @@ private:
     Settings previous_frame_settings;
     float alpha = .8f;
 
+    bool show_camera_window = false;
     bool show_occlusion_window = false;
     bool lock_occlusion_culling = false;
 };
@@ -234,11 +235,46 @@ void UI::menu_bar () {
 
         if (ImGui::BeginMenu ("View")) {
             if (ImGui::MenuItem ("Show Culling Window", "", &this->show_occlusion_window)) { }
+            if (ImGui::MenuItem ("Show Camera Window", "", &this->show_camera_window)) { }
             ImGui::EndMenu ();
         }
 
         ImGui::EndMainMenuBar ();
     }
+}
+
+void camera_window (Camera& camera) {
+    ImGui::Begin ("Camera");
+
+    if (ImGui::CollapsingHeader ("Orientation", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::InputFloat3 ("Position", &camera.position.x);
+        ImGui::DragFloat ("Yaw", &camera.yaw_angle, 1.0f, -180.0f, 180.0f, "%.1f deg");
+        ImGui::DragFloat ("Pitch", &camera.pitch_angle, 1.0f, -89.0f, 89.0f, "%.1f deg");
+
+        ImGui::BeginDisabled ();
+        ImGui::InputFloat3 ("Front", &camera.front.x);
+        ImGui::InputFloat3 ("Right", &camera.right.x);
+        ImGui::InputFloat3 ("Up", &camera.up.x);
+        ImGui::EndDisabled ();
+    }
+
+    if (ImGui::CollapsingHeader ("Movement", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::DragFloat ("Movement Speed", &camera.movement_speed, 0.03f, 0.0f, 3.0f, "%.2f");
+        ImGui::DragFloat ("Mouse Sensitivity", &camera.mouse_sensitivity, 0.01f, 0.0f, 1.0f, "%.3f");
+    }
+
+    if (ImGui::CollapsingHeader ("Projection Frustum", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::SliderFloat ("Field of View", &camera.fov_y, 1.0f, 120.0f, "%.1f deg");
+
+        ImGui::DragFloat ("Near Plane", &camera.near_plane, 0.005f, 0.001f, camera.far_plane, "%.3f");
+        ImGui::DragFloat ("Far Plane", &camera.far_plane, 1.0f, camera.near_plane, 1000.0f, "%.2f");
+
+        ImGui::BeginDisabled ();
+        ImGui::DragFloat ("Aspect Ratio", &camera.aspect_ratio, 0.01f, 0.1f, 5.0f, "%.2f");
+        ImGui::EndDisabled ();
+    }
+
+    ImGui::End ();
 }
 
 void UI::file_dialog (Settings& settings) {
@@ -376,6 +412,10 @@ void UI::update (Settings& settings, const Stats& stats, uint32_t width, uint32_
 
     this->menu_bar ();
     this->file_dialog (settings);
+
+    if (this->show_camera_window) {
+        camera_window (settings.camera);
+    }
 
     if (this->show_occlusion_window) {
         this->occlusion_window (settings);

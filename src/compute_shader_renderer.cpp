@@ -711,6 +711,7 @@ void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
 
         VkBufferMemoryBarrier transition_barrier {
             .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .pNext = nullptr,
             .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
             .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -1254,6 +1255,10 @@ void ComputeShaderRenderer::render (const Settings& settings) {
 
     gui::draw (this->context->get_swapchain_image_index (), cmd_buff);
 
+    if (!settings.frustum_view) {
+        prepare_next_frame_data (this->hz_buffer_ds, this->frame_index, this->context->get_depth_buffer ().image, settings.camera.get_view_projection_matrix ());
+    }
+
     this->context->end_frame (cmd_buff, this->frame_index);
 
     static bool dump = true;
@@ -1282,9 +1287,6 @@ void ComputeShaderRenderer::render (const Settings& settings) {
         vkDeviceWaitIdle (this->context->get_device ());
     }
 
-    if (!settings.frustum_view) {
-        prepare_next_frame_data (this->hz_buffer_ds, this->frame_index, this->context->get_depth_buffer ().image, settings.camera.get_view_projection_matrix ());
-    }
     this->frame_index = (this->frame_index + 1) % this->context->get_total_frames ();
 }
 

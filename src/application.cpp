@@ -81,10 +81,8 @@ void Application::run (bool single_frame) {
             this->delta_time = static_cast <float> (current_time - last_frame);
             this->last_frame = current_time;
 
-            int width, height;
-            glfwGetWindowSize (this->window, &width, &height);
             const auto& stats = this->renderer->get_stats ();
-            gui::update (settings, stats, static_cast <uint32_t> (width), static_cast <uint32_t> (height), this->delta_time);
+            gui::update (settings, stats, this->delta_time);
 
             if (this->scene.name != settings.scene_name) {
                 load_sdf_octree (this->scene, settings.scene_path);
@@ -119,6 +117,7 @@ void Application::init_window () {
     }
 
     glfwSetWindowUserPointer (this->window, &this->user_data);
+    glfwSetFramebufferSizeCallback (this->window, framebuffer_resize_callback);
     glfwSetCursorPosCallback (this->window, mouse_callback);
     glfwSetScrollCallback (this->window, scroll_callback);
     glfwSetKeyCallback (this->window, key_callback);
@@ -234,8 +233,13 @@ void Application::process_input () {
         this->settings.camera.process_keyboard_input (Camera::Movement::DOWN, this->delta_time);
 }
 
-void Application::mouse_callback (GLFWwindow* a_window, double xpos, double ypos) {
-    auto app = get_app_ptr (a_window);
+void Application::framebuffer_resize_callback (GLFWwindow* window, int, int) {
+    auto app = get_app_ptr (window);
+    app->vulkan_context->set_resized_flag ();
+}
+
+void Application::mouse_callback (GLFWwindow* window, double xpos, double ypos) {
+    auto app = get_app_ptr (window);
     if (!app) return;
 
     if (app->settings.disabled_cursor) {
@@ -254,21 +258,21 @@ void Application::mouse_callback (GLFWwindow* a_window, double xpos, double ypos
     }
 }
 
-void Application::scroll_callback (GLFWwindow* a_window, double, double yoffset) {
-    auto app = get_app_ptr (a_window);
+void Application::scroll_callback (GLFWwindow* window, double, double yoffset) {
+    auto app = get_app_ptr (window);
     if (app) {
         app->settings.camera.process_scroll (static_cast <float> (yoffset));
     }
 }
 
-void Application::key_callback (GLFWwindow* a_window, int key, int, int action, int) {
-    Application* app = get_app_ptr (a_window);
+void Application::key_callback (GLFWwindow* window, int key, int, int action, int) {
+    Application* app = get_app_ptr (window);
     if (!app) return;
 
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
         if (app->settings.disabled_cursor) {
             app->settings.disabled_cursor = false;
-            glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            glfwSetInputMode (window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             LOG_INFO ("Exited camera mode. Cursor NORMAL.");
         }
     }
@@ -294,28 +298,28 @@ void Application::key_callback (GLFWwindow* a_window, int key, int, int action, 
     }
 }
 
-void Application::mouse_button_callback (GLFWwindow* a_window, int button, int action, int) {
-    Application* app = get_app_ptr (a_window);
+void Application::mouse_button_callback (GLFWwindow* window, int button, int action, int) {
+    Application* app = get_app_ptr (window);
     if (!app) return;
 
     if (app->settings.disabled_cursor) {
         if ((button == GLFW_MOUSE_BUTTON_RIGHT || button == GLFW_MOUSE_BUTTON_LEFT) && action == GLFW_PRESS) {
             app->settings.disabled_cursor = false;
-            glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            glfwSetInputMode (window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             LOG_INFO ("Exited camera mode. Cursor NORMAL.");
         }
     } else {
         if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
             app->settings.disabled_cursor = true;
-            glfwSetInputMode (a_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            glfwSetInputMode (window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             app->first_mouse = true;
             LOG_INFO ("Entered camera mode. Cursor DISABLED.");
         }
     }
 }
 
-Application* Application::get_app_ptr (GLFWwindow* a_window) {
-    return static_cast<UserData*>(glfwGetWindowUserPointer(a_window))->app;
+Application* Application::get_app_ptr (GLFWwindow* window) {
+    return static_cast<UserData*>(glfwGetWindowUserPointer(window))->app;
 }
 
 }

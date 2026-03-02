@@ -40,7 +40,7 @@ else ()
 endif ()
 
 message (STATUS "Checking for system glfw3...")
-set (REQUIRED_GLFW_VERSION "3.4.0")
+set (REQUIRED_GLFW_VERSION "3.3.10")
 find_package (glfw3 CONFIG REQUIRED)
 if (glfw3_VERSION VERSION_GREATER REQUIRED_GLFW_VERSION)
     message (WARNING 

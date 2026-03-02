@@ -530,17 +530,21 @@ void VulkanContext::shutdown () {
     LOG_INFO ("[VulkanContext] Vulkan instance destroyed successfully.");
 }
 
-void VulkanContext::resize (int a_width, int a_height) {
-    if (a_width == 0 || a_height == 0) {
-        LOG_ERROR ("[VulkanContext] Width or height can't be zero.");
-        return;
+void VulkanContext::resize () {
+    this->framebuffer_resized = false;
+
+    int width, height;
+    glfwGetFramebufferSize (this->window, &width, &height);
+    while (width == 0 || height == 0) {
+        glfwWaitEvents ();
+        glfwGetFramebufferSize (this->window, &width, &height);
     }
 
     const auto extent = this->swapchain.GetExtent ();
-    LOG_INFO ("[VulkanContext] Waiting for the GPU to go idle to resize: ({}, {}) -> ({}, {})", extent.width, extent.height, a_width, a_height);
+    LOG_INFO ("[VulkanContext] Waiting device: size ({}, {}) is outdated. New window framebuffer size is ({}, {}).", extent.width, extent.height, width, height);
     vkDeviceWaitIdle (this->get_device ());
 
-    this->create_swapchain (static_cast <uint32_t> (a_width), static_cast <uint32_t> (a_height));
+    this->create_swapchain (static_cast <uint32_t> (width), static_cast <uint32_t> (height));
     this->create_depth_buffers ();
     this->destroy_framebuffers ();
     this->main.framebuffer = this->create_framebuffers (this->main.render_pass);
@@ -560,10 +564,12 @@ void VulkanContext::create_swapchain (uint32_t width, uint32_t height) {
             , this->surface
             , width
             , height
-            , this->max_frames_in_swapchain
+            , this->frames_in_swapchain
             , true); // TODO: set in config
 
-    this->gpu_ready_to_present.resize (this->swapchain.GetImageCount ());
+    this->frames_in_swapchain = this->swapchain.GetImageCount ();
+
+    this->gpu_ready_to_present.resize (this->frames_in_swapchain);
 
     for (size_t i = 0; i < this->gpu_ready_to_present.size (); i++) {
         VkSemaphoreCreateInfo semaphoreInfo {};
@@ -572,6 +578,9 @@ void VulkanContext::create_swapchain (uint32_t width, uint32_t height) {
     }
 
     this->acquired_image_index = std::numeric_limits <uint32_t>::max ();
+
+    const auto extent = this->swapchain.GetExtent ();
+    LOG_INFO ("[VulkanContext] Created {} swapchain images with size ({}, {}).", this->frames_in_swapchain, extent.width, extent.height);
 }
 
 VkRenderPass VulkanContext::create_render_pass (VkAttachmentLoadOp load_op) {
@@ -692,12 +701,11 @@ VkCommandBuffer VulkanContext::begin_frame (uint32_t frame_idx) {
     VkResult result = this->swapchain.AcquireNextImage (this->frame_resources [frame_idx].wait_before_color_attachment_output, &this->acquired_image_index);
     LOG_TRACE ("in-flight frame: {}, swapchain image: {}", frame_idx, this->acquired_image_index);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-        int width, height;
-        glfwGetFramebufferSize (this->window, &width, &height);
-        this->resize (width, height);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || this->framebuffer_resized) {
+        LOG_INFO ("RESIZING FROM begin_frame");
+        this->resize ();
         return VK_NULL_HANDLE;
-    } else if (result != VK_SUCCESS) {
+    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         throw std::runtime_error ("failed to acquire swap chain image!");
     }
 
@@ -714,7 +722,7 @@ VkCommandBuffer VulkanContext::begin_frame (uint32_t frame_idx) {
 }
 
 void VulkanContext::end_frame (VkCommandBuffer command_buffer, uint32_t frame_idx) {
-    assert (this->acquired_image_index < this->max_frames_in_swapchain);
+    assert (this->acquired_image_index < this->frames_in_swapchain);
 
     if (command_buffer == VK_NULL_HANDLE) {
         return;
@@ -755,10 +763,9 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer, uint32_t frame_id
 
     VkResult result = this->swapchain.QueuePresent (this->present_queue, this->acquired_image_index, this->gpu_ready_to_present [this->acquired_image_index]);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-        int width, height;
-        glfwGetFramebufferSize (this->window, &width, &height);
-        this->resize (width, height);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || this->framebuffer_resized) {
+        LOG_INFO ("RESIZING FROM end_frame");
+        this->resize ();
     } else if (result != VK_SUCCESS) {
         throw std::runtime_error ("failed to present swap chain image!");
     }
@@ -803,12 +810,12 @@ void VulkanContext::create_depth_buffers () {
         this->destroy_depth_buffers ();
     }
 
-    this->depth_buffers.resize (this->max_frames_in_swapchain);
+    this->depth_buffers.resize (this->frames_in_swapchain);
 
     const VkImageUsageFlags usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     VkImageCreateInfo create_info = vk_utils::defaultImageCreateInfo (width, height, this->depth_format, usage, 1);
 
-    for (size_t i = 0; i < this->max_frames_in_swapchain; ++i) {
+    for (size_t i = 0; i < this->frames_in_swapchain; ++i) {
         this->depth_buffers [i].format = this->depth_format;
 
         VK_CHECK_RESULT (vkCreateImage (this->get_device (), &create_info, nullptr, &this->depth_buffers [i].image));
@@ -825,7 +832,7 @@ void VulkanContext::create_depth_buffers () {
         VK_CHECK_RESULT (vkCreateImageView (this->get_device (), &depth_attachment, nullptr, &this->depth_buffers [i].view));
     }
 
-    LOG_INFO ("[VulkanContext] {} {} depth buffers with size ({}, {}).", (recreated) ? "Recreated" : "Created", this->max_frames_in_swapchain, width, height);
+    LOG_INFO ("[VulkanContext] {} {} depth buffers with size ({}, {}).", (recreated) ? "Recreated" : "Created", this->frames_in_swapchain, width, height);
 }
 
 void VulkanContext::destroy_swapchain () {

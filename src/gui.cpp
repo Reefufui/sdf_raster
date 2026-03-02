@@ -31,7 +31,7 @@ public:
     }
 
     void init (const InitInfo& info);
-    void update (Settings& settings, const Stats& stats, uint32_t width, uint32_t height, float delta_time);
+    void update (Settings& settings, const Stats& stats, float delta_time);
     void draw (uint32_t image_index, VkCommandBuffer cmd_buff);
     void cleanup ();
 
@@ -387,13 +387,12 @@ void UI::status_bar (Settings& settings, const Stats& stats) {
     ImGui::PopStyleVar ();
 }
 
-void UI::update (Settings& settings, const Stats& stats, uint32_t width, uint32_t height, float delta_time) {
+void UI::update (Settings& settings, const Stats& stats, float delta_time) {
     if (!this->show_ui) {
         return;
     }
 
     ImGuiIO& io = ImGui::GetIO ();
-    io.DisplaySize = ImVec2 (static_cast <float> (width), static_cast <float> (height));
     io.DeltaTime = std::max (0.0001f, delta_time);
 
     if (settings.disabled_cursor) {
@@ -588,8 +587,8 @@ void init (const InitInfo& info) {
     UI::get_instance ().init (info);
 }
 
-void update (Settings& settings, const Stats& stats, uint32_t width, uint32_t height, float delta_time) {
-    UI::get_instance ().update (settings, stats, width, height, delta_time);
+void update (Settings& settings, const Stats& stats, float delta_time) {
+    UI::get_instance ().update (settings, stats, delta_time);
 }
 
 void draw (uint32_t image_index, VkCommandBuffer cmd_buff) {

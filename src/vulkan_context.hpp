@@ -53,6 +53,7 @@ public:
     void end_frame (VkCommandBuffer command_buffer, uint32_t frame_idx);
     inline uint32_t get_total_frames () { return this->max_frames_in_flight; }
     void register_resizable (std::function <void ()> f) { this->resizable_callbacks.push_back (f); };
+    void set_resized_flag () { this->framebuffer_resized = true; }
 
 private:
     void create_instance ();
@@ -70,7 +71,7 @@ private:
     void destroy_framebuffers ();
     void destroy_frame_resources ();
 
-    void resize (int width, int height);
+    void resize ();
     std::vector <VkFramebuffer> create_framebuffers (VkRenderPass a_render_pass);
 
 #ifdef VULKAN_VALIDATION_LAYERS
@@ -101,8 +102,9 @@ private:
     std::vector <vk_utils::VulkanImageMem> depth_buffers;
     VkFormat depth_format;
     std::vector <VkSemaphore> gpu_ready_to_present;
-    const size_t max_frames_in_swapchain = 2;
+    size_t frames_in_swapchain = 3;
     uint32_t acquired_image_index;
+    bool framebuffer_resized = false;
 
     struct FrameResources {
         VkFence cpu_wait_next_frame = VK_NULL_HANDLE;
@@ -111,7 +113,7 @@ private:
         VkCommandBuffer command_buffer = VK_NULL_HANDLE;
     };
     std::vector <FrameResources> frame_resources;
-    const size_t max_frames_in_flight = 1;
+    const size_t max_frames_in_flight = 2;
 
     struct RenderPassResources {
         std::vector <VkFramebuffer> framebuffer;

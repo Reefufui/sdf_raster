@@ -67,6 +67,7 @@ private:
     std::shared_ptr <VulkanContext> context {nullptr};
 
     std::shared_ptr <vk_utils::DescriptorMaker> descriptor_maker {nullptr};
+    std::shared_ptr <vk_utils::DescriptorMaker> descriptor_maker_for_resizable {nullptr};
     SdfOctreeDescriptorSetInfo sdf_octree_ds {};
     MeshDescriptorSetInfo mesh_ds {};
     MarchingCubesLookupTableDescriptorSetInfo marching_cubes_lookup_table_ds {};

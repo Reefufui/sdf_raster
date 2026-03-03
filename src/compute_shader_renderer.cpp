@@ -52,6 +52,7 @@ void ComputeShaderRenderer::init (const SdfOctree& default_scene) {
     ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000);
 
     this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
+    this->descriptor_maker_for_resizable = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
 
     this->update_scene (default_scene);
     this->init_push_constants ();
@@ -102,9 +103,13 @@ void ComputeShaderRenderer::register_resizable () {
     auto resize_hz_buffer = [&] () {
         cleanup_hz_buffer_descriptor_set (this->context->get_device (), this->hz_buffer_ds);
 
+        VK_CHECK_RESULT (vkResetDescriptorPool (this->context->get_device ()
+            , this->descriptor_maker_for_resizable->GetPool ()
+            , 0));
+
         this->hz_buffer_ds = create_hz_buffer_descriptor_set (this->context->get_device ()
             , this->context->get_physical_device ()
-            , *descriptor_maker
+            , *(this->descriptor_maker_for_resizable)
             , VK_SHADER_STAGE_COMPUTE_BIT
             , this->context->get_swapchain_extent ()
             , this->context->get_total_frames ());
@@ -170,7 +175,7 @@ void ComputeShaderRenderer::init_descriptor_sets () {
 
     this->hz_buffer_ds = create_hz_buffer_descriptor_set (this->context->get_device ()
         , this->context->get_physical_device ()
-        , *descriptor_maker
+        , *(this->descriptor_maker_for_resizable)
         , VK_SHADER_STAGE_COMPUTE_BIT
         , this->context->get_swapchain_extent ()
         , this->context->get_total_frames ());
@@ -1314,6 +1319,7 @@ void ComputeShaderRenderer::shutdown () {
         this->frustum_draw_buffer.reset ();
     }
     this->descriptor_maker.reset ();
+    this->descriptor_maker_for_resizable.reset ();
 
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_hz_buffer_pipeline, this->compute_hz_buffer_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_active_leafs_pipeline, this->compute_active_leafs_pipeline_layout);

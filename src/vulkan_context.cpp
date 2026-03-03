@@ -696,7 +696,6 @@ void VulkanContext::create_frame_resources () {
 
 VkCommandBuffer VulkanContext::begin_frame (uint32_t frame_idx) {
     vkWaitForFences (this->device, 1, &this->frame_resources [frame_idx].cpu_wait_next_frame, VK_TRUE, UINT64_MAX);
-    vkResetFences (this->device, 1, &this->frame_resources [frame_idx].cpu_wait_next_frame);
 
     VkResult result = this->swapchain.AcquireNextImage (this->frame_resources [frame_idx].wait_before_color_attachment_output, &this->acquired_image_index);
     LOG_TRACE ("in-flight frame: {}, swapchain image: {}", frame_idx, this->acquired_image_index);
@@ -709,6 +708,7 @@ VkCommandBuffer VulkanContext::begin_frame (uint32_t frame_idx) {
         throw std::runtime_error ("failed to acquire swap chain image!");
     }
 
+    vkResetFences (this->device, 1, &this->frame_resources [frame_idx].cpu_wait_next_frame);
     vkResetCommandBuffer (this->frame_resources [frame_idx].command_buffer, 0);
 
     VkCommandBufferBeginInfo begin_info {};
@@ -763,7 +763,7 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer, uint32_t frame_id
 
     VkResult result = this->swapchain.QueuePresent (this->present_queue, this->acquired_image_index, this->gpu_ready_to_present [this->acquired_image_index]);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || this->framebuffer_resized) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         LOG_INFO ("RESIZING FROM end_frame");
         this->resize ();
     } else if (result != VK_SUCCESS) {

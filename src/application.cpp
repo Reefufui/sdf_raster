@@ -75,8 +75,6 @@ void Application::run (bool single_frame) {
                 continue;
             }
 
-            this->process_input ();
-
             double current_time = glfwGetTime ();
             this->delta_time = static_cast <float> (current_time - last_frame);
             this->last_frame = current_time;
@@ -118,7 +116,6 @@ void Application::init_window () {
 
     glfwSetWindowUserPointer (this->window, &this->user_data);
     glfwSetFramebufferSizeCallback (this->window, framebuffer_resize_callback);
-    glfwSetCursorPosCallback (this->window, mouse_callback);
     glfwSetScrollCallback (this->window, scroll_callback);
     glfwSetKeyCallback (this->window, key_callback);
     glfwSetMouseButtonCallback (this->window, mouse_button_callback);
@@ -214,48 +211,9 @@ void Application::cleanup () {
     glfwTerminate ();
 }
 
-void Application::process_input () {
-    if (!settings.disabled_cursor) {
-        return;
-    }
-
-    if (glfwGetKey (this->window, GLFW_KEY_W) == GLFW_PRESS)
-        this->settings.camera.process_keyboard_input (Camera::Movement::FORWARD, this->delta_time);
-    if (glfwGetKey (this->window, GLFW_KEY_S) == GLFW_PRESS)
-        this->settings.camera.process_keyboard_input (Camera::Movement::BACKWARD, this->delta_time);
-    if (glfwGetKey (this->window, GLFW_KEY_A) == GLFW_PRESS)
-        this->settings.camera.process_keyboard_input (Camera::Movement::LEFT, this->delta_time);
-    if (glfwGetKey (this->window, GLFW_KEY_D) == GLFW_PRESS)
-        this->settings.camera.process_keyboard_input (Camera::Movement::RIGHT, this->delta_time);
-    if (glfwGetKey (this->window, GLFW_KEY_SPACE) == GLFW_PRESS)
-        this->settings.camera.process_keyboard_input (Camera::Movement::UP, this->delta_time);
-    if (glfwGetKey (this->window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
-        this->settings.camera.process_keyboard_input (Camera::Movement::DOWN, this->delta_time);
-}
-
 void Application::framebuffer_resize_callback (GLFWwindow* window, int, int) {
     auto app = get_app_ptr (window);
     app->vulkan_context->set_resized_flag ();
-}
-
-void Application::mouse_callback (GLFWwindow* window, double xpos, double ypos) {
-    auto app = get_app_ptr (window);
-    if (!app) return;
-
-    if (app->settings.disabled_cursor) {
-        if (app->first_mouse) {
-            app->last_x = static_cast <float> (xpos);
-            app->last_y = static_cast <float> (ypos);
-            app->first_mouse = false;
-        }
-
-        float xoffset = static_cast <float> (xpos) - app->last_x;
-        float yoffset = app->last_y - static_cast <float> (ypos);
-        app->last_x = static_cast <float> (xpos);
-        app->last_y = static_cast <float> (ypos);
-
-        app->settings.camera.process_mouse_movement (xoffset, yoffset);
-    }
 }
 
 void Application::scroll_callback (GLFWwindow* window, double, double yoffset) {

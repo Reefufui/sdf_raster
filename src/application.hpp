@@ -28,11 +28,9 @@ private:
     void init_vulkan ();
     void init_window ();
     void init_gui ();
-    void process_input ();
 
     static Application* get_app_ptr (GLFWwindow* window);
     static void framebuffer_resize_callback (GLFWwindow* window, int width, int height);
-    static void mouse_callback (GLFWwindow* window, double xpos, double ypos);
     static void scroll_callback (GLFWwindow* a_window, double xoffset, double yoffset);
     static void key_callback (GLFWwindow* a_window, int key, int scancode, int action, int mods);
     static void mouse_button_callback (GLFWwindow* a_window, int button, int action, int mods);

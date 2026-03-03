@@ -133,15 +133,16 @@ void dfs_octree (NodeContext root) {
     }
 }
 
-bool descend_path (uint path [5], inout NodeContext current_context) {
+#define DESCEND_PATH_LENGTH 5
+bool descend_path (uint path [DESCEND_PATH_LENGTH], inout NodeContext current_context) {
     [unroll]
-    for (uint level = 0; level < 5; ++level) {
+    for (uint level = 0; level < DESCEND_PATH_LENGTH; ++level) {
         uint child_index = path [level];
         SdfOctreeNode parent_node = g_octree_data [current_context.node_index];
 
         if (parent_node.offset == 0) {
             [unroll]
-            for (; level < 5; ++level) {
+            for (; level < DESCEND_PATH_LENGTH; ++level) {
                 if (path [level] != 0u) {
                     return false;
                 }
@@ -174,8 +175,8 @@ void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : 
         g_active_leaf_counter [0].z = 1u;
     }
 
-    NodeContext current_context = g_roots [gi.x];
-    const uint path [5] = {gti.z, gti.y, gti.x, gi.z, gi.y};
+    NodeContext current_context = g_roots [gi.z];
+    const uint path [DESCEND_PATH_LENGTH] = {gi.y, gi.x, gti.z, gti.y, gti.x};
 
     if (descend_path (path, current_context)) {
         dfs_octree (current_context);

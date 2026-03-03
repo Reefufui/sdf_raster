@@ -243,12 +243,56 @@ void UI::menu_bar () {
     }
 }
 
+namespace {
+
+void camera_input (Settings& settings) {
+    ImGuiIO& io = ImGui::GetIO ();
+
+    if (io.WantCaptureKeyboard || !settings.disabled_cursor)
+        return;
+
+    Camera& camera = settings.camera;
+
+    if (ImGui::IsKeyDown (ImGuiKey_W))
+        camera.process_keyboard_input (Camera::Movement::FORWARD, io.DeltaTime);
+
+    if (ImGui::IsKeyDown (ImGuiKey_S))
+        camera.process_keyboard_input (Camera::Movement::BACKWARD, io.DeltaTime);
+
+    if (ImGui::IsKeyDown (ImGuiKey_A))
+        camera.process_keyboard_input (Camera::Movement::LEFT, io.DeltaTime);
+
+    if (ImGui::IsKeyDown (ImGuiKey_D))
+        camera.process_keyboard_input (Camera::Movement::RIGHT, io.DeltaTime);
+
+    if (ImGui::IsKeyDown (ImGuiKey_Space))
+        camera.process_keyboard_input (Camera::Movement::UP, io.DeltaTime);
+
+    if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
+        camera.process_keyboard_input (Camera::Movement::DOWN, io.DeltaTime);
+
+    if (!io.WantCaptureMouse) {
+        camera.process_mouse_movement (io.MouseDelta.x, -io.MouseDelta.y);
+    }
+}
+
+}
+
 void camera_window (Camera& camera) {
     ImGui::Begin ("Camera");
 
+    auto wrap_angle = [] (float angle) {
+        angle = std::fmod (angle + 180.0f, 360.0f);
+        if (angle < 0.0f)
+            angle += 360.0f;
+        return angle - 180.0f;
+    };
+
     if (ImGui::CollapsingHeader ("Orientation", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::InputFloat3 ("Position", &camera.position.x);
-        ImGui::DragFloat ("Yaw", &camera.yaw_angle, 1.0f, -180.0f, 180.0f, "%.1f deg");
+        if (ImGui::DragFloat ("Yaw", &camera.yaw_angle, 1.0f, 0.0f, 0.0f, "%.1f deg")) {
+            camera.yaw_angle = wrap_angle (camera.yaw_angle);
+        }
         ImGui::DragFloat ("Pitch", &camera.pitch_angle, 1.0f, -89.0f, 89.0f, "%.1f deg");
 
         ImGui::BeginDisabled ();
@@ -412,6 +456,7 @@ void UI::update (Settings& settings, const Stats& stats, float delta_time) {
     this->menu_bar ();
     this->file_dialog (settings);
 
+    camera_input (settings);
     if (this->show_camera_window) {
         camera_window (settings.camera);
     }

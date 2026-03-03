@@ -915,7 +915,7 @@ void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff) {
 
     vkCmdPushConstants (cmd_buff, this->compute_active_leafs_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-    vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 8, 8);
+    vkCmdDispatch (cmd_buff, 8, 8, static_cast <uint32_t> (this->subtrees.size ()));
 }
 
 void ComputeShaderRenderer::hz_buffer_barrier (VkCommandBuffer cmd_buff) {

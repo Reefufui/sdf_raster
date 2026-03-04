@@ -6,30 +6,16 @@
 #include "spdlog/stopwatch.h"
 #include "vk_pipeline.h"
 
-#include "compute_shader_renderer.hpp"
 #include "application.hpp"
-#include "logger.hpp"
 #include "gui.hpp"
-
-namespace {
-
-std::ostream& operator<< (std::ostream& os, const NodeContext& context) {
-    os << "NodeContext {"
-        << " min_corner: (" << context.min_corner_x << "," << context.min_corner_y << "," << context.min_corner_z << ")"
-        << " voxel_size: " << context.voxel_size << ","
-        << " node_index: " << context.node_index << ","
-        << " cube_index: " << context.cube_index
-        << " }";
-    return os;
-}
-
-}
+#include "logger.hpp"
+#include "sdf_rasterizer.hpp"
 
 namespace sdf_raster {
 
-#define RENDERER_NAME "ComputeShaderRenderer"
+#define RENDERER_NAME "SDFRasterizer"
 
-ComputeShaderRenderer::ComputeShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context)
+SDFRasterizer::SDFRasterizer (std::shared_ptr <VulkanContext> vulkan_context)
     : context (vulkan_context)
     , initialized (false) {
     if (!this->context) {
@@ -37,10 +23,10 @@ ComputeShaderRenderer::ComputeShaderRenderer (std::shared_ptr <VulkanContext> vu
     }
 }
 
-ComputeShaderRenderer::~ComputeShaderRenderer () {
+SDFRasterizer::~SDFRasterizer () {
 }
 
-void ComputeShaderRenderer::init (const SdfOctree& default_scene) {
+void SDFRasterizer::init (const SdfOctree& default_scene) {
     if (!this->context || !this->context->is_initialized ()) {
         throw std::runtime_error ("VulkanContext is not initialized before renderer init.");
     }
@@ -65,12 +51,13 @@ void ComputeShaderRenderer::init (const SdfOctree& default_scene) {
     this->init_compute_geometry_pipeline ();
     this->init_graphics_shading_pipeline ();
     this->init_graphics_frustum_pipeline ();
+    this->init_mesh_shading_pipeline ();
     this->register_resizable ();
 
     this->initialized = true;
 }
 
-void ComputeShaderRenderer::update_scene (const SdfOctree& scene) {
+void SDFRasterizer::update_scene (const SdfOctree& scene) {
     vkDeviceWaitIdle (this->context->get_device ());
 
     const size_t cpu_traversed = 3;
@@ -99,7 +86,7 @@ void ComputeShaderRenderer::update_scene (const SdfOctree& scene) {
     LOG_INFO ("[{}] Loaded sdf-octree scene '{}'. Depth: {}.", RENDERER_NAME, scene.name, octree_depth);
 }
 
-void ComputeShaderRenderer::register_resizable () {
+void SDFRasterizer::register_resizable () {
     auto resize_hz_buffer = [&] () {
         cleanup_hz_buffer_descriptor_set (this->context->get_device (), this->hz_buffer_ds);
 
@@ -128,7 +115,7 @@ void ComputeShaderRenderer::register_resizable () {
     this->context->register_resizable (resize_hz_buffer);
 }
 
-void ComputeShaderRenderer::init_push_constants () {
+void SDFRasterizer::init_push_constants () {
     VkPhysicalDeviceProperties device_properties;
     vkGetPhysicalDeviceProperties (this->context->get_physical_device (), &device_properties);
     const uint32_t max_push_constant_size = device_properties.limits.maxPushConstantsSize;
@@ -144,7 +131,7 @@ void ComputeShaderRenderer::init_push_constants () {
     this->push_constants.frustum_culling = true; // TODO: set inital state from config
 }
 
-void ComputeShaderRenderer::init_descriptor_sets () {
+void SDFRasterizer::init_descriptor_sets () {
 	this->mesh_ds = create_mesh_descriptor_set (this->context->get_device ()
 	    , this->context->get_physical_device ()
 	    , this->context->get_copy_helper ()
@@ -197,7 +184,7 @@ void ComputeShaderRenderer::init_descriptor_sets () {
         , this->context->get_total_frames ());
 }
 
-void ComputeShaderRenderer::init_compute_hz_buffer_pipeline () {
+void SDFRasterizer::init_compute_hz_buffer_pipeline () {
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/mip_max_pooling.comp.slang.spv");
     this->compute_hz_buffer_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
@@ -206,7 +193,7 @@ void ComputeShaderRenderer::init_compute_hz_buffer_pipeline () {
     this->compute_hz_buffer_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
-void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
+void SDFRasterizer::init_compute_active_leafs_pipeline () {
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/octree_traversal.comp.slang.spv");
     this->compute_active_leafs_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
@@ -219,7 +206,7 @@ void ComputeShaderRenderer::init_compute_active_leafs_pipeline () {
     this->compute_active_leafs_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
-void ComputeShaderRenderer::init_compute_prefix_sum_pass1_pipeline () {
+void SDFRasterizer::init_compute_prefix_sum_pass1_pipeline () {
     /*
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/prefix_sum_pass1.slang.spv");
@@ -230,7 +217,7 @@ void ComputeShaderRenderer::init_compute_prefix_sum_pass1_pipeline () {
     */
 }
 
-void ComputeShaderRenderer::init_compute_prefix_sum_pass2_pipeline () {
+void SDFRasterizer::init_compute_prefix_sum_pass2_pipeline () {
     /*
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/prefix_sum_pass2.slang.spv");
@@ -241,7 +228,7 @@ void ComputeShaderRenderer::init_compute_prefix_sum_pass2_pipeline () {
     */
 }
 
-void ComputeShaderRenderer::init_compute_prefix_sum_pass3_pipeline () {
+void SDFRasterizer::init_compute_prefix_sum_pass3_pipeline () {
     /*
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/prefix_sum_pass3.slang.spv");
@@ -252,7 +239,7 @@ void ComputeShaderRenderer::init_compute_prefix_sum_pass3_pipeline () {
     */
 }
 
-void ComputeShaderRenderer::init_compute_geometry_pipeline () {
+void SDFRasterizer::init_compute_geometry_pipeline () {
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/marching_cubes.comp.slang.spv");
     this->compute_geometry_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
@@ -265,7 +252,7 @@ void ComputeShaderRenderer::init_compute_geometry_pipeline () {
     this->compute_geometry_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
-void ComputeShaderRenderer::init_graphics_shading_pipeline () {
+void SDFRasterizer::init_graphics_shading_pipeline () {
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
@@ -433,7 +420,155 @@ void ComputeShaderRenderer::init_graphics_shading_pipeline () {
     shader_modules.clear ();
 }
 
-void ComputeShaderRenderer::init_graphics_frustum_pipeline () {
+void SDFRasterizer::init_mesh_shading_pipeline () {
+    const size_t shaders_count = 3;
+    std::vector <VkShaderModule> shader_modules (shaders_count);
+    std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
+
+    shader_stages [0] = vk_utils::loadShader (this->context->get_device ()
+            , "./shaders/octree_traversal.task.slang.spv"
+            , VK_SHADER_STAGE_TASK_BIT_EXT
+            , shader_modules);
+
+    shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
+            , "./shaders/marching_cubes.mesh.slang.spv"
+            , VK_SHADER_STAGE_MESH_BIT_EXT
+            , shader_modules);
+
+    shader_stages [2] = vk_utils::loadShader (this->context->get_device ()
+            , "./shaders/blinn_phong_mesh.frag.slang.spv"
+            , VK_SHADER_STAGE_FRAGMENT_BIT
+            , shader_modules);
+
+    VkPushConstantRange pushConstantRange {};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.size = sizeof (PushConstantsData);
+    pushConstantRange.offset = 0;
+
+    std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
+    // descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);
+    // descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds.descriptor_set_layout);
+    // descriptor_set_layouts.push_back (this->active_leafs_ds.descriptor_set_layout);
+    // descriptor_set_layouts.push_back (this->frustum_ds.descriptor_set_layout);
+    // descriptor_set_layouts.push_back (this->hz_buffer_ds.descriptor_set_layout);
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = descriptor_set_layouts.size ();
+    pipelineLayoutInfo.pSetLayouts = descriptor_set_layouts.data ();
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &this->mesh_pipeline_layout));
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly {};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    auto extent = this->context->get_swapchain_extent ();
+
+    VkViewport viewport {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float) extent.width;
+    viewport.height = (float) extent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor {};
+    scissor.offset = {0, 0};
+    scissor.extent = {(uint32_t) extent.width, (uint32_t) extent.height};
+
+    VkPipelineViewportStateCreateInfo viewportState {};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer {};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling {};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil {};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment {};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending {};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    std::vector <VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState {};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast <uint32_t> (dynamicStates.size ());
+    dynamicState.pDynamicStates = dynamicStates.data ();
+
+    VkGraphicsPipelineCreateInfo pipelineInfo {};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = static_cast <uint32_t> (shader_stages.size ());
+    pipelineInfo.pStages = shader_stages.data ();
+
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+
+    pipelineInfo.layout = this->mesh_pipeline_layout;
+    if (this->context->get_render_pass () == VK_NULL_HANDLE) {
+        throw std::runtime_error ("Render Pass is not initialized!");
+    }
+    pipelineInfo.renderPass = this->context->get_render_pass ();
+    pipelineInfo.subpass = 0;
+
+    VK_CHECK_RESULT (vkCreateGraphicsPipelines (this->context->get_device ()
+                , VK_NULL_HANDLE
+                , 1
+                , &pipelineInfo
+                , nullptr
+                , &this->mesh_pipeline));
+
+    for (VkShaderModule module : shader_modules) {
+        if (module != VK_NULL_HANDLE) {
+            vkDestroyShaderModule (this->context->get_device (), module, nullptr);
+        }
+    }
+    shader_modules.clear ();
+}
+
+void SDFRasterizer::init_graphics_frustum_pipeline () {
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
@@ -584,7 +719,7 @@ void ComputeShaderRenderer::init_graphics_frustum_pipeline () {
     shader_modules.clear ();
 }
 
-void ComputeShaderRenderer::toggle_frustum_buffer (Settings& settings) {
+void SDFRasterizer::toggle_frustum_buffer (Settings& settings) {
     if (settings.frustum_view) {
         settings.frustum_view = false;
         settings.camera = this->frustum_draw_buffer->get_camera ();
@@ -600,11 +735,11 @@ void ComputeShaderRenderer::toggle_frustum_buffer (Settings& settings) {
     LOG_INFO ("[{}] Frustum view mode: {}.", RENDERER_NAME, (settings.frustum_view) ? "ON" : "OFF");
 }
 
-void ComputeShaderRenderer::update_stats () {
+void SDFRasterizer::update_stats () {
     this->stats.active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
 }
 
-void ComputeShaderRenderer::update_push_constants (const Settings& settings) {
+void SDFRasterizer::update_push_constants (const Settings& settings) {
     this->push_constants.view_proj = settings.camera.get_view_projection_matrix ();
     this->push_constants.camera_pos = LiteMath::to_float4 (settings.camera.get_position (), 1.0f);
     this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
@@ -623,7 +758,7 @@ LiteMath::float3 face_normal (const LiteMath::float4& a, const LiteMath::float4&
 
 }
 
-void ComputeShaderRenderer::update_frustum_buffer (const Camera& camera) {
+void SDFRasterizer::update_frustum_buffer (const Camera& camera) {
     FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);
 
     const auto& vertices = camera.get_frustum_corners ();
@@ -637,7 +772,7 @@ void ComputeShaderRenderer::update_frustum_buffer (const Camera& camera) {
     ptr->normals [5] = LiteMath::to_float4 (face_normal (vertices [4], vertices [0], vertices [1]), 1.f); // Bottom
 }
 
-void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::clear_geometry (VkCommandBuffer cmd_buff) {
     vkCmdFillBuffer (cmd_buff, this->mesh_ds.vertices_buffers [this->frame_index], 0, VK_WHOLE_SIZE, 0x00000000);
     vkCmdFillBuffer (cmd_buff, this->mesh_ds.indices_buffers [this->frame_index], 0, VK_WHOLE_SIZE, 0x00000000);
 
@@ -666,7 +801,7 @@ void ComputeShaderRenderer::clear_geometry (VkCommandBuffer cmd_buff) {
     );
 }
 
-void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::copy_depth (VkCommandBuffer cmd_buff) {
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
 
     if (!this->frustum_draw_buffer && this->push_constants.occlusion_culling) {
@@ -796,7 +931,7 @@ void ComputeShaderRenderer::copy_depth (VkCommandBuffer cmd_buff) {
     );
 }
 
-void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
     // NOTE: expects layout of all hz_buffer_ds mip-images to be VK_IMAGE_LAYOUT_GENERAL
 
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
@@ -874,7 +1009,7 @@ void ComputeShaderRenderer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
          , 1, &barr);
 }
 
-void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
     vkCmdFillBuffer (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [this->frame_index], 0, VK_WHOLE_SIZE, 0x00000000);
 
     VkBufferMemoryBarrier buffer_barrier = {};
@@ -899,7 +1034,7 @@ void ComputeShaderRenderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff
     );
 }
 
-void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::compute_active_leafs (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
     std::array <VkDescriptorSet, 5> ds = {
@@ -918,7 +1053,7 @@ void ComputeShaderRenderer::compute_active_leafs (VkCommandBuffer cmd_buff) {
     vkCmdDispatch (cmd_buff, 8, 8, static_cast <uint32_t> (this->subtrees.size ()));
 }
 
-void ComputeShaderRenderer::hz_buffer_barrier (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff) {
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
 
     VkImageMemoryBarrier first_lvl_as_depth_dst = {};
@@ -971,7 +1106,7 @@ void ComputeShaderRenderer::hz_buffer_barrier (VkCommandBuffer cmd_buff) {
         , 1, &other_lvls_as_general);
 }
 
-void ComputeShaderRenderer::active_leafs_barrier (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::active_leafs_barrier (VkCommandBuffer cmd_buff) {
     VkBufferMemoryBarrier active_leafs_buffer_barrier = {};
     active_leafs_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     active_leafs_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -1033,7 +1168,7 @@ void ComputeShaderRenderer::active_leafs_barrier (VkCommandBuffer cmd_buff) {
     );
 }
 
-void ComputeShaderRenderer::prefix_sum_pass1 (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::prefix_sum_pass1 (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prefix_sum_pass1_pipeline);
 
     std::array <VkDescriptorSet, 1> ds = {
@@ -1048,15 +1183,15 @@ void ComputeShaderRenderer::prefix_sum_pass1 (VkCommandBuffer cmd_buff) {
     // vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
 }
 
-void ComputeShaderRenderer::prefix_sum_pass2 (VkCommandBuffer) {
+void SDFRasterizer::prefix_sum_pass2 (VkCommandBuffer) {
     // TODO
 }
 
-void ComputeShaderRenderer::prefix_sum_pass3 (VkCommandBuffer) {
+void SDFRasterizer::prefix_sum_pass3 (VkCommandBuffer) {
     // TODO
 }
 
-void ComputeShaderRenderer::compute_geometry (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::compute_geometry (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_geometry_pipeline);
 
     std::array <VkDescriptorSet, 5> ds = {
@@ -1075,7 +1210,7 @@ void ComputeShaderRenderer::compute_geometry (VkCommandBuffer cmd_buff) {
     vkCmdDispatchIndirect (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [this->frame_index], 0);
 }
 
-void ComputeShaderRenderer::geometry_barrier (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::geometry_barrier (VkCommandBuffer cmd_buff) {
     VkBufferMemoryBarrier vertex_buffer_barrier = {};
     vertex_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     vertex_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -1125,7 +1260,7 @@ void ComputeShaderRenderer::geometry_barrier (VkCommandBuffer cmd_buff) {
     );
 }
 
-void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, const Settings& settings) {
+void SDFRasterizer::draw_geometry (VkCommandBuffer cmd_buff, const Settings& settings) {
     const auto extent = this->context->get_swapchain_extent ();
 
     std::array <VkClearValue, 2> clear_values {};
@@ -1175,7 +1310,48 @@ void ComputeShaderRenderer::draw_geometry (VkCommandBuffer cmd_buff, const Setti
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::draw_mesh_tasks (VkCommandBuffer cmd_buff) {
+    const auto extent = this->context->get_swapchain_extent ();
+
+    std::array <VkClearValue, 2> clear_values {};
+    clear_values [0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clear_values [1].depthStencil = {1.0f, 0};
+
+    VkRenderPassBeginInfo render_pass_info {};
+    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    render_pass_info.renderPass = this->context->get_render_pass ();
+    render_pass_info.framebuffer = this->context->get_swapchain_framebuffer ();
+    render_pass_info.renderArea.offset = {0, 0};
+    render_pass_info.renderArea.extent = extent;
+    render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
+    render_pass_info.pClearValues = clear_values.data ();
+
+    vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport viewport {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast <float> (extent.width);
+    viewport.height = static_cast <float> (extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_pipeline);
+
+    vkCmdPushConstants (cmd_buff, this->mesh_pipeline_layout, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &push_constants);
+
+    vkCmdDrawMeshTasksEXT (cmd_buff, 1, 1, 1);
+
+    vkCmdEndRenderPass (cmd_buff);
+}
+
+void SDFRasterizer::draw_frustum (VkCommandBuffer cmd_buff) {
     const auto extent = this->context->get_swapchain_extent ();
 
     VkRenderPassBeginInfo render_pass_info {};
@@ -1215,7 +1391,7 @@ void ComputeShaderRenderer::draw_frustum (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void ComputeShaderRenderer::render (const Settings& settings) {
+void SDFRasterizer::render (const Settings& settings) {
     if (!this->initialized) {
         LOG_ERROR ("render called before initialization");
         return;
@@ -1258,6 +1434,10 @@ void ComputeShaderRenderer::render (const Settings& settings) {
         this->draw_frustum (cmd_buff);
     }
 
+    if (0) {
+        this->draw_mesh_tasks (cmd_buff);
+    }
+
     gui::draw (this->context->get_swapchain_image_index (), cmd_buff);
 
     if (!settings.frustum_view) {
@@ -1265,41 +1445,14 @@ void ComputeShaderRenderer::render (const Settings& settings) {
     }
 
     this->context->end_frame (cmd_buff, this->frame_index);
-
-    static bool dump = true;
-    if (!dump) {
-        vkDeviceWaitIdle (this->context->get_device ());
-
-        uint32_t active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
-        const auto active_leafs = fetch_active_leafs (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, this->frame_index);
-        const auto vertices_count = fetch_vertices_count (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, this->frame_index);
-        const auto indices_count = fetch_indices_count (this->context->get_copy_helper (), this->active_leafs_ds, active_leafs_count, this->frame_index);
-        size_t vertices_count_total = 0;
-        size_t indices_count_total = 0;
-        for (size_t i = 0; i < active_leafs.size (); ++i) {
-            std::cout << "ActiveLeaf ["<< i << "] = " << active_leafs [i] << ", v: " << vertices_count [i] << ", i " << indices_count [i] << std::endl;
-            vertices_count_total += vertices_count [i];
-            indices_count_total += indices_count [i];
-        }
-        std::cout << "ActiveLeaf count: " << active_leafs_count << "/" << this->push_constants.active_leafs_max_count << std::endl;
-        std::cout << "vertices count: " << vertices_count_total << "/" << 100000 << std::endl;
-        std::cout << "indices count: " << indices_count_total << "/" << 100000 << std::endl;
-
-        const auto mesh = fetch_mesh_from_device (this->context->get_copy_helper (), this->mesh_ds, this->frame_index);
-        save_mesh_as_obj (mesh, "result.obj");
-
-        dump = true;
-        vkDeviceWaitIdle (this->context->get_device ());
-    }
-
     this->frame_index = (this->frame_index + 1) % this->context->get_total_frames ();
 }
 
-const Stats& ComputeShaderRenderer::get_stats () {
+const Stats& SDFRasterizer::get_stats () {
     return this->stats;
 }
 
-void ComputeShaderRenderer::shutdown () {
+void SDFRasterizer::shutdown () {
     vkDeviceWaitIdle (this->context->get_device ());
 
     if (!this->context || !this->context->is_initialized ()) {
@@ -1328,6 +1481,7 @@ void ComputeShaderRenderer::shutdown () {
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass3_pipeline, this->compute_prefix_sum_pass3_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_geometry_pipeline, this->compute_geometry_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_pipeline, this->graphics_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->mesh_pipeline, this->mesh_pipeline_layout);
 
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_frustum_pipeline, this->graphics_frustum_pipeline_layout);
 

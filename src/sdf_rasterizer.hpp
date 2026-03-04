@@ -19,10 +19,10 @@
 
 namespace sdf_raster {
 
-class ComputeShaderRenderer : public Renderer {
+class SDFRasterizer : public Renderer {
 public:
-    explicit ComputeShaderRenderer (std::shared_ptr <VulkanContext> vulkan_context);
-    ~ComputeShaderRenderer ();
+    explicit SDFRasterizer (std::shared_ptr <VulkanContext> vulkan_context);
+    ~SDFRasterizer ();
 
     void init (const SdfOctree& default_scene) override;
     void update_scene (const SdfOctree& scene) override;
@@ -40,6 +40,7 @@ private:
     void init_compute_prefix_sum_pass3_pipeline ();
     void init_compute_geometry_pipeline ();
     void init_graphics_shading_pipeline ();
+    void init_mesh_shading_pipeline ();
 
     void register_resizable ();
 
@@ -61,6 +62,7 @@ private:
     void compute_geometry (VkCommandBuffer cmd_buff);
     void geometry_barrier (VkCommandBuffer cmd_buff);
     void draw_geometry (VkCommandBuffer cmd_buff, const Settings& settings);
+    void draw_mesh_tasks (VkCommandBuffer cmd_buff);
     void draw_frustum (VkCommandBuffer cmd_buff);
     void copy_depth (VkCommandBuffer cmd_buff);
 
@@ -75,6 +77,9 @@ private:
     DrawIndexedIndirectCommandDescriptorSetInfo draw_indexed_indirect_command_ds {};
     HZBufferDescriptorSetInfo hz_buffer_ds {};
     FrustumDescriptorSetInfo frustum_ds {};
+
+    VkPipelineLayout mesh_pipeline_layout {VK_NULL_HANDLE};
+    VkPipeline mesh_pipeline {VK_NULL_HANDLE};
 
     VkPipelineLayout graphics_pipeline_layout {VK_NULL_HANDLE};
     VkPipeline graphics_pipeline {VK_NULL_HANDLE};

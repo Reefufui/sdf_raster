@@ -54,11 +54,11 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_utils_message_callback (
 
 #endif
 
-void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support) {
+void VulkanContext::init (int a_width, int a_height) {
     VK_CHECK_RESULT (volkInitialize ());
     this->create_instance ();
     this->physical_device = vk_utils::findPhysicalDevice (this->get_instance (), true, 0, {});
-    this->create_device (a_mesh_shader_support);
+    this->create_device ();
     this->create_command_pools ();
     this->get_device_queues ();
     this->copy_helper = std::make_shared <vk_utils::PingPongCopyHelper> (this->get_physical_device ()
@@ -91,9 +91,9 @@ void VulkanContext::init (int a_width, int a_height, bool a_mesh_shader_support)
     this->initialized = true;
 }
 
-void VulkanContext::init (GLFWwindow* a_window, int a_width, int a_height, bool a_mesh_shader_support) {
+void VulkanContext::init (GLFWwindow* a_window, int a_width, int a_height) {
     this->window = a_window;
-    this->init (a_width, a_height, a_mesh_shader_support);
+    this->init (a_width, a_height);
 }
 
 void VulkanContext::create_instance () {
@@ -186,51 +186,51 @@ void VulkanContext::setup_debug_utils_messenger () {
 #endif
 
 void VulkanContext::dump_mesh_shader_properties () const {
-    LOG_INFO("\n--- VkPhysicalDeviceMeshShaderPropertiesEXT ---");
-    LOG_INFO("  maxTaskWorkGroupTotalCount: {}", mesh_shader_properties.maxTaskWorkGroupTotalCount);
-    LOG_INFO("  maxTaskWorkGroupCount: [{}, {}, {}]",
-             mesh_shader_properties.maxTaskWorkGroupCount[0],
-             mesh_shader_properties.maxTaskWorkGroupCount[1],
-             mesh_shader_properties.maxTaskWorkGroupCount[2]);
-    LOG_INFO("  maxTaskWorkGroupInvocations: {}", mesh_shader_properties.maxTaskWorkGroupInvocations);
-    LOG_INFO("  maxTaskWorkGroupSize: [{}, {}, {}]",
-             mesh_shader_properties.maxTaskWorkGroupSize[0],
-             mesh_shader_properties.maxTaskWorkGroupSize[1],
-             mesh_shader_properties.maxTaskWorkGroupSize[2]);
-    LOG_INFO("  maxTaskPayloadSize: {}", mesh_shader_properties.maxTaskPayloadSize);
-    LOG_INFO("  maxTaskSharedMemorySize: {}", mesh_shader_properties.maxTaskSharedMemorySize);
-    LOG_INFO("  maxTaskPayloadAndSharedMemorySize: {}", mesh_shader_properties.maxTaskPayloadAndSharedMemorySize);
-    LOG_INFO("  maxMeshWorkGroupTotalCount: {}", mesh_shader_properties.maxMeshWorkGroupTotalCount);
-    LOG_INFO("  maxMeshWorkGroupCount: [{}, {}, {}]",
-             mesh_shader_properties.maxMeshWorkGroupCount[0],
-             mesh_shader_properties.maxMeshWorkGroupCount[1],
-             mesh_shader_properties.maxMeshWorkGroupCount[2]);
-    LOG_INFO("  maxMeshWorkGroupInvocations: {}", mesh_shader_properties.maxMeshWorkGroupInvocations);
-    LOG_INFO("  maxMeshWorkGroupSize: [{}, {}, {}]",
-             mesh_shader_properties.maxMeshWorkGroupSize[0],
-             mesh_shader_properties.maxMeshWorkGroupSize[1],
-             mesh_shader_properties.maxMeshWorkGroupSize[2]);
-    LOG_INFO("  maxMeshSharedMemorySize: {}", mesh_shader_properties.maxMeshSharedMemorySize);
-    LOG_INFO("  maxMeshPayloadAndSharedMemorySize: {}", mesh_shader_properties.maxMeshPayloadAndSharedMemorySize);
-    LOG_INFO("  maxMeshOutputMemorySize: {}", mesh_shader_properties.maxMeshOutputMemorySize);
-    LOG_INFO("  maxMeshPayloadAndOutputMemorySize: {}", mesh_shader_properties.maxMeshPayloadAndOutputMemorySize);
-    LOG_INFO("  maxMeshOutputComponents: {}", mesh_shader_properties.maxMeshOutputComponents);
-    LOG_INFO("  maxMeshOutputVertices: {}", mesh_shader_properties.maxMeshOutputVertices);
-    LOG_INFO("  maxMeshOutputPrimitives: {}", mesh_shader_properties.maxMeshOutputPrimitives);
-    LOG_INFO("  maxMeshOutputLayers: {}", mesh_shader_properties.maxMeshOutputLayers);
-    LOG_INFO("  maxMeshMultiviewViewCount: {}", mesh_shader_properties.maxMeshMultiviewViewCount);
-    LOG_INFO("  meshOutputPerVertexGranularity: {}", mesh_shader_properties.meshOutputPerVertexGranularity);
-    LOG_INFO("  meshOutputPerPrimitiveGranularity: {}", mesh_shader_properties.meshOutputPerPrimitiveGranularity);
-    LOG_INFO("  maxPreferredTaskWorkGroupInvocations: {}", mesh_shader_properties.maxPreferredTaskWorkGroupInvocations);
-    LOG_INFO("  maxPreferredMeshWorkGroupInvocations: {}", mesh_shader_properties.maxPreferredMeshWorkGroupInvocations);
-    LOG_INFO("  prefersLocalInvocationVertexOutput: {}", mesh_shader_properties.prefersLocalInvocationVertexOutput ? "true" : "false");
-    LOG_INFO("  prefersLocalInvocationPrimitiveOutput: {}", mesh_shader_properties.prefersLocalInvocationPrimitiveOutput ? "true" : "false");
-    LOG_INFO("  prefersCompactVertexOutput: {}", mesh_shader_properties.prefersCompactVertexOutput ? "true" : "false");
-    LOG_INFO("  prefersCompactPrimitiveOutput: {}", mesh_shader_properties.prefersCompactPrimitiveOutput ? "true" : "false");
-    LOG_INFO("-------------------------------------------\n");
+    LOG_INFO ("--- VkPhysicalDeviceMeshShaderPropertiesEXT ---");
+    LOG_INFO ("  maxTaskWorkGroupTotalCount: {}", mesh_shader_properties.maxTaskWorkGroupTotalCount);
+    LOG_INFO ("  maxTaskWorkGroupCount: [{}, {}, {}]",
+              mesh_shader_properties.maxTaskWorkGroupCount[0],
+              mesh_shader_properties.maxTaskWorkGroupCount[1],
+              mesh_shader_properties.maxTaskWorkGroupCount[2]);
+    LOG_INFO ("  maxTaskWorkGroupInvocations: {}", mesh_shader_properties.maxTaskWorkGroupInvocations);
+    LOG_INFO ("  maxTaskWorkGroupSize: [{}, {}, {}]",
+              mesh_shader_properties.maxTaskWorkGroupSize[0],
+              mesh_shader_properties.maxTaskWorkGroupSize[1],
+              mesh_shader_properties.maxTaskWorkGroupSize[2]);
+    LOG_INFO ("  maxTaskPayloadSize: {}", mesh_shader_properties.maxTaskPayloadSize);
+    LOG_INFO ("  maxTaskSharedMemorySize: {}", mesh_shader_properties.maxTaskSharedMemorySize);
+    LOG_INFO ("  maxTaskPayloadAndSharedMemorySize: {}", mesh_shader_properties.maxTaskPayloadAndSharedMemorySize);
+    LOG_INFO ("  maxMeshWorkGroupTotalCount: {}", mesh_shader_properties.maxMeshWorkGroupTotalCount);
+    LOG_INFO ("  maxMeshWorkGroupCount: [{}, {}, {}]",
+              mesh_shader_properties.maxMeshWorkGroupCount[0],
+              mesh_shader_properties.maxMeshWorkGroupCount[1],
+              mesh_shader_properties.maxMeshWorkGroupCount[2]);
+    LOG_INFO ("  maxMeshWorkGroupInvocations: {}", mesh_shader_properties.maxMeshWorkGroupInvocations);
+    LOG_INFO ("  maxMeshWorkGroupSize: [{}, {}, {}]",
+              mesh_shader_properties.maxMeshWorkGroupSize[0],
+              mesh_shader_properties.maxMeshWorkGroupSize[1],
+              mesh_shader_properties.maxMeshWorkGroupSize[2]);
+    LOG_INFO ("  maxMeshSharedMemorySize: {}", mesh_shader_properties.maxMeshSharedMemorySize);
+    LOG_INFO ("  maxMeshPayloadAndSharedMemorySize: {}", mesh_shader_properties.maxMeshPayloadAndSharedMemorySize);
+    LOG_INFO ("  maxMeshOutputMemorySize: {}", mesh_shader_properties.maxMeshOutputMemorySize);
+    LOG_INFO ("  maxMeshPayloadAndOutputMemorySize: {}", mesh_shader_properties.maxMeshPayloadAndOutputMemorySize);
+    LOG_INFO ("  maxMeshOutputComponents: {}", mesh_shader_properties.maxMeshOutputComponents);
+    LOG_INFO ("  maxMeshOutputVertices: {}", mesh_shader_properties.maxMeshOutputVertices);
+    LOG_INFO ("  maxMeshOutputPrimitives: {}", mesh_shader_properties.maxMeshOutputPrimitives);
+    LOG_INFO ("  maxMeshOutputLayers: {}", mesh_shader_properties.maxMeshOutputLayers);
+    LOG_INFO ("  maxMeshMultiviewViewCount: {}", mesh_shader_properties.maxMeshMultiviewViewCount);
+    LOG_INFO ("  meshOutputPerVertexGranularity: {}", mesh_shader_properties.meshOutputPerVertexGranularity);
+    LOG_INFO ("  meshOutputPerPrimitiveGranularity: {}", mesh_shader_properties.meshOutputPerPrimitiveGranularity);
+    LOG_INFO ("  maxPreferredTaskWorkGroupInvocations: {}", mesh_shader_properties.maxPreferredTaskWorkGroupInvocations);
+    LOG_INFO ("  maxPreferredMeshWorkGroupInvocations: {}", mesh_shader_properties.maxPreferredMeshWorkGroupInvocations);
+    LOG_INFO ("  prefersLocalInvocationVertexOutput: {}", mesh_shader_properties.prefersLocalInvocationVertexOutput ? "true" : "false");
+    LOG_INFO ("  prefersLocalInvocationPrimitiveOutput: {}", mesh_shader_properties.prefersLocalInvocationPrimitiveOutput ? "true" : "false");
+    LOG_INFO ("  prefersCompactVertexOutput: {}", mesh_shader_properties.prefersCompactVertexOutput ? "true" : "false");
+    LOG_INFO ("  prefersCompactPrimitiveOutput: {}", mesh_shader_properties.prefersCompactPrimitiveOutput ? "true" : "false");
+    LOG_INFO ("-------------------------------------------");
 }
 
-void VulkanContext::create_device (bool a_mesh_shader_support) {
+void VulkanContext::create_device () {
     std::vector <const char*> validation_layers_to_enable {}; // validation layers already enabled on instance level
     std::vector <const char*> device_extensions_to_enable {};
 
@@ -273,27 +273,23 @@ void VulkanContext::create_device (bool a_mesh_shader_support) {
     VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shader_features_query {};
     VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties_query {};
 
-    if (a_mesh_shader_support) {
-        device_extensions_to_enable.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
+    device_extensions_to_enable.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
 
-        mesh_shader_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
-        mesh_shader_features_query.pNext = pNext_query_chain;
-        pNext_query_chain = &mesh_shader_features_query;
+    mesh_shader_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+    mesh_shader_features_query.pNext = pNext_query_chain;
+    pNext_query_chain = &mesh_shader_features_query;
 
-        mesh_shader_properties_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
-        mesh_shader_properties_query.pNext = nullptr;
-    }
+    mesh_shader_properties_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
+    mesh_shader_properties_query.pNext = nullptr;
 
     device_features_2.pNext = pNext_query_chain;
 
     vkGetPhysicalDeviceFeatures2 (this->get_physical_device (), &device_features_2);
 
-    if (a_mesh_shader_support) {
-        VkPhysicalDeviceProperties2 properties_2 {};
-        properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-        properties_2.pNext = &mesh_shader_properties_query;
-        vkGetPhysicalDeviceProperties2 (this->get_physical_device (), &properties_2);
-    }
+    VkPhysicalDeviceProperties2 properties_2 {};
+    properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    properties_2.pNext = &mesh_shader_properties_query;
+    vkGetPhysicalDeviceProperties2 (this->get_physical_device (), &properties_2);
 
     if (!device_features_2.features.wideLines) {
         LOG_WARN ("[VulkanContext] Physical device does NOT support wideLines. Defaulting to lineWidth = 1.0.");
@@ -341,11 +337,7 @@ void VulkanContext::create_device (bool a_mesh_shader_support) {
     }
 
     VkPhysicalDeviceMeshShaderFeaturesEXT requested_mesh_shader_features_enable {};
-    if (a_mesh_shader_support) {
-        if (!mesh_shader_features_query.meshShader) {
-            throw std::runtime_error("Mesh Shaders are NOT supported on this physical device.");
-        }
-
+    if (mesh_shader_features_query.taskShader && mesh_shader_features_query.meshShader) {
         requested_mesh_shader_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
         requested_mesh_shader_features_enable.taskShader = VK_TRUE;
         requested_mesh_shader_features_enable.meshShader = VK_TRUE;
@@ -353,11 +345,14 @@ void VulkanContext::create_device (bool a_mesh_shader_support) {
         pNext_create_chain = &requested_mesh_shader_features_enable;
 
         this->mesh_shader_properties = mesh_shader_properties_query;
+        this->dump_mesh_shader_properties ();
+    } else {
+        throw std::runtime_error("Mesh Shaders are NOT supported on this physical device.");
     }
 
     VkPhysicalDeviceFeatures features_to_enable_in_base_struct = device_features_2.features;
 #ifdef __APPLE__
-    features_to_enable_in_base_struct.robustBufferAccess = VK_FALSE; // unsupported on Metal
+    features_to_enable_in_base_struct.robustBufferAccess = VK_FALSE; // NOTE: unsupported on Metal
 #endif
 
     this->device = vk_utils::createLogicalDevice (this->get_physical_device ()
@@ -370,10 +365,6 @@ void VulkanContext::create_device (bool a_mesh_shader_support) {
     );
 
     volkLoadDevice (this->get_device ());
-
-    if (a_mesh_shader_support) {
-        this->dump_mesh_shader_properties();
-    }
 }
 
 void VulkanContext::create_command_pools () {
@@ -701,7 +692,6 @@ VkCommandBuffer VulkanContext::begin_frame (uint32_t frame_idx) {
     LOG_TRACE ("in-flight frame: {}, swapchain image: {}", frame_idx, this->acquired_image_index);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || this->framebuffer_resized) {
-        LOG_INFO ("RESIZING FROM begin_frame");
         this->resize ();
         return VK_NULL_HANDLE;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -764,7 +754,6 @@ void VulkanContext::end_frame (VkCommandBuffer command_buffer, uint32_t frame_id
     VkResult result = this->swapchain.QueuePresent (this->present_queue, this->acquired_image_index, this->gpu_ready_to_present [this->acquired_image_index]);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-        LOG_INFO ("RESIZING FROM end_frame");
         this->resize ();
     } else if (result != VK_SUCCESS) {
         throw std::runtime_error ("failed to present swap chain image!");

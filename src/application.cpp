@@ -5,11 +5,10 @@
 #include <thread>
 
 #include "application.hpp"
-#include "compute_shader_renderer.hpp"
+#include "sdf_rasterizer.hpp"
 #include "gui.hpp"
 #include "logger.hpp"
 #include "marching_cubes.hpp"
-// DEPRECATED: #include "mesh_shader_renderer.hpp"
 #include "sdf_octree.hpp"
 
 namespace sdf_raster {
@@ -95,8 +94,7 @@ void Application::init_window () {
     glfwSetKeyCallback (this->window, key_callback);
     glfwSetMouseButtonCallback (this->window, mouse_button_callback);
 
-    glfwSetInputMode (this->window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    this->settings.disabled_cursor = true;
+    this->settings.disabled_cursor = false;
     this->first_mouse = true;
 
     int width, height;
@@ -120,7 +118,7 @@ void Application::init_vulkan () {
 
     int width, height;
     glfwGetWindowSize (this->window, &width, &height);
-    this->vulkan_context->init (this->window, width, height, false);
+    this->vulkan_context->init (this->window, width, height);
 
     auto resize_camera = [&] () {
         auto extent = this->vulkan_context->get_swapchain_extent ();
@@ -137,7 +135,7 @@ void Application::init_vulkan () {
 }
 
 void Application::init_renderer () {
-    this->renderer = std::make_unique <ComputeShaderRenderer> (this->vulkan_context);
+    this->renderer = std::make_unique <SDFRasterizer> (this->vulkan_context);
     load_sdf_octree (this->scene, this->settings.scene_path);
     this->renderer->init (this->scene);
 }

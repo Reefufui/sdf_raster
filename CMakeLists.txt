@@ -144,13 +144,12 @@ add_library (LiteMath::LiteImage ALIAS LiteImage)
 add_executable(${PROJECT_NAME}
     src/application.cpp
     src/camera.cpp
-    src/compute_shader_renderer.cpp
+    src/sdf_rasterizer.cpp
     src/gui.cpp
     src/logger.cpp
     src/main.cpp
     src/marching_cubes_lookup_table.cpp
     src/marching_cubes.cpp
-    # DEPRECATED: src/mesh_shader_renderer.cpp
     src/mesh.cpp
     src/occlusion_culling.cpp
     src/sdf_octree.cpp

@@ -48,6 +48,7 @@ public:
     inline uint32_t get_swapchain_image_count () const { return this->swapchain.GetImageCount (); }
     inline uint32_t get_swapchain_image_index () const { return this->acquired_image_index; }
     inline VkFormat get_depth_format () const { return this->depth_format; }
+    inline bool get_use_mesh_shading () const { return this->use_mesh_shading; }
 
     VkCommandBuffer begin_frame (uint32_t frame_idx);
     void end_frame (VkCommandBuffer command_buffer, uint32_t frame_idx);
@@ -122,6 +123,7 @@ private:
     RenderPassResources main;
     RenderPassResources after;
 
+    bool use_mesh_shading;
     VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties;
 
     std::vector <std::function <void ()>> resizable_callbacks;

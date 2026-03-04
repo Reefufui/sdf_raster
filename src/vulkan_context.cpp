@@ -273,8 +273,6 @@ void VulkanContext::create_device () {
     VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shader_features_query {};
     VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties_query {};
 
-    device_extensions_to_enable.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
-
     mesh_shader_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
     mesh_shader_features_query.pNext = pNext_query_chain;
     pNext_query_chain = &mesh_shader_features_query;
@@ -344,10 +342,13 @@ void VulkanContext::create_device () {
         requested_mesh_shader_features_enable.pNext = pNext_create_chain;
         pNext_create_chain = &requested_mesh_shader_features_enable;
 
+        this->use_mesh_shading = true;
         this->mesh_shader_properties = mesh_shader_properties_query;
         this->dump_mesh_shader_properties ();
+        device_extensions_to_enable.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
     } else {
-        throw std::runtime_error("Mesh Shaders are NOT supported on this physical device.");
+        this->use_mesh_shading = false;
+        LOG_WARN ("Mesh Shaders are NOT supported on this physical device.");
     }
 
     VkPhysicalDeviceFeatures features_to_enable_in_base_struct = device_features_2.features;

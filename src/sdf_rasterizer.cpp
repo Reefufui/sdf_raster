@@ -51,8 +51,11 @@ void SDFRasterizer::init (const SdfOctree& default_scene) {
     this->init_compute_geometry_pipeline ();
     this->init_graphics_shading_pipeline ();
     this->init_graphics_frustum_pipeline ();
-    this->init_mesh_shading_pipeline ();
     this->register_resizable ();
+
+    if (this->context->get_use_mesh_shading ()) {
+        this->init_mesh_shading_pipeline ();
+    }
 
     this->initialized = true;
 }
@@ -1434,7 +1437,7 @@ void SDFRasterizer::render (const Settings& settings) {
         this->draw_frustum (cmd_buff);
     }
 
-    if (0) {
+    if (this->context->get_use_mesh_shading ()) {
         this->draw_mesh_tasks (cmd_buff);
     }
 

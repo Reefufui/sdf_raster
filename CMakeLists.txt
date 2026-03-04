@@ -154,6 +154,7 @@ add_executable(${PROJECT_NAME}
     src/mesh.cpp
     src/occlusion_culling.cpp
     src/sdf_octree.cpp
+    src/state.cpp
     src/vulkan_context.cpp
 )
 

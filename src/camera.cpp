@@ -1,12 +1,10 @@
 #include <fstream>
 #include <vector>
 
-#include "nlohmann/json.hpp"
 #include "vk_buffers.h"
 #include "vk_utils.h"
 
 #include "camera.hpp"
-#include "logger.hpp"
 #include "shader_common.hpp"
 
 namespace sdf_raster {
@@ -105,58 +103,6 @@ void Camera::update () {
         LiteMath::float4 world_p = this->inv_view_projection_matrix * clip_corners [i];
         world_p /= world_p.w;
         this->frustum_corners [i] = LiteMath::float4 (world_p.x, world_p.y, world_p.z, 1.f);
-    }
-}
-
-inline nlohmann::json float3_to_json (const LiteMath::float3& vec) {
-    return {{"x", vec.x}, {"y", vec.y}, {"z", vec.z}};
-}
-
-inline LiteMath::float3 json_to_float3 (const nlohmann::json& j) {
-    return LiteMath::float3 (j.at ("x").get <float> (), j.at ("y").get <float> (), j.at ("z").get <float> ());
-}
-
-void Camera::dump (const std::string& filename) const {
-    nlohmann::json j;
-    j ["position"] = float3_to_json (position);
-    j ["yaw_angle"] = yaw_angle;
-    j ["pitch_angle"] = pitch_angle;
-    j ["fov_y"] = fov_y;
-    j ["movement_speed"] = movement_speed;
-    j ["mouse_sensitivity"] = mouse_sensitivity;
-
-    std::ofstream o (filename);
-    if (o.is_open ()) {
-        o << std::setw (4) << j << std::endl;
-        o.close();
-        LOG_INFO ("[Camera] Cached camera settings to '{}' file for future use.", filename);
-    } else {
-        LOG_ERROR ("[Camera] Couldn't open file '{}' for dumping camera settings.", filename);
-    }
-}
-
-void Camera::load (const std::string& filename) {
-    std::ifstream i (filename);
-    if (i.is_open ()) {
-        try {
-            nlohmann::json j;
-            i >> j;
-
-            position = json_to_float3 (j.at ("position"));
-            yaw_angle = j.at ("yaw_angle").get <float> ();
-            pitch_angle = j.at ("pitch_angle").get <float> ();
-            fov_y = j.at ("fov_y").get <float> ();
-            movement_speed = j.at ("movement_speed").get <float> ();
-            mouse_sensitivity = j.at ("mouse_sensitivity").get <float> ();
-        } catch (const nlohmann::json::exception& e) {
-            LOG_ERROR ("[Camera] Failed to parse camera settings from JSON '{}': {}.", filename, e.what ());
-        } catch (const std::exception& e) {
-            LOG_ERROR ("[Camera] Failed to load camera settings: {}..", e.what ());
-        }
-        i.close ();
-        LOG_INFO ("[Camera] Restored cached camera settings from '{}'.", filename);
-    } else {
-        LOG_WARN ("[Camera] Failed to open camera settings file '{}'. Fall back to defaults.", filename);
     }
 }
 

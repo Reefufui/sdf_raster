@@ -62,7 +62,7 @@ private:
 private:
     void init_style ();
 
-    void menu_bar ();
+    void menu_bar (Settings& settings);
     void file_dialog (Settings& settings);
     void occlusion_window (Settings& settings);
     void status_bar (Settings& settings, const Stats& stats);
@@ -72,10 +72,8 @@ private:
 
     bool show_ui = true;
     Settings previous_frame_settings;
-    float alpha = .8f;
+    const float alpha = .8f;
 
-    bool show_camera_window = false;
-    bool show_occlusion_window = false;
     bool lock_occlusion_culling = false;
 };
 
@@ -220,7 +218,7 @@ void UI::init (const InitInfo& info) {
     this->file_browser.SetTypeFilters ({ ".octree" });
 }
 
-void UI::menu_bar () {
+void UI::menu_bar (Settings& settings) {
     if (ImGui::BeginMainMenuBar ()) {
         if (ImGui::BeginMenu ("File")) {
             if (ImGui::MenuItem ("Open...", "Ctrl+O")) {
@@ -234,8 +232,8 @@ void UI::menu_bar () {
         }
 
         if (ImGui::BeginMenu ("View")) {
-            if (ImGui::MenuItem ("Show Culling Window", "", &this->show_occlusion_window)) { }
-            if (ImGui::MenuItem ("Show Camera Window", "", &this->show_camera_window)) { }
+            if (ImGui::MenuItem ("Show Culling Window", "", &settings.show_occlusion_window)) { }
+            if (ImGui::MenuItem ("Show Camera Window", "", &settings.show_camera_window)) { }
             ImGui::EndMenu ();
         }
 
@@ -453,15 +451,15 @@ void UI::update (Settings& settings, const Stats& stats, float delta_time) {
 
     ImGui::NewFrame ();
 
-    this->menu_bar ();
+    this->menu_bar (settings);
     this->file_dialog (settings);
 
     camera_input (settings);
-    if (this->show_camera_window) {
+    if (settings.show_camera_window) {
         camera_window (settings.camera);
     }
 
-    if (this->show_occlusion_window) {
+    if (settings.show_occlusion_window) {
         this->occlusion_window (settings);
     }
 

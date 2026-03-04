@@ -17,6 +17,7 @@ namespace sdf_raster {
 Application::Application ()
     : user_data ({this}) {
     try {
+        load_state (this->settings, "/tmp/sdf_raster.json");
         init_window ();
         init_vulkan ();
         init_renderer ();
@@ -28,10 +29,9 @@ Application::Application ()
 }
 
 Application::~Application () {
-    this->settings.camera.dump ("/tmp/cached_camera.json"); // TODO: dump whole settings
     glfwSetWindowShouldClose (this->window, true);
-
     cleanup ();
+    dump_state (this->settings, "/tmp/sdf_raster.json");
 }
 
 void Application::marching_cubes_cpu (const std::string& a_octree_filename, const std::string& a_mesh_filename) {
@@ -52,7 +52,6 @@ void Application::run (bool single_frame) {
     }
 
     try {
-        this->settings.camera.load ("/tmp/cached_camera.json");
         this->last_frame = glfwGetTime ();
 
         do {
@@ -131,7 +130,6 @@ void Application::init_window () {
     float f_width = static_cast <float> (width);
     float f_height = static_cast <float> (height);
 
-    this->settings.camera = Camera ();
     this->settings.camera.set_aspect_ratio (f_width / f_height);
 
     this->last_x = f_width / 2.0f;
@@ -164,11 +162,7 @@ void Application::init_vulkan () {
 
 void Application::init_renderer () {
     this->renderer = std::make_unique <ComputeShaderRenderer> (this->vulkan_context);
-
-    std::filesystem::path default_scene_path ("./assets/lowpoly_bunny.octree"); // TODO: set from config
-    load_sdf_octree (this->scene, default_scene_path);
-    this->settings.scene_name = default_scene_path.stem ().string ();
-    this->settings.scene_path = default_scene_path;
+    load_sdf_octree (this->scene, this->settings.scene_path);
     this->renderer->init (this->scene);
 }
 

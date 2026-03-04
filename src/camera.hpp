@@ -1,9 +1,12 @@
+// camera.hpp
+
 #pragma once
 
 #include <array>
 #include <cmath>
 #include <memory>
 
+#include "nlohmann/json.hpp"
 #include "LiteMath.h"
 #include "vk_copy.h"
 #include "vk_descriptor_sets.h"
@@ -35,12 +38,11 @@ public:
     void process_mouse_movement (float x_offset, float y_offset);
     void process_scroll (float offset, bool constrain_fov = true);
 
-    void dump (const std::string& filename) const;
-    void load (const std::string& filename);
     void reset ();
     void update ();
 
     friend void gui::camera_window (Camera& camera);
+    friend struct nlohmann::adl_serializer <Camera>;
 
 private:
     // TODO: create static camera instance with default values

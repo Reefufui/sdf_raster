@@ -9,7 +9,7 @@
 #include "camera.hpp"
 #include "renderer.hpp"
 #include "sdf_octree.hpp"
-#include "settings.hpp"
+#include "state.hpp"
 #include "vulkan_context.hpp"
 
 namespace sdf_raster {

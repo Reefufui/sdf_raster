@@ -29,7 +29,7 @@ struct InitInfo {
 
 void init (const InitInfo& info);
 
-void update (Settings& settings, const Stats& stats, float delta_time);
+void update (Settings& settings, const Stats& stats);
 
 void draw (uint32_t image_index, VkCommandBuffer cmd_buff);
 

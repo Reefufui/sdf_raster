@@ -565,7 +565,7 @@ void VulkanContext::create_swapchain (uint32_t width, uint32_t height) {
             , width
             , height
             , this->frames_in_swapchain
-            , true); // TODO: set in config
+            , false); // TODO: set in config
 
     this->frames_in_swapchain = this->swapchain.GetImageCount ();
 

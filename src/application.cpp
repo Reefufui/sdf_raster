@@ -52,21 +52,7 @@ void Application::run (bool single_frame) {
     }
 
     try {
-        this->last_frame = glfwGetTime ();
-
         do {
-            float current_frame = glfwGetTime ();
-            this->delta_time = current_frame - last_frame;
-            this->last_frame = current_frame;
-
-            this->frame_times.push_back (this->delta_time);
-            total_frame_time += this->delta_time;
-
-            if (frame_times.size () > max_frame_times) {
-                total_frame_time -= frame_times.front ();
-                frame_times.erase (frame_times.begin ());
-            }
-
             glfwPollEvents ();
             int iconified = glfwGetWindowAttrib (this->window, GLFW_ICONIFIED);
             if (iconified) {
@@ -74,12 +60,8 @@ void Application::run (bool single_frame) {
                 continue;
             }
 
-            double current_time = glfwGetTime ();
-            this->delta_time = static_cast <float> (current_time - last_frame);
-            this->last_frame = current_time;
-
             const auto& stats = this->renderer->get_stats ();
-            gui::update (settings, stats, this->delta_time);
+            gui::update (settings, stats);
 
             if (this->scene.name != settings.scene_name) {
                 load_sdf_octree (this->scene, settings.scene_path);
@@ -88,12 +70,6 @@ void Application::run (bool single_frame) {
 
             this->settings.camera.update ();
             this->renderer->render (this->settings);
-
-            if (this->dump_snapshot) {
-                float current_fps = (total_frame_time > 0.0f && !frame_times.empty()) ? (static_cast<float>(frame_times.size()) / total_frame_time) : 0.0f;
-                LOG_INFO ("FPS: {:.2f}", current_fps);
-                this->dump_snapshot = false;
-            }
         } while (!glfwWindowShouldClose (this->window) && !single_frame);
     } catch (...) {
         cleanup ();
@@ -243,10 +219,6 @@ void Application::key_callback (GLFWwindow* window, int key, int, int action, in
                 app->c_key_pressed_this_frame = false;
             }
         }
-    }
-
-    if (key == GLFW_KEY_I && action == GLFW_PRESS) {
-        app->dump_snapshot = true;
     }
 }
 

@@ -31,7 +31,7 @@ public:
     }
 
     void init (const InitInfo& info);
-    void update (Settings& settings, const Stats& stats, float delta_time);
+    void update (Settings& settings, const Stats& stats);
     void draw (uint32_t image_index, VkCommandBuffer cmd_buff);
     void cleanup ();
 
@@ -186,7 +186,6 @@ void UI::init (const InitInfo& info) {
         static_cast <float> (framebuffer_w) / static_cast <float> (window_w),
         static_cast <float> (framebuffer_h) / static_cast <float> (window_h)
     );
-    io.DeltaTime = 1.0f / 60.0f;
 
     ImGui_ImplVulkan_InitInfo im_init_info {};
     im_init_info.Instance = this->instance;
@@ -429,14 +428,12 @@ void UI::status_bar (Settings& settings, const Stats& stats) {
     ImGui::PopStyleVar ();
 }
 
-void UI::update (Settings& settings, const Stats& stats, float delta_time) {
+void UI::update (Settings& settings, const Stats& stats) {
     if (!this->show_ui) {
         return;
     }
 
     ImGuiIO& io = ImGui::GetIO ();
-    io.DeltaTime = std::max (0.0001f, delta_time);
-
     if (settings.disabled_cursor) {
         ImGui::SetWindowFocus (NULL);
         io.WantCaptureMouse = false;
@@ -630,8 +627,8 @@ void init (const InitInfo& info) {
     UI::get_instance ().init (info);
 }
 
-void update (Settings& settings, const Stats& stats, float delta_time) {
-    UI::get_instance ().update (settings, stats, delta_time);
+void update (Settings& settings, const Stats& stats) {
+    UI::get_instance ().update (settings, stats);
 }
 
 void draw (uint32_t image_index, VkCommandBuffer cmd_buff) {

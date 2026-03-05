@@ -81,8 +81,6 @@ add_library (imgui STATIC
 
     submodules/imgui/backends/imgui_impl_glfw.cpp
     submodules/imgui/backends/imgui_impl_vulkan.cpp
-
-    submodules/imgui/misc/freetype/imgui_freetype.cpp
 )
 target_include_directories (imgui PUBLIC
     submodules/imgui
@@ -96,6 +94,7 @@ add_library (imgui::imgui ALIAS imgui)
 
 find_package (Freetype QUIET)
 if (Freetype_FOUND)
+    target_sources (your_target PRIVATE submodules/imgui/misc/freetype/imgui_freetype.cpp)
     target_link_libraries (imgui PRIVATE Freetype::Freetype)
     target_compile_definitions (imgui PRIVATE IMGUI_FREETYPE)
     message (STATUS "FreeType was found and will be used for ImGUI font rendering.")

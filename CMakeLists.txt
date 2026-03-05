@@ -89,11 +89,12 @@ target_include_directories (imgui PUBLIC
     submodules/volk
 )
 target_link_libraries (imgui PRIVATE glfw::glfw)
-target_compile_definitions (imgui PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK=1 IMGUI_ENABLE_FREETYPE=1)
+target_compile_definitions (imgui PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK=1)
 add_library (imgui::imgui ALIAS imgui)
 
 find_package (Freetype QUIET)
 if (Freetype_FOUND)
+    target_compile_definitions (imgui PUBLIC IMGUI_ENABLE_FREETYPE=1)
     target_sources (your_target PRIVATE submodules/imgui/misc/freetype/imgui_freetype.cpp)
     target_link_libraries (imgui PRIVATE Freetype::Freetype)
     target_compile_definitions (imgui PRIVATE IMGUI_FREETYPE)
@@ -154,6 +155,7 @@ add_executable(${PROJECT_NAME}
     src/sdf_octree.cpp
     src/state.cpp
     src/vulkan_context.cpp
+    src/indirect_dispatch.cpp
 )
 
 target_include_directories (${PROJECT_NAME} PRIVATE

@@ -3,6 +3,9 @@
 #ifndef SHADER_COMMON_H
 #define SHADER_COMMON_H
 
+#define VOXELS_PER_COMPUTE_WORKGROUP 256
+#define VOXELS_PER_MESH_WORKGROUP 16 // AMD
+
 #ifdef __cplusplus
 
 #include <LiteMath.h>
@@ -22,16 +25,16 @@ struct VkDrawIndexedIndirectCommand {
     uint firstInstance;
 };
 
-struct VkDispatchIndirectCommand {
-    uint x;
-    uint y;
-    uint z;
-};
-
 #endif // __cplusplus
 
 static const uint MAX_LEAF_VERTS = 12;
 static const uint MAX_LEAF_PRIMS = 4;
+
+struct IndirectDispatch {
+    uint x;
+    uint y;
+    uint z;
+};
 
 struct Vertex {
     float4 position;

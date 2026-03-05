@@ -45,6 +45,7 @@ void SDFRasterizer::init (const SdfOctree& default_scene) {
     this->init_descriptor_sets ();
     this->init_compute_hz_buffer_pipeline ();
     this->init_compute_active_leafs_pipeline ();
+    this->init_compute_prepare_indirect_pipeline ();
     this->init_compute_prefix_sum_pass1_pipeline ();
     this->init_compute_prefix_sum_pass2_pipeline ();
     this->init_compute_prefix_sum_pass3_pipeline ();
@@ -81,7 +82,7 @@ void SDFRasterizer::update_scene (const SdfOctree& scene) {
 	    , this->context->get_physical_device ()
 	    , this->context->get_copy_helper ()
 	    , *descriptor_maker
-	    , VK_SHADER_STAGE_COMPUTE_BIT
+	    , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
 	    , scene
 	    , this->subtrees);
 
@@ -153,7 +154,7 @@ void SDFRasterizer::init_descriptor_sets () {
 	    , this->context->get_physical_device ()
 	    , this->context->get_copy_helper ()
 	    , *descriptor_maker
-	    , VK_SHADER_STAGE_COMPUTE_BIT
+	    , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
 	    , this->push_constants.active_leafs_max_count
 	    , this->context->get_total_frames ());
 
@@ -185,6 +186,12 @@ void SDFRasterizer::init_descriptor_sets () {
         , *descriptor_maker
         , VK_SHADER_STAGE_COMPUTE_BIT
         , this->context->get_total_frames ());
+
+    this->indirect_dispatch_ds = create_indirect_dispatch_descriptor_set (this->context->get_device ()
+        , this->context->get_physical_device ()
+        , *descriptor_maker
+        , VK_SHADER_STAGE_COMPUTE_BIT
+        , this->context->get_total_frames ());
 }
 
 void SDFRasterizer::init_compute_hz_buffer_pipeline () {
@@ -201,12 +208,21 @@ void SDFRasterizer::init_compute_active_leafs_pipeline () {
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/octree_traversal.comp.slang.spv");
     this->compute_active_leafs_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
             this->sdf_octree_ds.descriptor_set_layout
-            , this->marching_cubes_lookup_table_ds.descriptor_set_layout
             , this->active_leafs_ds.descriptor_set_layout
             , this->frustum_ds.descriptor_set_layout
             , this->hz_buffer_ds.descriptor_set_layout
         }, sizeof (PushConstantsData));
     this->compute_active_leafs_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
+}
+
+void SDFRasterizer::init_compute_prepare_indirect_pipeline () {
+    vk_utils::ComputePipelineMaker compute_pipeline_maker;
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/linear_indirect_prep.comp.slang.spv");
+    this->compute_prepare_indirect_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
+            this->active_leafs_ds.descriptor_set_layout
+            , this->indirect_dispatch_ds.descriptor_set_layout
+        }, sizeof (uint32_t));
+    this->compute_prepare_indirect_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
 void SDFRasterizer::init_compute_prefix_sum_pass1_pipeline () {
@@ -424,36 +440,29 @@ void SDFRasterizer::init_graphics_shading_pipeline () {
 }
 
 void SDFRasterizer::init_mesh_shading_pipeline () {
-    const size_t shaders_count = 3;
+    const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
 
     shader_stages [0] = vk_utils::loadShader (this->context->get_device ()
-            , "./shaders/octree_traversal.task.slang.spv"
-            , VK_SHADER_STAGE_TASK_BIT_EXT
-            , shader_modules);
-
-    shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
             , "./shaders/marching_cubes.mesh.slang.spv"
             , VK_SHADER_STAGE_MESH_BIT_EXT
             , shader_modules);
 
-    shader_stages [2] = vk_utils::loadShader (this->context->get_device ()
+    shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
             , "./shaders/blinn_phong_mesh.frag.slang.spv"
             , VK_SHADER_STAGE_FRAGMENT_BIT
             , shader_modules);
 
     VkPushConstantRange pushConstantRange {};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.size = sizeof (PushConstantsData);
     pushConstantRange.offset = 0;
 
     std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
-    // descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);
-    // descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds.descriptor_set_layout);
-    // descriptor_set_layouts.push_back (this->active_leafs_ds.descriptor_set_layout);
-    // descriptor_set_layouts.push_back (this->frustum_ds.descriptor_set_layout);
-    // descriptor_set_layouts.push_back (this->hz_buffer_ds.descriptor_set_layout);
+    descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);
+    descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds.descriptor_set_layout);
+    descriptor_set_layouts.push_back (this->active_leafs_ds.descriptor_set_layout);
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1040,16 +1049,15 @@ void SDFRasterizer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
 void SDFRasterizer::compute_active_leafs (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
-    std::array <VkDescriptorSet, 5> ds = {
+    std::array <VkDescriptorSet, 4> ds = {
         this->sdf_octree_ds.descriptor_set, // TODO: sepparate subtree roots buffer for all frames
-        this->marching_cubes_lookup_table_ds.descriptor_set,
         this->active_leafs_ds.descriptor_sets [this->frame_index],
         this->frustum_ds.descriptor_sets [this->frame_index],
         this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline_layout,
-                             0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
+        0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
 
     vkCmdPushConstants (cmd_buff, this->compute_active_leafs_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
@@ -1109,66 +1117,47 @@ void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff) {
         , 1, &other_lvls_as_general);
 }
 
-void SDFRasterizer::active_leafs_barrier (VkCommandBuffer cmd_buff) {
-    VkBufferMemoryBarrier active_leafs_buffer_barrier = {};
-    active_leafs_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    active_leafs_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    active_leafs_buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    active_leafs_buffer_barrier.buffer = this->active_leafs_ds.active_leafs_buffers [this->frame_index];
-    active_leafs_buffer_barrier.offset = 0;
-    active_leafs_buffer_barrier.size = VK_WHOLE_SIZE;
+void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size, VkPipelineStageFlagBits dst_stage) {
+    VkMemoryBarrier barrier1 = {};
+    barrier1.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier1.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier1.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-    VkBufferMemoryBarrier active_leaf_vertices_count_buffer_barrier = {};
-    active_leaf_vertices_count_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    active_leaf_vertices_count_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    active_leaf_vertices_count_buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    active_leaf_vertices_count_buffer_barrier.buffer = this->active_leafs_ds.active_leaf_vertices_count_buffers [this->frame_index];
-    active_leaf_vertices_count_buffer_barrier.offset = 0;
-    active_leaf_vertices_count_buffer_barrier.size = VK_WHOLE_SIZE;
+    vkCmdPipelineBarrier (cmd_buff
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+        , 0
+        , 1, &barrier1
+        , 0, nullptr
+        , 0, nullptr);
 
-    VkBufferMemoryBarrier active_leaf_indices_count_buffer_barrier = {};
-    active_leaf_indices_count_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    active_leaf_indices_count_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    active_leaf_indices_count_buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    active_leaf_indices_count_buffer_barrier.buffer = this->active_leafs_ds.active_leaf_indices_count_buffers [this->frame_index];
-    active_leaf_indices_count_buffer_barrier.offset = 0;
-    active_leaf_indices_count_buffer_barrier.size = VK_WHOLE_SIZE;
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prepare_indirect_pipeline);
 
-    std::array <VkBufferMemoryBarrier, 3> barriers = {
-        active_leafs_buffer_barrier
-        , active_leaf_vertices_count_buffer_barrier
-        , active_leaf_indices_count_buffer_barrier
+    std::array <VkDescriptorSet, 2> ds = {
+        this->active_leafs_ds.descriptor_sets [this->frame_index],
+        this->indirect_dispatch_ds.descriptor_sets [this->frame_index],
     };
 
-    vkCmdPipelineBarrier (
-        cmd_buff,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        0,
-        0, nullptr,
-        static_cast <uint32_t> (barriers.size ()), barriers.data (),
-        0, nullptr
-    );
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prepare_indirect_pipeline_layout,
+        0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
 
-    VkBufferMemoryBarrier indirect_dispatch_barrier {};
-    indirect_dispatch_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    indirect_dispatch_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    indirect_dispatch_barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
-    indirect_dispatch_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    indirect_dispatch_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    indirect_dispatch_barrier.buffer = this->active_leafs_ds.active_leaf_counter_buffers [this->frame_index];
-    indirect_dispatch_barrier.offset = 0;
-    indirect_dispatch_barrier.size = VK_WHOLE_SIZE;
+    vkCmdPushConstants (cmd_buff, this->compute_prepare_indirect_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (uint32_t), &workgroup_size);
 
-    vkCmdPipelineBarrier (
-        cmd_buff,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-        0,
-        0, nullptr,
-        1, &indirect_dispatch_barrier,
-        0, nullptr
-    );
+    vkCmdDispatch (cmd_buff, 1, 1, 1);
+
+    VkMemoryBarrier barrier2 = {};
+    barrier2.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier2.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier2.dstAccessMask = (dst_stage == VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT) ? VK_ACCESS_INDIRECT_COMMAND_READ_BIT : VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier (cmd_buff
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+        , dst_stage
+        , 0
+        , 1, &barrier2
+        , 0, nullptr
+        , 0, nullptr
+        );
 }
 
 void SDFRasterizer::prefix_sum_pass1 (VkCommandBuffer cmd_buff) {
@@ -1210,7 +1199,7 @@ void SDFRasterizer::compute_geometry (VkCommandBuffer cmd_buff) {
 
     vkCmdPushConstants (cmd_buff, this->compute_geometry_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-    vkCmdDispatchIndirect (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [this->frame_index], 0);
+    vkCmdDispatchIndirect (cmd_buff, this->indirect_dispatch_ds.indirect_dispatch_buffers [this->frame_index], 0);
 }
 
 void SDFRasterizer::geometry_barrier (VkCommandBuffer cmd_buff) {
@@ -1301,7 +1290,7 @@ void SDFRasterizer::draw_geometry (VkCommandBuffer cmd_buff, const Settings& set
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_pipeline);
 
-    vkCmdPushConstants (cmd_buff, this->graphics_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &push_constants);
+    vkCmdPushConstants (cmd_buff, this->graphics_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
     VkBuffer vertex_buffers [] = {this->mesh_ds.vertices_buffers [this->frame_index]};
     VkDeviceSize offsets [] = {0};
@@ -1313,7 +1302,7 @@ void SDFRasterizer::draw_geometry (VkCommandBuffer cmd_buff, const Settings& set
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void SDFRasterizer::draw_mesh_tasks (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::draw_mesh (VkCommandBuffer cmd_buff) {
     const auto extent = this->context->get_swapchain_extent ();
 
     std::array <VkClearValue, 2> clear_values {};
@@ -1347,9 +1336,19 @@ void SDFRasterizer::draw_mesh_tasks (VkCommandBuffer cmd_buff) {
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_pipeline);
 
-    vkCmdPushConstants (cmd_buff, this->mesh_pipeline_layout, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &push_constants);
+    std::array <VkDescriptorSet, 3> ds = {
+        this->sdf_octree_ds.descriptor_set
+        , this->marching_cubes_lookup_table_ds.descriptor_set
+        , this->active_leafs_ds.descriptor_sets [this->frame_index]
+    };
 
-    vkCmdDrawMeshTasksEXT (cmd_buff, 1, 1, 1);
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_pipeline_layout,
+                             0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
+
+    vkCmdPushConstants (cmd_buff, this->mesh_pipeline_layout, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+
+    assert (sizeof (IndirectDispatch) == sizeof (VkDrawMeshTasksIndirectCommandEXT));
+    vkCmdDrawMeshTasksIndirectEXT (cmd_buff, this->indirect_dispatch_ds.indirect_dispatch_buffers [this->frame_index], 0, 1, sizeof (VkDrawMeshTasksIndirectCommandEXT));
 
     vkCmdEndRenderPass (cmd_buff);
 }
@@ -1425,20 +1424,20 @@ void SDFRasterizer::render (const Settings& settings) {
     this->reset_active_leafs_counter (cmd_buff);
     this->compute_active_leafs (cmd_buff);
 
+    if (this->context->get_use_mesh_shading ()) {
+        this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_MESH_WORKGROUP}, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT);
+        this->draw_mesh (cmd_buff);
+    } else {
+        this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_COMPUTE_WORKGROUP}, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        this->compute_geometry (cmd_buff);
+        this->geometry_barrier (cmd_buff);
+        this->draw_geometry (cmd_buff, settings);
+    }
+
     this->hz_buffer_barrier (cmd_buff);
-
-    this->active_leafs_barrier (cmd_buff);
-    this->compute_geometry (cmd_buff);
-
-    this->geometry_barrier (cmd_buff);
-    this->draw_geometry (cmd_buff, settings);
 
     if (settings.frustum_view) {
         this->draw_frustum (cmd_buff);
-    }
-
-    if (this->context->get_use_mesh_shading ()) {
-        this->draw_mesh_tasks (cmd_buff);
     }
 
     gui::draw (this->context->get_swapchain_image_index (), cmd_buff);
@@ -1470,6 +1469,7 @@ void SDFRasterizer::shutdown () {
     cleanup_frustum_descriptor_set (this->context->get_device (), this->frustum_ds);
     cleanup_draw_indexed_indirect_command_descriptor_set (this->context->get_device (), this->draw_indexed_indirect_command_ds);
     cleanup_hz_buffer_descriptor_set (this->context->get_device (), this->hz_buffer_ds);
+    cleanup_indirect_dispatch_descriptor_set (this->context->get_device (), this->indirect_dispatch_ds);
 
     if (this->frustum_draw_buffer) {
         this->frustum_draw_buffer.reset ();
@@ -1479,6 +1479,7 @@ void SDFRasterizer::shutdown () {
 
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_hz_buffer_pipeline, this->compute_hz_buffer_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_active_leafs_pipeline, this->compute_active_leafs_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prepare_indirect_pipeline, this->compute_prepare_indirect_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass1_pipeline, this->compute_prefix_sum_pass1_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass2_pipeline, this->compute_prefix_sum_pass2_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass3_pipeline, this->compute_prefix_sum_pass3_pipeline_layout);

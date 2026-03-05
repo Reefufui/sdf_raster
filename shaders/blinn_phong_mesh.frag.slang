@@ -11,6 +11,6 @@ struct MeshOutput {
 
 [shader("fragment")]
 float4 main (in MeshOutput input) : SV_Target {
-    return float4(1, 0, 0, 1);
+    return input.vertex.color;
 }
 

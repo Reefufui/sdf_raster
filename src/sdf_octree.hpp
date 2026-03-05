@@ -38,8 +38,8 @@ struct ActiveLeafsDescriptorSetInfo {
     std::vector <VkDescriptorSet> descriptor_sets;
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
-    std::vector <VkBuffer> active_leafs_buffers;
     std::vector <VkBuffer> active_leaf_counter_buffers;
+    std::vector <VkBuffer> active_leafs_buffers;
     std::vector <VkBuffer> active_leaf_vertices_count_buffers;
     std::vector <VkBuffer> active_leaf_indices_count_buffers;
 

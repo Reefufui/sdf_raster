@@ -7,13 +7,14 @@
 #include <GLFW/glfw3.h>
 
 #include "camera.hpp"
+#include "indirect_dispatch.hpp"
 #include "marching_cubes_lookup_table.hpp"
 #include "mesh.hpp"
 #include "occlusion_culling.hpp"
 #include "renderer.hpp"
 #include "sdf_octree.hpp"
-#include "state.hpp"
 #include "shader_common.hpp"
+#include "state.hpp"
 #include "vk_descriptor_sets.h"
 #include "vulkan_context.hpp"
 
@@ -34,6 +35,7 @@ private:
     void init_push_constants ();
     void init_descriptor_sets ();
     void init_compute_hz_buffer_pipeline ();
+    void init_compute_prepare_indirect_pipeline ();
     void init_compute_active_leafs_pipeline ();
     void init_compute_prefix_sum_pass1_pipeline ();
     void init_compute_prefix_sum_pass2_pipeline ();
@@ -55,14 +57,15 @@ private:
     void compute_hz_buffer (VkCommandBuffer cmd_buff);
     void compute_active_leafs (VkCommandBuffer cmd_buff);
     void hz_buffer_barrier (VkCommandBuffer cmd_buff);
-    void active_leafs_barrier (VkCommandBuffer cmd_buff);
+    void prepare_draw_indirect (VkCommandBuffer cmd_buff);
+    void prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size, VkPipelineStageFlagBits dst_stage);
     void prefix_sum_pass1 (VkCommandBuffer cmd_buff);
     void prefix_sum_pass2 (VkCommandBuffer cmd_buff);
     void prefix_sum_pass3 (VkCommandBuffer cmd_buff);
     void compute_geometry (VkCommandBuffer cmd_buff);
     void geometry_barrier (VkCommandBuffer cmd_buff);
     void draw_geometry (VkCommandBuffer cmd_buff, const Settings& settings);
-    void draw_mesh_tasks (VkCommandBuffer cmd_buff);
+    void draw_mesh (VkCommandBuffer cmd_buff);
     void draw_frustum (VkCommandBuffer cmd_buff);
     void copy_depth (VkCommandBuffer cmd_buff);
 
@@ -77,6 +80,7 @@ private:
     DrawIndexedIndirectCommandDescriptorSetInfo draw_indexed_indirect_command_ds {};
     HZBufferDescriptorSetInfo hz_buffer_ds {};
     FrustumDescriptorSetInfo frustum_ds {};
+    IndirectDispatchDescriptorSetInfo indirect_dispatch_ds {};
 
     VkPipelineLayout mesh_pipeline_layout {VK_NULL_HANDLE};
     VkPipeline mesh_pipeline {VK_NULL_HANDLE};
@@ -88,12 +92,14 @@ private:
 
     VkPipeline compute_hz_buffer_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_active_leafs_pipeline {VK_NULL_HANDLE};
+    VkPipeline compute_prepare_indirect_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_geometry_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_prefix_sum_pass1_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_prefix_sum_pass2_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_prefix_sum_pass3_pipeline {VK_NULL_HANDLE};
     VkPipelineLayout compute_hz_buffer_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_active_leafs_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout compute_prepare_indirect_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_geometry_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_prefix_sum_pass1_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_prefix_sum_pass2_pipeline_layout {VK_NULL_HANDLE};

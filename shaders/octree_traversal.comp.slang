@@ -11,19 +11,12 @@
 [[vk::binding (1, 0)]] StructuredBuffer <NodeContext> g_roots;
 [[vk::binding (2, 0)]] StructuredBuffer <uint> g_clipped_flag;
 
-[[vk::binding (0, 1)]] StructuredBuffer <uint2> edge_corners; // [12]
-[[vk::binding (1, 1)]] StructuredBuffer <int> cube_index_2_edge_mask; // [256]
-[[vk::binding (2, 1)]] StructuredBuffer <int> cube_index_2_triangle_indices; // [256][16]
-[[vk::binding (3, 1)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
+[[vk::binding (0, 1)]] RWStructuredBuffer <uint> g_active_leaf_counter;
+[[vk::binding (1, 1)]] RWStructuredBuffer <NodeContext> g_active_leafs;
 
-[[vk::binding (0, 2)]] RWStructuredBuffer <NodeContext> g_active_leafs;
-[[vk::binding (1, 2)]] RWStructuredBuffer <VkDispatchIndirectCommand> g_active_leaf_counter;
-[[vk::binding (2, 2)]] RWStructuredBuffer <uint> g_active_leaf_vertices_count;
-[[vk::binding (3, 2)]] RWStructuredBuffer <uint> g_active_leaf_indices_count;
+[[vk::binding (0, 2)]] ConstantBuffer <FrustumGeometry> frustum_geometry;
 
-[[vk::binding (0, 3)]] ConstantBuffer <FrustumGeometry> frustum_geometry;
-
-[[vk::binding (0, 4)]] Sampler2D <float> depth_sampler;
+[[vk::binding (0, 3)]] Sampler2D <float> depth_sampler;
 
 void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
     context.cube_index = 0;
@@ -38,7 +31,7 @@ void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
     }
 
     uint active_leaf_offset = 0;
-    InterlockedAdd (g_active_leaf_counter [0].x, 1, active_leaf_offset);
+    InterlockedAdd (g_active_leaf_counter [0], 1, active_leaf_offset);
 
     if (active_leaf_offset >= pc.active_leafs_max_count) {
         return;
@@ -46,9 +39,9 @@ void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
 
     g_active_leafs [active_leaf_offset] = context;
 
-    const uint2 mesh_counts = cube_index_2_mesh_output_counts [context.cube_index];
-    g_active_leaf_vertices_count [active_leaf_offset] = mesh_counts.x;
-    g_active_leaf_indices_count [active_leaf_offset] = mesh_counts.y * 3;
+    // const uint2 mesh_counts = cube_index_2_mesh_output_counts [context.cube_index];
+    // g_active_leaf_vertices_count [active_leaf_offset] = mesh_counts.x;
+    // g_active_leaf_indices_count [active_leaf_offset] = mesh_counts.y * 3;
 }
 
 bool is_visible_node (float3 node_coord, float node_size) {
@@ -170,11 +163,6 @@ bool descend_path (uint path [DESCEND_PATH_LENGTH], inout NodeContext current_co
 [shader ("compute")]
 [numthreads (8, 8, 8)]
 void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : SV_GroupThreadID) {
-    if (dti.x == 0u && dti.y == 0u && dti.z == 0u) {
-        g_active_leaf_counter [0].y = 1u;
-        g_active_leaf_counter [0].z = 1u;
-    }
-
     NodeContext current_context = g_roots [gi.z];
     const uint path [DESCEND_PATH_LENGTH] = {gi.y, gi.x, gti.z, gti.y, gti.x};
 

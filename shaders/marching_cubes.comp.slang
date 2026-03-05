@@ -19,14 +19,10 @@
 [[vk::binding (2, 2)]] StructuredBuffer <int> cube_index_2_triangle_indices; // [256][16]
 [[vk::binding (3, 2)]] StructuredBuffer <uint2> cube_index_2_mesh_output_counts; // [256]
 
-[[vk::binding (0, 3)]] RWStructuredBuffer <NodeContext> g_active_leafs;
-[[vk::binding (1, 3)]] RWStructuredBuffer <VkDispatchIndirectCommand> g_active_leaf_counter;
-[[vk::binding (2, 3)]] RWStructuredBuffer <uint> g_active_leaf_vertices_offsets;
-[[vk::binding (3, 3)]] RWStructuredBuffer <uint> g_active_leaf_indices_offsets;
+[[vk::binding (0, 3)]] RWStructuredBuffer <uint> g_active_leaf_counter;
+[[vk::binding (1, 3)]] RWStructuredBuffer <NodeContext> g_active_leafs;
 
 [[vk::binding (0, 4)]] RWStructuredBuffer <VkDrawIndexedIndirectCommand> g_draw_indexed_indirect_command;
-
-#define WORKGROUP_SIZE 256
 
 static const float eps = 1e-6f;
 
@@ -85,8 +81,6 @@ float3 sample_normal (float3 p) {
 
 void generate_geometry (uint active_leaf_index) {
 	NodeContext context = g_active_leafs [active_leaf_index];
-	// TODO: uint vertices_offset = g_active_leaf_vertices_offsets [active_leaf_index];
-	// TODO: uint indices_offset = g_active_leaf_indices_offsets [active_leaf_index];
 	uint vertices_offset = active_leaf_index * MAX_LEAF_VERTS;
 	uint indices_offset = active_leaf_index * MAX_LEAF_PRIMS * 3;
 
@@ -135,15 +129,15 @@ void generate_geometry (uint active_leaf_index) {
         edge_bit <<= 1;
     }
 
-	if (active_leaf_index == g_active_leaf_counter [0].x - 1) {
+	if (active_leaf_index == g_active_leaf_counter [0] - 1) {
 		g_draw_indexed_indirect_command [0] = {indices_offset + triangles_count * 3, 1, 0, 0, 0};
 	}
 }
 
 [shader ("compute")]
-[numthreads (WORKGROUP_SIZE, 1, 1)]
+[numthreads (VOXELS_PER_COMPUTE_WORKGROUP, 1, 1)]
 void main (uint3 thread_id : SV_DispatchThreadID) {
-	if (thread_id.x >= g_active_leaf_counter [0].x) return;
+	if (thread_id.x >= g_active_leaf_counter [0]) return;
 	generate_geometry (thread_id.x);
 }
 

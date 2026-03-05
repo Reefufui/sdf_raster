@@ -10,6 +10,10 @@
 #include "vulkan_context.hpp"
 #include "logger.hpp"
 
+#ifdef __APPLE__
+#define VK_EXT_METAL_SURFACE_EXTENSION_NAME "VK_EXT_metal_surface"
+#endif
+
 namespace sdf_raster {
 
 #ifdef VULKAN_VALIDATION_LAYERS

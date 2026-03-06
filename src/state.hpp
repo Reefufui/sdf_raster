@@ -12,6 +12,8 @@ struct Settings {
     std::string scene_name {"lowpoly_bunny"};
     std::filesystem::path scene_path {"./assets/lowpoly_bunny.octree"};
 
+    bool use_mesh_shading = true;
+
     bool frustum_culling = true;
     bool occlusion_culling = true;
 
@@ -19,7 +21,7 @@ struct Settings {
     bool disabled_cursor = true;
 
     bool show_camera_window = false;
-    bool show_occlusion_window = false;
+    bool show_renderer_window = false;
 };
 
 struct Stats {

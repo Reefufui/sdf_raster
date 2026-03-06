@@ -148,7 +148,7 @@ void SDFRasterizer::init_descriptor_sets () {
 	    , this->context->get_physical_device ()
 	    , this->context->get_copy_helper ()
 	    , *descriptor_maker
-	    , VK_SHADER_STAGE_COMPUTE_BIT);
+	    , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
 
 	this->active_leafs_ds = create_active_leafs_descriptor_set (this->context->get_device ()
 	    , this->context->get_physical_device ()
@@ -450,7 +450,7 @@ void SDFRasterizer::init_mesh_shading_pipeline () {
             , shader_modules);
 
     shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
-            , "./shaders/blinn_phong_mesh.frag.slang.spv"
+            , "shaders/blinn_phong.frag.slang.spv"
             , VK_SHADER_STAGE_FRAGMENT_BIT
             , shader_modules);
 
@@ -1342,8 +1342,8 @@ void SDFRasterizer::draw_mesh (VkCommandBuffer cmd_buff) {
         , this->active_leafs_ds.descriptor_sets [this->frame_index]
     };
 
-    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_pipeline_layout,
-                             0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_pipeline_layout
+        , 0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
 
     vkCmdPushConstants (cmd_buff, this->mesh_pipeline_layout, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
@@ -1424,7 +1424,7 @@ void SDFRasterizer::render (const Settings& settings) {
     this->reset_active_leafs_counter (cmd_buff);
     this->compute_active_leafs (cmd_buff);
 
-    if (this->context->get_use_mesh_shading ()) {
+    if (settings.use_mesh_shading) {
         this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_MESH_WORKGROUP}, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT);
         this->draw_mesh (cmd_buff);
     } else {

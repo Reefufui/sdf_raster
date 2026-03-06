@@ -64,7 +64,7 @@ private:
 
     void menu_bar (Settings& settings);
     void file_dialog (Settings& settings);
-    void occlusion_window (Settings& settings);
+    void renderer_window (Settings& settings);
     void status_bar (Settings& settings, const Stats& stats);
 
 private:
@@ -231,7 +231,7 @@ void UI::menu_bar (Settings& settings) {
         }
 
         if (ImGui::BeginMenu ("View")) {
-            if (ImGui::MenuItem ("Show Culling Window", "", &settings.show_occlusion_window)) { }
+            if (ImGui::MenuItem ("Show Renderer Window", "", &settings.show_renderer_window)) { }
             if (ImGui::MenuItem ("Show Camera Window", "", &settings.show_camera_window)) { }
             ImGui::EndMenu ();
         }
@@ -328,10 +328,17 @@ void UI::file_dialog (Settings& settings) {
     }
 }
 
-void UI::occlusion_window (Settings& settings) {
-    ImGui::Begin ("Culling");
+void UI::renderer_window (Settings& settings) {
+    ImGui::Begin ("Rendering");
 
-    ImGui::SeparatorText ("Culling types");
+    ImGui::SeparatorText ("Common");
+
+    ImGui::Checkbox ("use mesh shading", &settings.use_mesh_shading);
+    if (ImGui::IsItemHovered ()) {
+        ImGui::SetTooltip ("Directly sends generated primitives to rasterizer.");
+    }
+
+    ImGui::SeparatorText ("Culling");
 
     ImGui::Checkbox ("frustum culling", &settings.frustum_culling);
     if (ImGui::IsItemHovered ()) {
@@ -456,8 +463,8 @@ void UI::update (Settings& settings, const Stats& stats) {
         camera_window (settings.camera);
     }
 
-    if (settings.show_occlusion_window) {
-        this->occlusion_window (settings);
+    if (settings.show_renderer_window) {
+        this->renderer_window (settings);
     }
 
     this->status_bar (settings, stats);

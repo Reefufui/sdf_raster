@@ -20,6 +20,7 @@ struct Settings {
     bool frustum_view = false;
     bool disabled_cursor = true;
 
+    bool show_ui = true;
     bool show_camera_window = false;
     bool show_renderer_window = false;
 };

@@ -1423,8 +1423,6 @@ void SDFRasterizer::render (const Settings& settings) {
         this->update_frustum_buffer (settings.camera);
     }
 
-    this->clear_geometry (cmd_buff);
-
     if (this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image != VK_NULL_HANDLE) {
         this->copy_depth (cmd_buff);
         this->compute_hz_buffer (cmd_buff);
@@ -1440,20 +1438,20 @@ void SDFRasterizer::render (const Settings& settings) {
         this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_MESH_WORKGROUP}, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT);
         this->draw_mesh (cmd_buff);
     } else {
+        this->clear_geometry (cmd_buff);
         this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_COMPUTE_WORKGROUP}, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
         this->compute_geometry (cmd_buff);
         this->geometry_barrier (cmd_buff);
         this->draw_geometry (cmd_buff, settings);
     }
 
-    this->hz_buffer_barrier (cmd_buff);
-
     if (settings.frustum_view) {
         this->draw_frustum (cmd_buff);
     }
 
-    gui::draw (this->context->get_swapchain_image_index (), cmd_buff);
+    gui::draw (this->context->get_swapchain_image_index (), cmd_buff); // TODO: refactoring: this shouldn't be called here
 
+    this->hz_buffer_barrier (cmd_buff);
     if (!settings.frustum_view) {
         prepare_next_frame_data (this->hz_buffer_ds, this->frame_index, this->context->get_depth_buffer ().image, settings.camera.get_view_projection_matrix ());
     }

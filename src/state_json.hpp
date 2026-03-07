@@ -78,6 +78,7 @@ namespace sdf_raster {
         occlusion_culling,
         frustum_view,
         disabled_cursor,
+        show_ui,
         show_camera_window,
         show_renderer_window,
         use_mesh_shading

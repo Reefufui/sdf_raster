@@ -177,6 +177,8 @@ cd build-debug
     *   `scroll`: Adjust FOV.
 *   **Camera Reset:**
     *   `r`: Reset camera position and orientation.
+*   **Toggle GUI:**
+    *   `h`: Toggle drawing ImGUI stuff.
 *   **Toggle Frustum View:**
     *   `c`: Toggle culling visualization (to see which parts are rendered).
 *   **Exit Application:**

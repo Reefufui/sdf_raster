@@ -292,6 +292,10 @@ void UI::key_input (Settings& settings) {
         settings.disabled_cursor = false;
         glfwSetInputMode (this->window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
+
+    if (ImGui::IsKeyPressed (ImGuiKey_H, false)) {
+        settings.show_ui = !settings.show_ui;
+    }
 }
 
 void camera_window (Camera& camera) {
@@ -455,10 +459,6 @@ void UI::status_bar (Settings& settings, const Stats& stats) {
 }
 
 void UI::update (Settings& settings, const Stats& stats) {
-    if (!this->show_ui) {
-        return;
-    }
-
     ImGuiIO& io = ImGui::GetIO ();
     if (settings.disabled_cursor) {
         ImGui::SetWindowFocus (NULL);
@@ -476,24 +476,28 @@ void UI::update (Settings& settings, const Stats& stats) {
 
     this->key_input (settings);
 
-    this->menu_bar (settings);
-    this->file_dialog (settings);
+    this->show_ui = settings.show_ui;
+    if (this->show_ui) {
+        this->menu_bar (settings);
+        this->file_dialog (settings);
 
-    if (settings.show_camera_window) {
-        camera_window (settings.camera);
+        if (settings.show_camera_window) {
+            camera_window (settings.camera);
+        }
+
+        if (settings.show_renderer_window) {
+            this->renderer_window (settings);
+        }
+
+        this->status_bar (settings, stats);
     }
-
-    if (settings.show_renderer_window) {
-        this->renderer_window (settings);
-    }
-
-    this->status_bar (settings, stats);
 
     this->previous_frame_settings = settings;
 }
 
 void UI::draw (uint32_t image_index, VkCommandBuffer cmd_buff) {
-    if (!show_ui) {
+    if (!this->show_ui) {
+        ImGui::EndFrame ();
         return;
     }
 

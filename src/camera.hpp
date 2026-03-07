@@ -31,12 +31,9 @@ public:
     void set_aspect_ratio (float aspect_ratio);
     void set_far_plane (float far_plane);
 
-    enum class Movement {
-        FORWARD, BACKWARD, LEFT, RIGHT, UP, DOWN
-    };
-    void process_keyboard_input (Movement direction, float delta_time);
-    void process_mouse_movement (float x_offset, float y_offset);
-    void process_scroll (float offset, bool constrain_fov = true);
+    void move (LiteMath::float3 direction, float delta_time);
+    void rotate (float x_offset, float y_offset);
+    void adjust_fov (float offset);
 
     void reset ();
     void update ();

@@ -12,9 +12,9 @@ public:
 
     virtual void init (const SdfOctree& default_scene) = 0;
     virtual void update_scene (const SdfOctree& scene) = 0;
+    virtual void update (Settings& settings) = 0;
     virtual void render (const Settings& settings) = 0;
     virtual void shutdown () = 0;
-    virtual void toggle_frustum_buffer (Settings& settings) = 0; // TODO: refactoring
     virtual const Stats& get_stats () = 0;
 };
 

@@ -27,6 +27,7 @@ public:
 
     void init (const SdfOctree& default_scene) override;
     void update_scene (const SdfOctree& scene) override;
+    void update (Settings& settings) override;
     void render (const Settings& settings) override;
     void shutdown () override;
     const Stats& get_stats () override;
@@ -47,7 +48,6 @@ private:
     void register_resizable ();
 
     void init_graphics_frustum_pipeline ();
-    void toggle_frustum_buffer (Settings& settings) override;
     void update_stats ();
 
     void update_push_constants (const Settings& settings);

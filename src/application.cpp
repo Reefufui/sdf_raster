@@ -68,7 +68,8 @@ void Application::run (bool single_frame) {
             }
 
             this->settings.camera.update ();
-            this->renderer->render (this->settings);
+            this->renderer->update (this->settings);
+            this->renderer->render (this->settings); // TODO: do not pass settings at this point
         } while (!glfwWindowShouldClose (this->window) && !single_frame);
     } catch (...) {
         cleanup ();
@@ -90,12 +91,9 @@ void Application::init_window () {
 
     glfwSetWindowUserPointer (this->window, &this->user_data);
     glfwSetFramebufferSizeCallback (this->window, framebuffer_resize_callback);
-    glfwSetScrollCallback (this->window, scroll_callback);
-    glfwSetKeyCallback (this->window, key_callback);
     glfwSetMouseButtonCallback (this->window, mouse_button_callback);
 
     this->settings.disabled_cursor = false;
-    this->first_mouse = true;
 
     int width, height;
     glfwGetWindowSize (this->window, &width, &height);
@@ -105,9 +103,6 @@ void Application::init_window () {
     float f_height = static_cast <float> (height);
 
     this->settings.camera.set_aspect_ratio (f_width / f_height);
-
-    this->last_x = f_width / 2.0f;
-    this->last_y = f_height / 2.0f;
 }
 
 void Application::init_vulkan () {
@@ -135,6 +130,7 @@ void Application::init_vulkan () {
 }
 
 void Application::init_renderer () {
+    this->settings.use_mesh_shading = (this->vulkan_context->get_use_mesh_shading ()) ? this->settings.use_mesh_shading : false;
     this->renderer = std::make_unique <SDFRasterizer> (this->vulkan_context);
     load_sdf_octree (this->scene, this->settings.scene_path);
     this->renderer->init (this->scene);
@@ -184,42 +180,6 @@ void Application::framebuffer_resize_callback (GLFWwindow* window, int, int) {
     app->vulkan_context->set_resized_flag ();
 }
 
-void Application::scroll_callback (GLFWwindow* window, double, double yoffset) {
-    auto app = get_app_ptr (window);
-    if (app) {
-        app->settings.camera.process_scroll (static_cast <float> (yoffset));
-    }
-}
-
-void Application::key_callback (GLFWwindow* window, int key, int, int action, int) {
-    Application* app = get_app_ptr (window);
-    if (!app) return;
-
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-        if (app->settings.disabled_cursor) {
-            app->settings.disabled_cursor = false;
-            glfwSetInputMode (window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            LOG_INFO ("Exited camera mode. Cursor NORMAL.");
-        }
-    }
-
-    if (key == GLFW_KEY_R && action == GLFW_PRESS) {
-        app->settings.camera.reset ();
-        app->first_mouse = true;
-    }
-
-    if (key == GLFW_KEY_C) {
-        if (action == GLFW_PRESS) {
-            app->c_key_pressed_this_frame = true;
-        } else if (action == GLFW_RELEASE) {
-            if (app->c_key_pressed_this_frame) {
-                app->renderer->toggle_frustum_buffer (app->settings);
-                app->c_key_pressed_this_frame = false;
-            }
-        }
-    }
-}
-
 void Application::mouse_button_callback (GLFWwindow* window, int button, int action, int) {
     Application* app = get_app_ptr (window);
     if (!app) return;
@@ -234,7 +194,6 @@ void Application::mouse_button_callback (GLFWwindow* window, int button, int act
         if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
             app->settings.disabled_cursor = true;
             glfwSetInputMode (window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            app->first_mouse = true;
             LOG_INFO ("Entered camera mode. Cursor DISABLED.");
         }
     }

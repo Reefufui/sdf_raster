@@ -40,23 +40,14 @@ void Camera::set_far_plane (float far_plane) {
     this->far_plane = far_plane;
 }
 
-void Camera::process_keyboard_input (Camera::Movement direction, float delta_time) {
-    float velocity = this->movement_speed * delta_time;
-    if (direction == Camera::Movement::FORWARD)
-        this->position += front * velocity;
-    if (direction == Camera::Movement::BACKWARD)
-        this->position -= front * velocity;
-    if (direction == Camera::Movement::LEFT)
-        this->position -= right * velocity;
-    if (direction == Camera::Movement::RIGHT)
-        this->position += right * velocity;
-    if (direction == Camera::Movement::UP)
-        this->position += LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
-    if (direction == Camera::Movement::DOWN)
-        this->position -= LiteMath::float3 (0.0f, 1.0f, 0.0f) * velocity;
+void Camera::move (LiteMath::float3 direction, float delta_time) {
+    LiteMath::float3 delta_distance = direction * this->movement_speed * delta_time;
+    this->position += this->front * delta_distance.x;
+    this->position += this->right * delta_distance.y;
+    this->position += this->up * delta_distance.z;
 }
 
-void Camera::process_mouse_movement (float x_offset, float y_offset) {
+void Camera::rotate (float x_offset, float y_offset) {
     x_offset *= this->mouse_sensitivity;
     y_offset *= this->mouse_sensitivity;
 
@@ -69,12 +60,10 @@ void Camera::process_mouse_movement (float x_offset, float y_offset) {
     if (this->yaw_angle < -180.0f) this->yaw_angle += 360.f;
 }
 
-void Camera::process_scroll (float offset, bool constrain_fov) {
+void Camera::adjust_fov (float offset) {
     this->fov_y -= offset;
-    if (constrain_fov) {
-        if (this->fov_y < 1.0f) this->fov_y = 1.0f;
-        if (this->fov_y > 120.0f) this->fov_y = 120.0f;
-    }
+    if (this->fov_y < 1.0f) this->fov_y = 1.0f;
+    if (this->fov_y > 120.0f) this->fov_y = 120.0f;
 }
 
 void Camera::update () {

@@ -731,20 +731,25 @@ void SDFRasterizer::init_graphics_frustum_pipeline () {
     shader_modules.clear ();
 }
 
-void SDFRasterizer::toggle_frustum_buffer (Settings& settings) {
-    if (settings.frustum_view) {
-        settings.frustum_view = false;
+void SDFRasterizer::update (Settings& settings) {
+    if (!settings.frustum_view && this->frustum_draw_buffer) {
         settings.camera = this->frustum_draw_buffer->get_camera ();
         this->frustum_draw_buffer.reset ();
-    } else {
-        settings.frustum_view = true;
+        LOG_INFO ("[{}] Frustum view mode: OFF.", RENDERER_NAME);
+    } else if (settings.frustum_view && !this->frustum_draw_buffer) {
         this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()
             , settings.camera);
+        LOG_INFO ("[{}] Frustum view mode: ON.", RENDERER_NAME);
     }
 
-    LOG_INFO ("[{}] Frustum view mode: {}.", RENDERER_NAME, (settings.frustum_view) ? "ON" : "OFF");
+    if (settings.use_mesh_shading) {
+        if (!this->context->get_use_mesh_shading ()) {
+            LOG_WARN ("[{}] Mesh shader not supported. Falling back to compute shaders (skipping current mesh draw).", RENDERER_NAME);
+            settings.use_mesh_shading = false;
+        }
+    }
 }
 
 void SDFRasterizer::update_stats () {
@@ -1303,6 +1308,13 @@ void SDFRasterizer::draw_geometry (VkCommandBuffer cmd_buff, const Settings& set
 }
 
 void SDFRasterizer::draw_mesh (VkCommandBuffer cmd_buff) {
+    if (this->mesh_pipeline == VK_NULL_HANDLE) {
+        if (this->context->get_use_mesh_shading ()) {
+            throw std::logic_error ("Mesh shader pipeline is NULL_HANDLE despite mesh shading being supported.");
+        }
+        return;
+    }
+
     const auto extent = this->context->get_swapchain_extent ();
 
     std::array <VkClearValue, 2> clear_values {};

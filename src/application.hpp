@@ -31,20 +31,13 @@ private:
 
     static Application* get_app_ptr (GLFWwindow* window);
     static void framebuffer_resize_callback (GLFWwindow* window, int width, int height);
-    static void scroll_callback (GLFWwindow* a_window, double xoffset, double yoffset);
-    static void key_callback (GLFWwindow* a_window, int key, int scancode, int action, int mods);
     static void mouse_button_callback (GLFWwindow* a_window, int button, int action, int mods);
 
 private:
     GLFWwindow* window;
 
-    bool c_key_pressed_this_frame = false;
-
     Settings settings;
     SdfOctree scene;
-    float last_x = 0.0f;
-    float last_y = 0.0f;
-    bool first_mouse = true;
 
     struct UserData {
         Application* app;

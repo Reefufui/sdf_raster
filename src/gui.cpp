@@ -62,6 +62,7 @@ private:
 private:
     void init_style ();
 
+    void key_input (Settings& settings);
     void menu_bar (Settings& settings);
     void file_dialog (Settings& settings);
     void renderer_window (Settings& settings);
@@ -75,6 +76,7 @@ private:
     const float alpha = .8f;
 
     bool lock_occlusion_culling = false;
+    bool lock_mesh_shading = false;
 };
 
 void UI::create_render_pass () {
@@ -220,6 +222,7 @@ void UI::init (const InitInfo& info) {
 void UI::menu_bar (Settings& settings) {
     if (ImGui::BeginMainMenuBar ()) {
         if (ImGui::BeginMenu ("File")) {
+            ImGui::SetNextItemShortcut (ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_Tooltip);
             if (ImGui::MenuItem ("Open...", "Ctrl+O")) {
                 this->file_browser.Open ();
             }
@@ -244,35 +247,51 @@ namespace {
 
 void camera_input (Settings& settings) {
     ImGuiIO& io = ImGui::GetIO ();
-
-    if (io.WantCaptureKeyboard || !settings.disabled_cursor)
-        return;
-
     Camera& camera = settings.camera;
 
-    if (ImGui::IsKeyDown (ImGuiKey_W))
-        camera.process_keyboard_input (Camera::Movement::FORWARD, io.DeltaTime);
+    LiteMath::float3 move {0.f, 0.f, 0.f};
+    move.x += static_cast <float> (ImGui::IsKeyDown (ImGuiKey_W));
+    move.x -= static_cast <float> (ImGui::IsKeyDown (ImGuiKey_S));
+    move.y += static_cast <float> (ImGui::IsKeyDown (ImGuiKey_D));
+    move.y -= static_cast <float> (ImGui::IsKeyDown (ImGuiKey_A));
+    move.z -= static_cast <float> (ImGui::IsKeyDown (ImGuiKey_Space));
+    move.z += static_cast <float> (ImGui::IsKeyDown (ImGuiKey_LeftCtrl));
 
-    if (ImGui::IsKeyDown (ImGuiKey_S))
-        camera.process_keyboard_input (Camera::Movement::BACKWARD, io.DeltaTime);
-
-    if (ImGui::IsKeyDown (ImGuiKey_A))
-        camera.process_keyboard_input (Camera::Movement::LEFT, io.DeltaTime);
-
-    if (ImGui::IsKeyDown (ImGuiKey_D))
-        camera.process_keyboard_input (Camera::Movement::RIGHT, io.DeltaTime);
-
-    if (ImGui::IsKeyDown (ImGuiKey_Space))
-        camera.process_keyboard_input (Camera::Movement::UP, io.DeltaTime);
-
-    if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
-        camera.process_keyboard_input (Camera::Movement::DOWN, io.DeltaTime);
+    if (LiteMath::length (move) > 0.0f) {
+        camera.move (LiteMath::normalize (move), io.DeltaTime);
+    }
 
     if (!io.WantCaptureMouse) {
-        camera.process_mouse_movement (io.MouseDelta.x, -io.MouseDelta.y);
+        camera.rotate (io.MouseDelta.x, -io.MouseDelta.y);
+        camera.adjust_fov (io.MouseWheel);
     }
 }
 
+}
+
+void UI::key_input (Settings& settings) {
+    ImGuiIO& io = ImGui::GetIO ();
+
+    if (io.WantCaptureKeyboard) {
+        return;
+    }
+
+    if (settings.disabled_cursor) {
+        camera_input (settings);
+    }
+
+    if (ImGui::IsKeyPressed (ImGuiKey_R, false)) {
+        settings.camera.reset ();
+    }
+
+    if (ImGui::IsKeyPressed (ImGuiKey_V, false)) {
+        settings.frustum_view = !settings.frustum_view;
+    }
+
+    if (ImGui::IsKeyPressed (ImGuiKey_Escape, false)) {
+        settings.disabled_cursor = false;
+        glfwSetInputMode (this->window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
 }
 
 void camera_window (Camera& camera) {
@@ -305,7 +324,7 @@ void camera_window (Camera& camera) {
     }
 
     if (ImGui::CollapsingHeader ("Projection Frustum", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::SliderFloat ("Field of View", &camera.fov_y, 1.0f, 120.0f, "%.1f deg");
+        ImGui::SliderFloat ("Field of View (Y)", &camera.fov_y, 1.0f, 120.0f, "%.1f deg");
 
         ImGui::DragFloat ("Near Plane", &camera.near_plane, 0.005f, 0.001f, camera.far_plane, "%.3f");
         ImGui::DragFloat ("Far Plane", &camera.far_plane, 1.0f, camera.near_plane, 1000.0f, "%.2f");
@@ -455,10 +474,11 @@ void UI::update (Settings& settings, const Stats& stats) {
 
     ImGui::NewFrame ();
 
+    this->key_input (settings);
+
     this->menu_bar (settings);
     this->file_dialog (settings);
 
-    camera_input (settings);
     if (settings.show_camera_window) {
         camera_window (settings.camera);
     }

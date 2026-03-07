@@ -14,7 +14,7 @@
 
 ## About The Project
 
-sdf_raster is a research renderer developed in C++ using the Vulkan API, designed for efficient rendering of SDF data in real-time. It showcases occlusion optimizations and mesh shaders (WIP).
+sdf_raster is a research renderer developed in C++ using the Vulkan API, designed for efficient rendering of SDF data in real-time. It showcases occlusion optimizations and mesh shaders.
 
 The goal of this **master degree diploma** project is to develop accelerated implicit surface rasterization algorithm on GPU.
 
@@ -22,10 +22,11 @@ The goal of this **master degree diploma** project is to develop accelerated imp
 
 *   **SDF triangulation:** Dynamic geometry generation from SDF octrees using Marching Cubes.
 *   **Frutum culling:** Culling whole SDF-octree subtrees which are not intersected with frustum.
-*   **Fly-around cam:** Simple camera and controls for scene navigation. Caches previous camera view.
+*   **Fly-around cam:** Simple camera and controls for scene navigation.
 *   **Culling demo:** Ability to leave your current frustum and look at the renderered scene from another angle.
 *   **Occlusion culling:** Occlusion culling optimization using previous frame H-Zbuffer.
-*   **Mesh shading (WIP):** Directly feeding rasterizer with geometry, rather then using per-frame vertex buffers.
+*   **Mesh shading:** Directly feeding rasterizer with geometry (if supported), rather then using per-frame vertex buffers.
+*   **Application state caching:** Seemless restoration of previous launch state.
 
 ## Technology Stack
 
@@ -176,8 +177,6 @@ cd build-debug
     *   `scroll`: Adjust FOV.
 *   **Camera Reset:**
     *   `r`: Reset camera position and orientation.
-*   **FPS dump:**
-    *   `i`: Dump current FPS to log.
 *   **Toggle Frustum View:**
     *   `c`: Toggle culling visualization (to see which parts are rendered).
 *   **Exit Application:**
@@ -185,5 +184,5 @@ cd build-debug
 
 ### Note
 
-*   Camera settings are saved (`/tmp/cached_camera.json`) and restored between sessions.
+*   Application state is saved (`/tmp/sdf_raster.json`) and restored between sessions.
 

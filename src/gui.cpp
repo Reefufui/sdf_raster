@@ -417,6 +417,9 @@ void UI::status_bar (Settings& settings, const Stats& stats) {
         .text = std::format ("FPS:{:.1f}", io.Framerate)
     });
     elements.push_back (StatusBarElement {
+        .text = std::format ("Roots:{:06}", stats.active_roots_count)
+    });
+    elements.push_back (StatusBarElement {
         .text = std::format ("Leafs:{:06}", stats.active_leafs_count)
     });
 

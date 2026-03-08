@@ -27,6 +27,7 @@ struct Settings {
 
 struct Stats {
     uint32_t active_leafs_count = 0;
+    uint32_t active_roots_count = 0;
 };
 
 void dump_state (const Settings& settings, const std::string& filename);

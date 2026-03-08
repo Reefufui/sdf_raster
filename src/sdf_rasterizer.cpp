@@ -754,6 +754,7 @@ void SDFRasterizer::update (Settings& settings) {
 
 void SDFRasterizer::update_stats () {
     this->stats.active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
+    this->stats.active_roots_count = this->subtrees.size ();
 }
 
 void SDFRasterizer::update_push_constants (const Settings& settings) {

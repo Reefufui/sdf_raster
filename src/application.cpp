@@ -62,13 +62,12 @@ void Application::run (bool single_frame) {
             const auto& stats = this->renderer->get_stats ();
             gui::update (settings, stats);
 
-            if (this->scene.name != settings.scene_name) {
+            if (this->scene.name != settings.scene_name) { // TODO: scene manager
                 load_sdf_octree (this->scene, settings.scene_path);
-                this->renderer->update_scene (this->scene);
             }
 
             this->settings.camera.update ();
-            this->renderer->update (this->settings);
+            this->renderer->update (this->scene, this->settings);
             this->renderer->render (this->settings); // TODO: do not pass settings at this point
         } while (!glfwWindowShouldClose (this->window) && !single_frame);
     } catch (...) {
@@ -130,10 +129,12 @@ void Application::init_vulkan () {
 }
 
 void Application::init_renderer () {
-    this->settings.use_mesh_shading = (this->vulkan_context->get_use_mesh_shading ()) ? this->settings.use_mesh_shading : false;
+    if (this->settings.use_mesh_shading && !this->vulkan_context->get_use_mesh_shading ()) {
+        LOG_WARN ("[Application] Turned off 'use_mesh_shading' settings: device doesn't support mesh shading.");
+        this->settings.use_mesh_shading = false;
+    }
     this->renderer = std::make_unique <SDFRasterizer> (this->vulkan_context);
-    load_sdf_octree (this->scene, this->settings.scene_path);
-    this->renderer->init (this->scene);
+    this->renderer->init ();
 }
 
 void Application::init_gui () {

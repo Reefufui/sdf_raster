@@ -1,15 +1,18 @@
+#include "sdf_rasterizer.hpp"
+
+#include "application.hpp"
+#include "frustum_culling.hpp"
+#include "gui.hpp"
+#include "logger.hpp"
+
+#include <spdlog/stopwatch.h>
+#include <vk_buffers.h>
+#include <vk_pipeline.h>
+
 #include <array>
 #include <fstream>
 #include <iomanip>
 #include <stdexcept>
-
-#include "spdlog/stopwatch.h"
-#include "vk_pipeline.h"
-
-#include "application.hpp"
-#include "gui.hpp"
-#include "logger.hpp"
-#include "sdf_rasterizer.hpp"
 
 namespace sdf_raster {
 
@@ -26,7 +29,7 @@ SDFRasterizer::SDFRasterizer (std::shared_ptr <VulkanContext> vulkan_context)
 SDFRasterizer::~SDFRasterizer () {
 }
 
-void SDFRasterizer::init (const SdfOctree& default_scene) {
+void SDFRasterizer::init () {
     if (!this->context || !this->context->is_initialized ()) {
         throw std::runtime_error ("VulkanContext is not initialized before renderer init.");
     }
@@ -40,7 +43,6 @@ void SDFRasterizer::init (const SdfOctree& default_scene) {
     this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
     this->descriptor_maker_for_resizable = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
 
-    this->update_scene (default_scene);
     this->init_push_constants ();
     this->init_descriptor_sets ();
     this->init_compute_hz_buffer_pipeline ();
@@ -59,35 +61,6 @@ void SDFRasterizer::init (const SdfOctree& default_scene) {
     }
 
     this->initialized = true;
-}
-
-void SDFRasterizer::update_scene (const SdfOctree& scene) {
-    vkDeviceWaitIdle (this->context->get_device ());
-
-    const size_t cpu_traversed = 3;
-    {
-        spdlog::stopwatch sw;
-        this->subtrees = get_octree_subtrees_payloads (scene, cpu_traversed); // TODO: rebuild each frame
-        LOG_INFO ("[{}] get_octree_subtrees_payloads: lvl={} count={} (took {:.3}s)", RENDERER_NAME, cpu_traversed, this->subtrees.size (), sw);
-    }
-    // {
-    //     spdlog::stopwatch sw;
-    //     this->subtrees = get_octree_subtrees_payloads_parallel (scene, cpu_traversed); // TODO: rebuild each frame
-    //     LOG_INFO ("[get_octree_subtrees_payloads_parallel]: lvl={} count={} (took {:.3}s)", cpu_traversed, this->subtrees.size (), sw);
-    // }
-
-    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
-
-	this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
-	    , this->context->get_physical_device ()
-	    , this->context->get_copy_helper ()
-	    , *descriptor_maker
-	    , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-	    , scene
-	    , this->subtrees);
-
-    const uint32_t octree_depth = get_octree_max_depth (scene);
-    LOG_INFO ("[{}] Loaded sdf-octree scene '{}'. Depth: {}.", RENDERER_NAME, scene.name, octree_depth);
 }
 
 void SDFRasterizer::register_resizable () {
@@ -136,6 +109,10 @@ void SDFRasterizer::init_push_constants () {
 }
 
 void SDFRasterizer::init_descriptor_sets () {
+    this->sdf_octree_ds.descriptor_set_layout = vk_utils::createDescriptorSetLayout (this->context->get_device ()
+        , {{ 0, { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } }, { 1, { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } }}
+        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
+
 	this->mesh_ds = create_mesh_descriptor_set (this->context->get_device ()
 	    , this->context->get_physical_device ()
 	    , this->context->get_copy_helper ()
@@ -731,7 +708,24 @@ void SDFRasterizer::init_graphics_frustum_pipeline () {
     shader_modules.clear ();
 }
 
-void SDFRasterizer::update (Settings& settings) {
+void SDFRasterizer::init_subtree_roots_staging_buffer () {
+    VkMemoryRequirements mem_req;
+    VkDeviceSize staging_buffer_size = (1LL << (3 * this->cpu_traversed)) * sizeof (NodeContext); // NOTE: max octree nodes on level: pow (8, level)
+    this->subtrees_buffer = vk_utils::createBuffer (this->context->get_device (), staging_buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &mem_req);
+
+    VkMemoryAllocateInfo allocInfo {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = mem_req.size;
+    allocInfo.memoryTypeIndex = vk_utils::findMemoryType (mem_req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, this->context->get_physical_device ());
+
+    VK_CHECK_RESULT (vkAllocateMemory (this->context->get_device (), &allocInfo, nullptr, &this->subtrees_memory));
+
+    vkBindBufferMemory (this->context->get_device (), this->subtrees_buffer, this->subtrees_memory, 0);
+
+    VK_CHECK_RESULT (vkMapMemory (this->context->get_device (), this->subtrees_memory, 0, staging_buffer_size, 0, &this->subtrees_memory_mapped));
+}
+
+void SDFRasterizer::update (const SdfOctree& scene, Settings& settings) {
     if (!settings.frustum_view && this->frustum_draw_buffer) {
         settings.camera = this->frustum_draw_buffer->get_camera ();
         this->frustum_draw_buffer.reset ();
@@ -750,11 +744,40 @@ void SDFRasterizer::update (Settings& settings) {
             settings.use_mesh_shading = false;
         }
     }
+
+    if (scene.name != this->scene_name || settings.cpu_traversed != this->cpu_traversed) {
+        vkDeviceWaitIdle (this->context->get_device ());
+
+        cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
+	    this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
+	        , this->context->get_physical_device ()
+	        , this->context->get_copy_helper ()
+	        , *descriptor_maker
+	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+	        , scene // TODO: pass nodes without scene name
+	        , settings.cpu_traversed
+	        , this->context->get_total_frames ());
+        this->scene_name = scene.name;
+
+        const uint32_t octree_depth = get_octree_max_depth (scene);
+        this->cpu_traversed = settings.cpu_traversed;
+        this->subtrees = get_octree_subtrees_payloads (scene, settings.cpu_traversed);
+        this->init_subtree_roots_staging_buffer ();
+
+        LOG_INFO ("[{}] Loaded sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
+             , scene.name
+             , octree_depth
+             , this->cpu_traversed
+             , octree_depth - this->cpu_traversed);
+    }
+
+    // TODO: update frame index here.
 }
 
 void SDFRasterizer::update_stats () {
+    // TODO: total active leafs/roots counts
     this->stats.active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
-    this->stats.active_roots_count = this->subtrees.size ();
+    this->stats.active_roots_count = this->visible_subtrees.size ();
 }
 
 void SDFRasterizer::update_push_constants (const Settings& settings) {
@@ -777,17 +800,15 @@ LiteMath::float3 face_normal (const LiteMath::float4& a, const LiteMath::float4&
 }
 
 void SDFRasterizer::update_frustum_buffer (const Camera& camera) {
-    FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);
-
     const auto& vertices = camera.get_frustum_corners ();
-    std::copy (vertices.begin (), vertices.end (), ptr->vertices);
+    std::copy (vertices.begin (), vertices.end (), this->frustum.vertices);
 
-    ptr->normals [0] = LiteMath::to_float4 (face_normal (vertices [1], vertices [0], vertices [2]), 1.f); // Near
-    ptr->normals [1] = LiteMath::to_float4 (face_normal (vertices [4], vertices [5], vertices [7]), 1.f); // Far
-    ptr->normals [2] = LiteMath::to_float4 (face_normal (vertices [0], vertices [4], vertices [6]), 1.f); // Left
-    ptr->normals [3] = LiteMath::to_float4 (face_normal (vertices [5], vertices [1], vertices [3]), 1.f); // Right
-    ptr->normals [4] = LiteMath::to_float4 (face_normal (vertices [2], vertices [3], vertices [7]), 1.f); // Top
-    ptr->normals [5] = LiteMath::to_float4 (face_normal (vertices [4], vertices [0], vertices [1]), 1.f); // Bottom
+    this->frustum.normals [0] = LiteMath::to_float4 (face_normal (this->frustum.vertices [1], this->frustum.vertices [0], this->frustum.vertices [2]), 1.f); // Near
+    this->frustum.normals [1] = LiteMath::to_float4 (face_normal (this->frustum.vertices [4], this->frustum.vertices [5], this->frustum.vertices [7]), 1.f); // Far
+    this->frustum.normals [2] = LiteMath::to_float4 (face_normal (this->frustum.vertices [0], this->frustum.vertices [4], this->frustum.vertices [6]), 1.f); // Left
+    this->frustum.normals [3] = LiteMath::to_float4 (face_normal (this->frustum.vertices [5], this->frustum.vertices [1], this->frustum.vertices [3]), 1.f); // Right
+    this->frustum.normals [4] = LiteMath::to_float4 (face_normal (this->frustum.vertices [2], this->frustum.vertices [3], this->frustum.vertices [7]), 1.f); // Top
+    this->frustum.normals [5] = LiteMath::to_float4 (face_normal (this->frustum.vertices [4], this->frustum.vertices [0], this->frustum.vertices [1]), 1.f); // Bottom
 }
 
 void SDFRasterizer::clear_geometry (VkCommandBuffer cmd_buff) {
@@ -949,6 +970,34 @@ void SDFRasterizer::copy_depth (VkCommandBuffer cmd_buff) {
     );
 }
 
+void SDFRasterizer::copy_subtrees (VkCommandBuffer cmd_buff) {
+    VkBufferCopy copy_region = {};
+    copy_region.srcOffset = 0;
+    copy_region.dstOffset = 0;
+    copy_region.size = this->subtrees.size () * sizeof (NodeContext);
+
+    vkCmdCopyBuffer (cmd_buff, this->subtrees_buffer, this->sdf_octree_ds.subtree_root_buffers [this->frame_index], 1, &copy_region);
+
+    VkBufferMemoryBarrier barr = {};
+    barr.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barr.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT; 
+    barr.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barr.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barr.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barr.buffer = this->sdf_octree_ds.subtree_root_buffers [this->frame_index];
+    barr.offset = 0;
+    barr.size = VK_WHOLE_SIZE;
+
+    vkCmdPipelineBarrier (cmd_buff
+        , VK_PIPELINE_STAGE_HOST_BIT
+        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+        , 0
+        , 0, nullptr
+        , 1, &barr
+        , 0, nullptr
+    );
+}
+
 void SDFRasterizer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
     // NOTE: expects layout of all hz_buffer_ds mip-images to be VK_IMAGE_LAYOUT_GENERAL
 
@@ -1053,10 +1102,14 @@ void SDFRasterizer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
 }
 
 void SDFRasterizer::compute_active_leafs (VkCommandBuffer cmd_buff) {
+    if (this->visible_subtrees.empty ()) {
+        return;
+    }
+
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
     std::array <VkDescriptorSet, 4> ds = {
-        this->sdf_octree_ds.descriptor_set, // TODO: sepparate subtree roots buffer for all frames
+        this->sdf_octree_ds.descriptor_sets [this->frame_index],
         this->active_leafs_ds.descriptor_sets [this->frame_index],
         this->frustum_ds.descriptor_sets [this->frame_index],
         this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set
@@ -1067,7 +1120,7 @@ void SDFRasterizer::compute_active_leafs (VkCommandBuffer cmd_buff) {
 
     vkCmdPushConstants (cmd_buff, this->compute_active_leafs_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-    vkCmdDispatch (cmd_buff, 8, 8, static_cast <uint32_t> (this->subtrees.size ()));
+    vkCmdDispatch (cmd_buff, 8, 8, static_cast <uint32_t> (this->visible_subtrees.size ()));
 }
 
 void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff) {
@@ -1193,7 +1246,7 @@ void SDFRasterizer::compute_geometry (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_geometry_pipeline);
 
     std::array <VkDescriptorSet, 5> ds = {
-        this->sdf_octree_ds.descriptor_set,
+        this->sdf_octree_ds.descriptor_sets [this->frame_index],
         this->mesh_ds.descriptor_sets [this->frame_index],
         this->marching_cubes_lookup_table_ds.descriptor_set,
         this->active_leafs_ds.descriptor_sets [this->frame_index],
@@ -1350,7 +1403,7 @@ void SDFRasterizer::draw_mesh (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_pipeline);
 
     std::array <VkDescriptorSet, 3> ds = {
-        this->sdf_octree_ds.descriptor_set
+        this->sdf_octree_ds.descriptor_sets [this->frame_index]
         , this->marching_cubes_lookup_table_ds.descriptor_set
         , this->active_leafs_ds.descriptor_sets [this->frame_index]
     };
@@ -1420,9 +1473,17 @@ void SDFRasterizer::render (const Settings& settings) {
     }
 
     this->update_push_constants (settings);
+
+    FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);
     if (!settings.frustum_view) {
         this->update_frustum_buffer (settings.camera);
+        *ptr = this->frustum;
+        frustum_culling (this->subtrees, this->frustum, this->visible_subtrees);
+        if (this->visible_subtrees.size ()) {
+            memcpy (this->subtrees_memory_mapped, this->visible_subtrees.data (), this->visible_subtrees.size () * sizeof (NodeContext));
+        }
     }
+    this->copy_subtrees (cmd_buff);
 
     if (this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image != VK_NULL_HANDLE) {
         this->copy_depth (cmd_buff);
@@ -1471,6 +1532,17 @@ void SDFRasterizer::shutdown () {
     if (!this->context || !this->context->is_initialized ()) {
         LOG_ERROR ("Vulkan context is already missing");
         return;
+    }
+
+    if (this->subtrees_buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer (this->context->get_device (), this->subtrees_buffer, nullptr);
+        this->subtrees_buffer = VK_NULL_HANDLE;
+    }
+
+    if (this->subtrees_memory != VK_NULL_HANDLE) {
+        vkUnmapMemory(this->context->get_device (), this->subtrees_memory);
+        vkFreeMemory (this->context->get_device (), this->subtrees_memory, nullptr);
+        this->subtrees_memory = VK_NULL_HANDLE;
     }
 
     cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);

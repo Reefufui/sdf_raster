@@ -97,7 +97,8 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
         , vk_utils::DescriptorMaker& ds_maker
         , VkShaderStageFlags shader_stage_flags
         , const sdf_raster::SdfOctree& octree
-        , const std::vector <NodeContext>& subtrees) {
+        , const size_t subtree_root_level
+        , size_t max_frames_in_flight) {
     SdfOctreeDescriptorSetInfo info = {};
 
     if (!copy_helper) {
@@ -105,29 +106,36 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
     }
 
     VkDeviceSize octree_nodes_size = octree.nodes.size () * sizeof (SdfOctreeNode);
-    VkDeviceSize subtree_size = subtrees.size () * sizeof (NodeContext);
+    VkDeviceSize subtree_size = (1LL << (3 * subtree_root_level)) * sizeof (NodeContext); // NOTE: max octree nodes on level: pow (8, level)
 
     if (octree_nodes_size == 0) {
         throw std::runtime_error ("SdfOctree is empty, cannot create descriptor set.");
     }
 
-    std::vector <VkBuffer> buffers (2);
-    std::vector <VkMemoryRequirements> mem_reqs (2);
+    std::vector <VkBuffer> buffers (1 + max_frames_in_flight);
+    std::vector <VkMemoryRequirements> mem_reqs (1 + max_frames_in_flight);
+
+    info.subtree_root_buffers.clear ();
 
     buffers [0] = vk_utils::createBuffer (device, octree_nodes_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [0]);
-    buffers [1] = vk_utils::createBuffer (device, subtree_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [1]);
     info.nodes_buffer = buffers [0];
-    info.subtree_buffer = buffers [1];
+
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
+        buffers [i + 1] = vk_utils::createBuffer (device, subtree_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i + 1]);
+        info.subtree_root_buffers.push_back (buffers [i + 1]);
+    }
 
     info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
 
     copy_helper->UpdateBuffer (info.nodes_buffer, 0, octree.nodes.data (), octree_nodes_size);
-    copy_helper->UpdateBuffer (info.subtree_buffer, 0, subtrees.data (), subtree_size);
 
-    ds_maker.BindBegin (shader_stage_flags);
-    ds_maker.BindBuffer (0, info.nodes_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    ds_maker.BindBuffer (1, info.subtree_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    ds_maker.BindEnd (&info.descriptor_set, &info.descriptor_set_layout);
+    info.descriptor_sets.resize (max_frames_in_flight);
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
+        ds_maker.BindBegin (shader_stage_flags);
+        ds_maker.BindBuffer (0, info.nodes_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindBuffer (1, info.subtree_root_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
+    }
 
     return info;
 }
@@ -225,9 +233,11 @@ void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetI
         info.nodes_buffer = VK_NULL_HANDLE;
     }
 
-    if (info.subtree_buffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer (device, info.subtree_buffer, nullptr);
-        info.subtree_buffer = VK_NULL_HANDLE;
+    for (size_t i = 0; i < info.subtree_root_buffers.size (); ++i) {
+        if (info.subtree_root_buffers [i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer (device, info.subtree_root_buffers [i], nullptr);
+            info.subtree_root_buffers [i] = VK_NULL_HANDLE;
+        }
     }
 
     if (info.memory != VK_NULL_HANDLE) {

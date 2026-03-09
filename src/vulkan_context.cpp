@@ -352,7 +352,7 @@ void VulkanContext::create_device () {
         device_extensions_to_enable.push_back (VK_EXT_MESH_SHADER_EXTENSION_NAME);
     } else {
         this->use_mesh_shading = false;
-        LOG_WARN ("Mesh Shaders are NOT supported on this physical device.");
+        LOG_WARN ("[VulkanContext] Mesh Shaders are NOT supported on this physical device.");
     }
 
     VkPhysicalDeviceFeatures features_to_enable_in_base_struct = device_features_2.features;

@@ -25,9 +25,8 @@ public:
     explicit SDFRasterizer (std::shared_ptr <VulkanContext> vulkan_context);
     ~SDFRasterizer ();
 
-    void init (const SdfOctree& default_scene) override;
-    void update_scene (const SdfOctree& scene) override;
-    void update (Settings& settings) override;
+    void init () override;
+    void update (const SdfOctree& scene, Settings& settings) override;
     void render (const Settings& settings) override;
     void shutdown () override;
     const Stats& get_stats () override;
@@ -50,6 +49,8 @@ private:
     void init_graphics_frustum_pipeline ();
     void update_stats ();
 
+    void init_subtree_roots_staging_buffer ();
+
     void update_push_constants (const Settings& settings);
     void update_frustum_buffer (const Camera& camera);
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
@@ -68,6 +69,7 @@ private:
     void draw_mesh (VkCommandBuffer cmd_buff);
     void draw_frustum (VkCommandBuffer cmd_buff);
     void copy_depth (VkCommandBuffer cmd_buff);
+    void copy_subtrees (VkCommandBuffer cmd_buff);
 
     std::shared_ptr <VulkanContext> context {nullptr};
 
@@ -106,10 +108,18 @@ private:
     VkPipelineLayout compute_prefix_sum_pass3_pipeline_layout {VK_NULL_HANDLE};
 
     std::vector <NodeContext> subtrees {};
+    std::vector <NodeContext> visible_subtrees {};
+    VkBuffer subtrees_buffer {VK_NULL_HANDLE};
+    VkDeviceMemory subtrees_memory {VK_NULL_HANDLE};
+    void* subtrees_memory_mapped = nullptr;
+
+    FrustumGeometry frustum {};
     std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer {nullptr};
 
     PushConstantsData push_constants {};
     Stats stats {};
+    size_t cpu_traversed {};
+    std::string scene_name;
 
     uint32_t frame_index {0};
     bool initialized {false};

@@ -144,8 +144,9 @@ add_library (LiteMath::LiteImage ALIAS LiteImage)
 add_executable(${PROJECT_NAME}
     src/application.cpp
     src/camera.cpp
-    src/sdf_rasterizer.cpp
+    src/frustum_culling.cpp
     src/gui.cpp
+    src/indirect_dispatch.cpp
     src/logger.cpp
     src/main.cpp
     src/marching_cubes_lookup_table.cpp
@@ -153,9 +154,9 @@ add_executable(${PROJECT_NAME}
     src/mesh.cpp
     src/occlusion_culling.cpp
     src/sdf_octree.cpp
+    src/sdf_rasterizer.cpp
     src/state.cpp
     src/vulkan_context.cpp
-    src/indirect_dispatch.cpp
 )
 
 target_include_directories (${PROJECT_NAME} PRIVATE

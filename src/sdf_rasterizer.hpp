@@ -1,8 +1,9 @@
 #pragma once
 
+#include <functional>
 #include <memory>
-#include <vector>
 #include <string>
+#include <vector>
 
 #include <GLFW/glfw3.h>
 
@@ -26,8 +27,8 @@ public:
     ~SDFRasterizer ();
 
     void init () override;
-    void update (const SdfOctree& scene, Settings& settings) override;
-    void render (const Settings& settings) override;
+    void update (uint32_t frame_index, const SdfOctree& scene, Settings& settings) override;
+    void render (VkCommandBuffer cmd_buff) override;
     void shutdown () override;
     const Stats& get_stats () override;
 
@@ -47,11 +48,9 @@ private:
     void register_resizable ();
 
     void init_graphics_frustum_pipeline ();
-    void update_stats ();
 
     void init_subtree_roots_staging_buffer ();
 
-    void update_push_constants (const Settings& settings);
     void update_frustum_buffer (const Camera& camera);
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
     void clear_geometry (VkCommandBuffer cmd_buff);
@@ -65,7 +64,7 @@ private:
     void prefix_sum_pass3 (VkCommandBuffer cmd_buff);
     void compute_geometry (VkCommandBuffer cmd_buff);
     void geometry_barrier (VkCommandBuffer cmd_buff);
-    void draw_geometry (VkCommandBuffer cmd_buff, const Settings& settings);
+    void draw_geometry (VkCommandBuffer cmd_buff);
     void draw_mesh (VkCommandBuffer cmd_buff);
     void draw_frustum (VkCommandBuffer cmd_buff);
     void copy_depth (VkCommandBuffer cmd_buff);
@@ -113,6 +112,11 @@ private:
     VkDeviceMemory subtrees_memory {VK_NULL_HANDLE};
     void* subtrees_memory_mapped = nullptr;
 
+    void draw_active_leafs_mesh (VkCommandBuffer cmd_buff);
+    void draw_active_leafs_compute (VkCommandBuffer cmd_buff);
+    using RenderMethodPtr = void (SDFRasterizer::*)(VkCommandBuffer);
+    RenderMethodPtr draw_active_leafs = nullptr;
+
     FrustumGeometry frustum {};
     std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer {nullptr};
 
@@ -120,6 +124,7 @@ private:
     Stats stats {};
     size_t cpu_traversed {};
     std::string scene_name;
+    LiteMath::float4 clear_color {0.2f, 0.3f, 0.3f, 1.0f};
 
     uint32_t frame_index {0};
     bool initialized {false};

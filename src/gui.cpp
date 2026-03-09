@@ -495,6 +495,7 @@ void UI::update (Settings& settings, const Stats& stats) {
         this->status_bar (settings, stats);
     }
 
+    settings.camera.update ();
     this->previous_frame_settings = settings;
 }
 

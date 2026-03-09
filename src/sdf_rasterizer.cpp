@@ -725,12 +725,16 @@ void SDFRasterizer::init_subtree_roots_staging_buffer () {
     VK_CHECK_RESULT (vkMapMemory (this->context->get_device (), this->subtrees_memory, 0, staging_buffer_size, 0, &this->subtrees_memory_mapped));
 }
 
-void SDFRasterizer::update (const SdfOctree& scene, Settings& settings) {
+void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settings& settings) {
+    this->frame_index = frame_index;
+
     if (!settings.frustum_view && this->frustum_draw_buffer) {
+        this->clear_color = {0.2f, 0.3f, 0.3f, 1.0f};
         settings.camera = this->frustum_draw_buffer->get_camera ();
         this->frustum_draw_buffer.reset ();
         LOG_INFO ("[{}] Frustum view mode: OFF.", RENDERER_NAME);
     } else if (settings.frustum_view && !this->frustum_draw_buffer) {
+        this->clear_color = {0.0f, 0.1f, 0.1f, 1.0f};
         this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()
@@ -738,11 +742,15 @@ void SDFRasterizer::update (const SdfOctree& scene, Settings& settings) {
         LOG_INFO ("[{}] Frustum view mode: ON.", RENDERER_NAME);
     }
 
-    if (settings.use_mesh_shading) {
+    if (settings.use_mesh_shading && this->draw_active_leafs != &SDFRasterizer::draw_active_leafs_mesh) {
         if (!this->context->get_use_mesh_shading ()) {
             LOG_WARN ("[{}] Mesh shader not supported. Falling back to compute shaders (skipping current mesh draw).", RENDERER_NAME);
             settings.use_mesh_shading = false;
+        } else {
+            this->draw_active_leafs = &SDFRasterizer::draw_active_leafs_mesh;
         }
+    } else if (!settings.use_mesh_shading && this->draw_active_leafs != &SDFRasterizer::draw_active_leafs_compute) {
+        this->draw_active_leafs = &SDFRasterizer::draw_active_leafs_compute;
     }
 
     if (scene.name != this->scene_name || settings.cpu_traversed != this->cpu_traversed) {
@@ -771,22 +779,25 @@ void SDFRasterizer::update (const SdfOctree& scene, Settings& settings) {
              , octree_depth - this->cpu_traversed);
     }
 
-    // TODO: update frame index here.
-}
-
-void SDFRasterizer::update_stats () {
-    // TODO: total active leafs/roots counts
     this->stats.active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
     this->stats.active_roots_count = this->visible_subtrees.size ();
-}
 
-void SDFRasterizer::update_push_constants (const Settings& settings) {
     this->push_constants.view_proj = settings.camera.get_view_projection_matrix ();
     this->push_constants.camera_pos = LiteMath::to_float4 (settings.camera.get_position (), 1.0f);
     this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
 
     this->push_constants.occlusion_culling = settings.occlusion_culling;
     this->push_constants.frustum_culling = settings.frustum_culling;
+
+    FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);
+    if (!settings.frustum_view) {
+        this->update_frustum_buffer (settings.camera);
+        *ptr = this->frustum;
+        frustum_culling (this->subtrees, this->frustum, this->visible_subtrees);
+        if (this->visible_subtrees.size ()) {
+            memcpy (this->subtrees_memory_mapped, this->visible_subtrees.data (), this->visible_subtrees.size () * sizeof (NodeContext));
+        }
+    }
 }
 
 namespace {
@@ -1311,15 +1322,11 @@ void SDFRasterizer::geometry_barrier (VkCommandBuffer cmd_buff) {
     );
 }
 
-void SDFRasterizer::draw_geometry (VkCommandBuffer cmd_buff, const Settings& settings) {
+void SDFRasterizer::draw_geometry (VkCommandBuffer cmd_buff) {
     const auto extent = this->context->get_swapchain_extent ();
 
     std::array <VkClearValue, 2> clear_values {};
-    if (settings.frustum_view) {
-        clear_values [0].color = {{0.0f, 0.1f, 0.1f, 1.0f}};
-    } else {
-        clear_values [0].color = {{0.2f, 0.3f, 0.3f, 1.0f}};
-    }
+    clear_values [0].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.f}};
     clear_values [1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo render_pass_info {};
@@ -1459,30 +1466,22 @@ void SDFRasterizer::draw_frustum (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void SDFRasterizer::render (const Settings& settings) {
-    if (!this->initialized) {
-        LOG_ERROR ("render called before initialization");
-        return;
-    }
+void SDFRasterizer::draw_active_leafs_mesh (VkCommandBuffer cmd_buff) {
+    this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_MESH_WORKGROUP}, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT);
+    this->draw_mesh (cmd_buff);
+}
 
-    this->update_stats ();
+void SDFRasterizer::draw_active_leafs_compute (VkCommandBuffer cmd_buff) {
+    this->clear_geometry (cmd_buff);
+    this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_COMPUTE_WORKGROUP}, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    this->compute_geometry (cmd_buff);
+    this->geometry_barrier (cmd_buff);
+    this->draw_geometry (cmd_buff);
+}
 
-    auto cmd_buff = this->context->begin_frame (this->frame_index);
-    if (cmd_buff == VK_NULL_HANDLE) {
-        return;
-    }
+void SDFRasterizer::render (VkCommandBuffer cmd_buff) {
+    assert (this->initialized);
 
-    this->update_push_constants (settings);
-
-    FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);
-    if (!settings.frustum_view) {
-        this->update_frustum_buffer (settings.camera);
-        *ptr = this->frustum;
-        frustum_culling (this->subtrees, this->frustum, this->visible_subtrees);
-        if (this->visible_subtrees.size ()) {
-            memcpy (this->subtrees_memory_mapped, this->visible_subtrees.data (), this->visible_subtrees.size () * sizeof (NodeContext));
-        }
-    }
     this->copy_subtrees (cmd_buff);
 
     if (this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image != VK_NULL_HANDLE) {
@@ -1490,36 +1489,22 @@ void SDFRasterizer::render (const Settings& settings) {
         this->compute_hz_buffer (cmd_buff);
     } else {
         LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
-        this->push_constants.occlusion_culling = true;
+        this->push_constants.occlusion_culling = false;
     }
 
     this->reset_active_leafs_counter (cmd_buff);
     this->compute_active_leafs (cmd_buff);
 
-    if (settings.use_mesh_shading) {
-        this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_MESH_WORKGROUP}, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT);
-        this->draw_mesh (cmd_buff);
-    } else {
-        this->clear_geometry (cmd_buff);
-        this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_COMPUTE_WORKGROUP}, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-        this->compute_geometry (cmd_buff);
-        this->geometry_barrier (cmd_buff);
-        this->draw_geometry (cmd_buff, settings);
-    }
-
-    if (settings.frustum_view) {
-        this->draw_frustum (cmd_buff);
-    }
-
-    gui::draw (this->context->get_swapchain_image_index (), cmd_buff); // TODO: refactoring: this shouldn't be called here
+    std::invoke (this->draw_active_leafs, this, cmd_buff);
 
     this->hz_buffer_barrier (cmd_buff);
-    if (!settings.frustum_view) {
-        prepare_next_frame_data (this->hz_buffer_ds, this->frame_index, this->context->get_depth_buffer ().image, settings.camera.get_view_projection_matrix ());
-    }
 
-    this->context->end_frame (cmd_buff, this->frame_index);
-    this->frame_index = (this->frame_index + 1) % this->context->get_total_frames ();
+    if (this->frustum_draw_buffer) {
+        this->draw_frustum (cmd_buff);
+    } else {
+        this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image = this->context->get_depth_buffer ().image;
+        this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj = this->push_constants.view_proj;
+    }
 }
 
 const Stats& SDFRasterizer::get_stats () {

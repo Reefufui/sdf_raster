@@ -147,11 +147,6 @@ void change_hz_buffer_layout_to_shader_read_only_optimal (VkDevice device, VkCom
     vk_utils::executeCommandBufferNow (cmd_buff, queue, device);
 }
 
-void prepare_next_frame_data (HZBufferDescriptorSetInfo& info, uint32_t frame_idx, VkImage frame_depth_image, LiteMath::float4x4 frame_view_proj) {
-    info.frame_resources [frame_idx].prev_depth_image = frame_depth_image;
-    info.frame_resources [frame_idx].prev_view_proj = frame_view_proj;
-}
-
 void cleanup_hz_buffer_descriptor_set (VkDevice device, HZBufferDescriptorSetInfo& info) {
     for (auto& f : info.frame_resources) {
         vk_utils::deleteImg (device, &f.hz_buffer);

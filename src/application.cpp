@@ -44,32 +44,41 @@ void Application::marching_cubes_cpu (const std::string& a_octree_filename, cons
     save_mesh_as_obj (meshes [0], a_mesh_filename); // TODO: mesh concatenation
 }
 
-void Application::run (bool single_frame) {
+void Application::run (bool /*single_frame*/) {
     if (!this->renderer) {
         cleanup ();
         throw std::logic_error ("[Application::run] renderer is not inited");
     }
 
     try {
-        do {
+        const uint32_t frames_in_flight = this->vulkan_context->get_total_frames ();
+        for (uint32_t i = 0; !glfwWindowShouldClose (this->window); i = (i + 1) % frames_in_flight) {
             glfwPollEvents ();
+
             int iconified = glfwGetWindowAttrib (this->window, GLFW_ICONIFIED);
             if (iconified) {
                 std::this_thread::sleep_for (std::chrono::milliseconds (100));
                 continue;
             }
 
-            const auto& stats = this->renderer->get_stats ();
-            gui::update (settings, stats);
+            auto cmd_buff = this->vulkan_context->begin_frame (i);
+            if (cmd_buff == VK_NULL_HANDLE) {
+                continue;
+            }
+
+            gui::update (this->settings, this->renderer->get_stats ());
 
             if (this->scene.name != settings.scene_name) { // TODO: scene manager
                 load_sdf_octree (this->scene, settings.scene_path);
             }
 
-            this->settings.camera.update ();
-            this->renderer->update (this->scene, this->settings);
-            this->renderer->render (this->settings); // TODO: do not pass settings at this point
-        } while (!glfwWindowShouldClose (this->window) && !single_frame);
+            this->renderer->update (i, this->scene, this->settings);
+
+            this->renderer->render (cmd_buff);
+            gui::draw (this->vulkan_context->get_swapchain_image_index (), cmd_buff);
+
+            this->vulkan_context->end_frame (cmd_buff, i);
+        }
     } catch (...) {
         cleanup ();
         throw;
@@ -143,6 +152,7 @@ void Application::init_gui () {
         swapchain_image_views [i] = this->vulkan_context->get_swapchain_image_view (i);
     }
 
+    // TODO: pass vulkan_context to gui. init it the same way as renderer
     gui::InitInfo init_info {
         .device = this->vulkan_context->get_device (),
         .window = this->window,

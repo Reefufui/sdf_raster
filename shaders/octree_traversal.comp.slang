@@ -68,12 +68,9 @@ bool is_visible_node (float3 node_coord, float node_size) {
     return true;
 }
 
-void dfs_octree (NodeContext root) {
-    if (g_octree_data [root.node_index].offset == 0) {
-        process_voxel (root, g_octree_data [root.node_index]);
-        return;
-    }
+#define MAX_DIRECT_DESCEND_PATH 5
 
+void dfs_octree (NodeContext root) {
     int node_index_stack [16];
     float3 coord_stack [16];
     int path_stack [16];
@@ -82,10 +79,11 @@ void dfs_octree (NodeContext root) {
     coord_stack [0] = float3 (root.min_corner_x, root.min_corner_y, root.min_corner_z);
     path_stack [1] = 0;
 
+    const int max_dfs_level = pc.octree_leaf_level - MAX_DIRECT_DESCEND_PATH - pc.subtree_root_level;
     int level = 1; // starting with level 1
     while (level > 0) {
         int child_index = path_stack [level];
-        if (child_index == 8 || level >= pc.max_octree_depth) { // no more children
+        if (child_index == 8 || level > max_dfs_level) { // no more children
             level -= 1;
             continue;
         }
@@ -126,16 +124,15 @@ void dfs_octree (NodeContext root) {
     }
 }
 
-#define DESCEND_PATH_LENGTH 5
-bool descend_path (uint path [DESCEND_PATH_LENGTH], inout NodeContext current_context) {
+bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext current_context) {
     [unroll]
-    for (uint level = 0; level < DESCEND_PATH_LENGTH; ++level) {
+    for (uint level = 0; level < MAX_DIRECT_DESCEND_PATH; ++level) {
         uint child_index = path [level];
         SdfOctreeNode parent_node = g_octree_data [current_context.node_index];
 
         if (parent_node.offset == 0) {
             [unroll]
-            for (; level < DESCEND_PATH_LENGTH; ++level) {
+            for (; level < MAX_DIRECT_DESCEND_PATH; ++level) {
                 if (path [level] != 0u) {
                     return false;
                 }
@@ -164,10 +161,15 @@ bool descend_path (uint path [DESCEND_PATH_LENGTH], inout NodeContext current_co
 [numthreads (8, 8, 8)]
 void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : SV_GroupThreadID) {
     NodeContext current_context = g_roots [gi.z];
-    const uint path [DESCEND_PATH_LENGTH] = {gi.y, gi.x, gti.z, gti.y, gti.x};
+    const uint path [MAX_DIRECT_DESCEND_PATH] = {gi.y, gi.x, gti.z, gti.y, gti.x};
 
     if (descend_path (path, current_context)) {
-        dfs_octree (current_context);
+        SdfOctreeNode node = g_octree_data [current_context.node_index];
+        if (node.offset == 0 || pc.octree_leaf_level <= pc.subtree_root_level + MAX_DIRECT_DESCEND_PATH) {
+            process_voxel (current_context, node);
+        } else {
+            dfs_octree (current_context);
+        }
     }
 
     return;

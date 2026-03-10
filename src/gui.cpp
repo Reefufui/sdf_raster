@@ -361,6 +361,13 @@ void UI::renderer_window (Settings& settings) {
         ImGui::SetTooltip ("Directly sends generated primitives to rasterizer.");
     }
 
+    ImGui::SeparatorText ("Octree");
+    ImGui::InputInt ("cpu traversed", &settings.cpu_traversed);
+    settings.cpu_traversed = LiteMath::clamp (settings.cpu_traversed, 0, 5);
+    if (ImGui::IsItemHovered ()) {
+        ImGui::SetTooltip ("Levels to descend on cpu prior GPU.");
+    }
+
     ImGui::SeparatorText ("Culling");
 
     ImGui::Checkbox ("frustum culling", &settings.frustum_culling);

@@ -709,6 +709,8 @@ void SDFRasterizer::init_graphics_frustum_pipeline () {
 }
 
 void SDFRasterizer::init_subtree_roots_staging_buffer () {
+    this->cleanup_subtree_roots_staging_buffer ();
+
     VkMemoryRequirements mem_req;
     VkDeviceSize staging_buffer_size = (1LL << (3 * this->cpu_traversed)) * sizeof (NodeContext); // NOTE: max octree nodes on level: pow (8, level)
     this->subtrees_buffer = vk_utils::createBuffer (this->context->get_device (), staging_buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &mem_req);
@@ -744,13 +746,15 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
 
     if (settings.use_mesh_shading && this->draw_active_leafs != &SDFRasterizer::draw_active_leafs_mesh) {
         if (!this->context->get_use_mesh_shading ()) {
-            LOG_WARN ("[{}] Mesh shader not supported. Falling back to compute shaders (skipping current mesh draw).", RENDERER_NAME);
             settings.use_mesh_shading = false;
+            LOG_WARN ("[{}] Mesh shader not supported. Falling back to compute shaders (skipping current mesh draw).", RENDERER_NAME);
         } else {
             this->draw_active_leafs = &SDFRasterizer::draw_active_leafs_mesh;
+            LOG_INFO ("[{}] Mesh shading: ON.", RENDERER_NAME);
         }
     } else if (!settings.use_mesh_shading && this->draw_active_leafs != &SDFRasterizer::draw_active_leafs_compute) {
         this->draw_active_leafs = &SDFRasterizer::draw_active_leafs_compute;
+        LOG_INFO ("[{}] Mesh shading: OFF.", RENDERER_NAME);
     }
 
     if (scene.name != this->scene_name || settings.cpu_traversed != this->cpu_traversed) {
@@ -785,7 +789,8 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
     this->push_constants.view_proj = settings.camera.get_view_projection_matrix ();
     this->push_constants.camera_pos = LiteMath::to_float4 (settings.camera.get_position (), 1.0f);
     this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
-
+    this->push_constants.octree_leaf_level = this->cpu_traversed + 5;
+    this->push_constants.subtree_root_level = this->cpu_traversed;
     this->push_constants.occlusion_culling = settings.occlusion_culling;
     this->push_constants.frustum_culling = settings.frustum_culling;
 
@@ -1511,14 +1516,7 @@ const Stats& SDFRasterizer::get_stats () {
     return this->stats;
 }
 
-void SDFRasterizer::shutdown () {
-    vkDeviceWaitIdle (this->context->get_device ());
-
-    if (!this->context || !this->context->is_initialized ()) {
-        LOG_ERROR ("Vulkan context is already missing");
-        return;
-    }
-
+void SDFRasterizer::cleanup_subtree_roots_staging_buffer () {
     if (this->subtrees_buffer != VK_NULL_HANDLE) {
         vkDestroyBuffer (this->context->get_device (), this->subtrees_buffer, nullptr);
         this->subtrees_buffer = VK_NULL_HANDLE;
@@ -1529,6 +1527,17 @@ void SDFRasterizer::shutdown () {
         vkFreeMemory (this->context->get_device (), this->subtrees_memory, nullptr);
         this->subtrees_memory = VK_NULL_HANDLE;
     }
+}
+
+void SDFRasterizer::shutdown () {
+    vkDeviceWaitIdle (this->context->get_device ());
+
+    if (!this->context || !this->context->is_initialized ()) {
+        LOG_ERROR ("Vulkan context is already missing");
+        return;
+    }
+
+    this->cleanup_subtree_roots_staging_buffer ();
 
     cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
     cleanup_mesh_descriptor_set (this->context->get_device (), this->mesh_ds);

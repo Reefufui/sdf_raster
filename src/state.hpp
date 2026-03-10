@@ -12,7 +12,7 @@ struct Settings {
     std::string scene_name {"lowpoly_bunny"};
     std::filesystem::path scene_path {"./assets/lowpoly_bunny.octree"};
     
-    size_t cpu_traversed = 3;
+    int cpu_traversed = 4;
 
     bool use_mesh_shading = true;
 

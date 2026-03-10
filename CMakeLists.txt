@@ -195,5 +195,4 @@ elseif (CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
 endif ()
 
 add_subdirectory (shaders)
-add_subdirectory (assets)
 

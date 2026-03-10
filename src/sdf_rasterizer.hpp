@@ -50,6 +50,7 @@ private:
     void init_graphics_frustum_pipeline ();
 
     void init_subtree_roots_staging_buffer ();
+    void cleanup_subtree_roots_staging_buffer ();
 
     void update_frustum_buffer (const Camera& camera);
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff);

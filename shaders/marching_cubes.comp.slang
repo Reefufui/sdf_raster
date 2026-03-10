@@ -125,7 +125,7 @@ void generate_geometry (uint active_leaf_index) {
         Vertex vertex;
         vertex.position = mul (pc.view_proj, float4 (position, 1.0f));
         vertex.normal = float4 (sample_normal (position), 1.0f);
-        vertex.color = colors [context.node_index % COLORS_COUNT];
+        vertex.color = (pc.color_leafs == 1u) ? colors [context.node_index % COLORS_COUNT] : float4 (1.f);
         g_vertices [vertices_offset + i] = vertex;
 
         edge_bit <<= 1;

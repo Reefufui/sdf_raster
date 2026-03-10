@@ -77,6 +77,7 @@ namespace sdf_raster {
         cpu_traversed,
         frustum_culling,
         occlusion_culling,
+        color_leafs,
         frustum_view,
         disabled_cursor,
         show_ui,

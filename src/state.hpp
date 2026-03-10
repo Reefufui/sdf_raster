@@ -18,7 +18,7 @@ struct Settings {
 
     bool frustum_culling = true;
     bool occlusion_culling = true;
-
+    bool color_leafs = true;
     bool frustum_view = false;
     bool disabled_cursor = true;
 

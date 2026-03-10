@@ -104,8 +104,6 @@ void SDFRasterizer::init_push_constants () {
     }
 
     this->push_constants.active_leafs_max_count = 999999; // TODO: settings
-    this->push_constants.occlusion_culling = true; // TODO: set inital state from config
-    this->push_constants.frustum_culling = true; // TODO: set inital state from config
 }
 
 void SDFRasterizer::init_descriptor_sets () {
@@ -793,6 +791,7 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
     this->push_constants.subtree_root_level = this->cpu_traversed;
     this->push_constants.occlusion_culling = settings.occlusion_culling;
     this->push_constants.frustum_culling = settings.frustum_culling;
+    this->push_constants.color_leafs = settings.color_leafs;
 
     FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);
     if (!settings.frustum_view) {

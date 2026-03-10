@@ -74,6 +74,7 @@ struct PushConstantsData {
     alignas (4)  uint active_leafs_max_count;
     alignas (4)  uint occlusion_culling;
     alignas (4)  uint frustum_culling;
+    alignas (4)  uint color_leafs;
 };
 
 struct SdfOctreeNode {

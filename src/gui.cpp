@@ -400,6 +400,9 @@ void UI::renderer_window (Settings& settings) {
         ImGui::EndDisabled ();
     }
 
+    ImGui::SeparatorText ("Fragment");
+    ImGui::Checkbox ("color leafs", &settings.color_leafs);
+
     ImGui::End ();
 }
 

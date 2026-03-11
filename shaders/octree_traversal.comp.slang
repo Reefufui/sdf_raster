@@ -38,31 +38,27 @@ void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
     }
 
     g_active_leafs [active_leaf_offset] = context;
-
-    // const uint2 mesh_counts = cube_index_2_mesh_output_counts [context.cube_index];
-    // g_active_leaf_vertices_count [active_leaf_offset] = mesh_counts.x;
-    // g_active_leaf_indices_count [active_leaf_offset] = mesh_counts.y * 3;
 }
 
-bool is_visible_node (float3 node_coord, float node_size) {
-    if ((pc.frustum_culling == 0) && (pc.occlusion_culling == 0)) {
-        return true;
+bool is_visible_node (int level, float3 node_coord, float node_size) {
+    if (level <= pc.frustum_culling_level) {
+        if (!aabb_cube_frustum_intersects (frustum_geometry, node_coord, node_size)) {
+            return false;
+        }
     }
 
-    if ((pc.frustum_culling == 1) && !aabb_cube_frustum_intersects (frustum_geometry, node_coord, node_size)) {
-        return false;
-    }
+    if (level <= pc.occlusion_culling_level) {
+        float3 child_corners [8];
+        [unroll]
+        for (int i = 0; i < 8; ++i) {
+            child_corners [i].x = node_coord.x + (((i >> 0) & 1) * node_size);
+            child_corners [i].y = node_coord.y + (((i >> 1) & 1) * node_size);
+            child_corners [i].z = node_coord.z + (((i >> 2) & 1) * node_size);
+        }
 
-    float3 child_corners [8];
-    [unroll]
-    for (int i = 0; i < 8; ++i) {
-        child_corners [i].x = node_coord.x + (((i >> 0) & 1) * node_size);
-        child_corners [i].y = node_coord.y + (((i >> 1) & 1) * node_size);
-        child_corners [i].z = node_coord.z + (((i >> 2) & 1) * node_size);
-    }
-
-    if ((pc.occlusion_culling == 1) && voxel_occluded (depth_sampler, pc.prev_view_proj, child_corners)) {
-        return false;
+        if (voxel_occluded (depth_sampler, pc.prev_view_proj, child_corners)) {
+            return false;
+        }
     }
 
     return true;
@@ -79,6 +75,7 @@ void dfs_octree (NodeContext root) {
     coord_stack [0] = float3 (root.min_corner_x, root.min_corner_y, root.min_corner_z);
     path_stack [1] = 0;
 
+    const int min_dfs_level = MAX_DIRECT_DESCEND_PATH + pc.subtree_root_level; // level = 0
     const int max_dfs_level = pc.octree_leaf_level - MAX_DIRECT_DESCEND_PATH - pc.subtree_root_level;
     int level = 1; // starting with level 1
     while (level > 0) {
@@ -102,7 +99,7 @@ void dfs_octree (NodeContext root) {
 
         float3 child_coord = coord_stack [level - 1] + child_corner_offset;
 
-        if (!is_visible_node (child_coord, child_voxel_size)) {
+        if (!is_visible_node (min_dfs_level + level, child_coord, child_voxel_size)) {
             continue;
         }
 
@@ -149,7 +146,7 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext curren
         current_context.node_index = parent_node.offset + child_index;
 
         float3 node_coord = float3 (current_context.min_corner_x, current_context.min_corner_y, current_context.min_corner_z);
-        if (!is_visible_node (node_coord, node_size)) {
+        if (!is_visible_node (pc.subtree_root_level + level, node_coord, node_size)) {
             return false;
         }
     }

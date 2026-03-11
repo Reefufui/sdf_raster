@@ -61,7 +61,7 @@ private:
     LiteMath::float4x4 view_projection_matrix;
     LiteMath::float4x4 inv_view_projection_matrix;
 
-    float movement_speed {2.5f};
+    float movement_speed {0.25f};
     float mouse_sensitivity {0.1f};
 
     float fov_y {default_fov_y};

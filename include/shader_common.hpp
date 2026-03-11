@@ -72,8 +72,8 @@ struct PushConstantsData {
     alignas (4)  uint octree_leaf_level;
     alignas (4)  uint subtree_root_level;
     alignas (4)  uint active_leafs_max_count;
-    alignas (4)  uint occlusion_culling;
-    alignas (4)  uint frustum_culling;
+    alignas (4)  uint occlusion_culling_level;
+    alignas (4)  uint frustum_culling_level;
     alignas (4)  uint color_leafs;
 };
 

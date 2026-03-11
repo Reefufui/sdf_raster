@@ -100,7 +100,7 @@ void Camera::reset () {
     this->yaw_angle = this->default_yaw_angle;
     this->pitch_angle = this->default_pitch_angle;
     this->fov_y = this->default_fov_y;
-    this->movement_speed = 2.5f;
+    this->movement_speed = 0.25f;
     this->mouse_sensitivity = 0.1f;
 }
 

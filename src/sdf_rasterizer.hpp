@@ -123,7 +123,7 @@ private:
 
     PushConstantsData push_constants {};
     Stats stats {};
-    size_t cpu_traversed {};
+    int cpu_traversed {};
     std::string scene_name;
     LiteMath::float4 clear_color {0.2f, 0.3f, 0.3f, 1.0f};
 

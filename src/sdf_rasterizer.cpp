@@ -755,6 +755,7 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
         LOG_INFO ("[{}] Mesh shading: OFF.", RENDERER_NAME);
     }
 
+    // TODO: separate scene_name update and cpu_traversed update
     if (scene.name != this->scene_name || settings.cpu_traversed != this->cpu_traversed) {
         vkDeviceWaitIdle (this->context->get_device ());
 
@@ -769,16 +770,19 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
 	        , this->context->get_total_frames ());
         this->scene_name = scene.name;
 
-        const uint32_t octree_depth = get_octree_max_depth (scene);
+        settings.octree_depth = get_octree_max_depth (scene);
+        settings.frustum_culling_level = LiteMath::min (settings.frustum_culling_level, settings.octree_depth);
+        settings.occlusion_culling_level = LiteMath::min (settings.frustum_culling_level, settings.octree_depth);
+
         this->cpu_traversed = settings.cpu_traversed;
         this->subtrees = get_octree_subtrees_payloads (scene, settings.cpu_traversed);
         this->init_subtree_roots_staging_buffer ();
 
         LOG_INFO ("[{}] Loaded sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
              , scene.name
-             , octree_depth
+             , settings.octree_depth
              , this->cpu_traversed
-             , octree_depth - this->cpu_traversed);
+             , settings.octree_depth - this->cpu_traversed);
     }
 
     this->stats.active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
@@ -789,15 +793,17 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
     this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
     this->push_constants.octree_leaf_level = this->cpu_traversed + 5;
     this->push_constants.subtree_root_level = this->cpu_traversed;
-    this->push_constants.occlusion_culling = settings.occlusion_culling;
-    this->push_constants.frustum_culling = settings.frustum_culling;
+    this->push_constants.occlusion_culling_level = settings.occlusion_culling_level;
+    this->push_constants.frustum_culling_level = settings.frustum_culling_level;
     this->push_constants.color_leafs = settings.color_leafs;
 
     FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);
     if (!settings.frustum_view) {
         this->update_frustum_buffer (settings.camera);
         *ptr = this->frustum;
-        frustum_culling (this->subtrees, this->frustum, this->visible_subtrees);
+        if (settings.frustum_culling_level > settings.cpu_traversed) {
+            frustum_culling (this->subtrees, this->frustum, this->visible_subtrees);
+        }
         if (this->visible_subtrees.size ()) {
             memcpy (this->subtrees_memory_mapped, this->visible_subtrees.data (), this->visible_subtrees.size () * sizeof (NodeContext));
         }
@@ -858,7 +864,7 @@ void SDFRasterizer::clear_geometry (VkCommandBuffer cmd_buff) {
 void SDFRasterizer::copy_depth (VkCommandBuffer cmd_buff) {
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
 
-    if (!this->frustum_draw_buffer && this->push_constants.occlusion_culling) {
+    if (!this->frustum_draw_buffer && this->push_constants.occlusion_culling_level) {
         VkImageMemoryBarrier depth_to_src = {};
         depth_to_src.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         depth_to_src.pNext = nullptr;
@@ -1018,7 +1024,7 @@ void SDFRasterizer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
 
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
 
-    if (this->push_constants.occlusion_culling) {
+    if (this->push_constants.occlusion_culling_level) {
         vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_hz_buffer_pipeline);
 
         for (uint32_t i = 0; i < f.hz_buffer.mipLvls - 1; ++i) {
@@ -1493,7 +1499,7 @@ void SDFRasterizer::render (VkCommandBuffer cmd_buff) {
         this->compute_hz_buffer (cmd_buff);
     } else {
         LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
-        this->push_constants.occlusion_culling = false;
+        this->push_constants.occlusion_culling_level = false;
     }
 
     this->reset_active_leafs_counter (cmd_buff);

@@ -323,7 +323,7 @@ void camera_window (Camera& camera) {
     }
 
     if (ImGui::CollapsingHeader ("Movement", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::DragFloat ("Movement Speed", &camera.movement_speed, 0.03f, 0.0f, 3.0f, "%.2f");
+        ImGui::DragFloat ("Movement Speed", &camera.movement_speed, 0.01f, 0.0f, 0.5f, "%.3f");
         ImGui::DragFloat ("Mouse Sensitivity", &camera.mouse_sensitivity, 0.01f, 0.0f, 1.0f, "%.3f");
     }
 
@@ -362,20 +362,33 @@ void UI::renderer_window (Settings& settings) {
     }
 
     ImGui::SeparatorText ("Octree");
+    int levels_remaining = settings.octree_depth;
+    ImGui::Text ("total depth: %d", levels_remaining);
+
     ImGui::InputInt ("cpu traversed", &settings.cpu_traversed);
-    settings.cpu_traversed = LiteMath::clamp (settings.cpu_traversed, 0, 5);
     if (ImGui::IsItemHovered ()) {
         ImGui::SetTooltip ("Levels to descend on cpu prior GPU.");
     }
+    settings.cpu_traversed = LiteMath::clamp (settings.cpu_traversed, 0, 5);
+    levels_remaining -= settings.cpu_traversed;
+
+    ImGui::InputInt ("gpu descend", &settings.gpu_descend);
+    settings.gpu_descend = LiteMath::clamp (settings.gpu_descend, 0, LiteMath::min (5, levels_remaining));
+    levels_remaining -= settings.gpu_descend;
+
+    ImGui::BeginDisabled ();
+    ImGui::InputInt ("gpu dfs", &levels_remaining);
+    ImGui::EndDisabled ();
 
     ImGui::SeparatorText ("Culling");
 
-    ImGui::Checkbox ("frustum culling", &settings.frustum_culling);
+    ImGui::InputInt ("frustum", &settings.frustum_culling_level);
+    settings.frustum_culling_level = LiteMath::clamp (settings.frustum_culling_level, 0, settings.octree_depth);
     if (ImGui::IsItemHovered ()) {
         ImGui::SetTooltip ("Disables rendering of objects outside the camera's view frustum.");
     }
 
-    if (!this->previous_frame_settings.frustum_view && settings.frustum_view && !settings.occlusion_culling) {
+    if (!this->previous_frame_settings.frustum_view && settings.frustum_view && !settings.occlusion_culling_level) {
         LOG_WARN ("[UI] Frustum view mode entered w/o occlusion culling. Toggling disabled: depth data missing.");
         this->lock_occlusion_culling = true;
     } else if (!settings.frustum_view) {
@@ -386,7 +399,8 @@ void UI::renderer_window (Settings& settings) {
         ImGui::BeginDisabled ();
     }
 
-    ImGui::Checkbox ("occlusion culling", &settings.occlusion_culling);
+    ImGui::InputInt ("occlusion", &settings.occlusion_culling_level);
+    settings.occlusion_culling_level = LiteMath::clamp (settings.occlusion_culling_level, 0, settings.octree_depth);
     if (ImGui::IsItemHovered (ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::BeginTooltip ();
         ImGui::SetTooltip ("Disables rendering of objects hidden behind other objects.");

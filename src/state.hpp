@@ -12,12 +12,14 @@ struct Settings {
     std::string scene_name {"lowpoly_bunny"};
     std::filesystem::path scene_path {"./assets/lowpoly_bunny.octree"};
     
-    int cpu_traversed = 4;
+    int octree_depth;
+    int cpu_traversed = 3;
+    int gpu_descend = 5;
 
     bool use_mesh_shading = true;
 
-    bool frustum_culling = true;
-    bool occlusion_culling = true;
+    int frustum_culling_level = 16;
+    int occlusion_culling_level = 16;
     bool color_leafs = true;
     bool frustum_view = false;
     bool disabled_cursor = true;

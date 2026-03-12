@@ -155,8 +155,11 @@ add_executable(${PROJECT_NAME}
     src/occlusion_culling.cpp
     src/sdf_octree.cpp
     src/sdf_rasterizer.cpp
+    src/sdf_scom2.cpp
     src/state.cpp
     src/vulkan_context.cpp
+
+    src/common/data_channel.cpp
 )
 
 target_include_directories (${PROJECT_NAME} PRIVATE

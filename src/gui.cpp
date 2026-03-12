@@ -215,8 +215,8 @@ void UI::init (const InitInfo& info) {
 
     this->init_style ();
 
-    this->file_browser.SetTitle ("Pick SDF-octree file");
-    this->file_browser.SetTypeFilters ({ ".octree" });
+    this->file_browser.SetTitle ("Pick SDF-scene file");
+    this->file_browser.SetTypeFilters ({ ".octree", ".scom2" });
 }
 
 void UI::menu_bar (Settings& settings) {

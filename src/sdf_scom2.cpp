@@ -7,10 +7,11 @@
 
 #include "logger.hpp"
 #include "sdf_scom2.hpp"
+#include "sdf/scom2/defs.hpp"
 
 namespace sdf_raster {
 
-void load_scom2 (SCom2Tree& scene, const std::filesystem::path& path) {
+void load_scom2 (scom2::SCom2Tree& scene, const std::filesystem::path& path) {
     std::ifstream fs (path, std::ios::binary);
 
     uint32_t magic_number = 0;
@@ -22,7 +23,7 @@ void load_scom2 (SCom2Tree& scene, const std::filesystem::path& path) {
 
     fs.read ((char *)&magic_number, sizeof (uint32_t));
 
-    if (magic_number != SCOM2_MAGIC_NUMBER) {
+    if (magic_number != scom2::SCOM2_MAGIC_NUMBER) {
         fs.close ();
         LOG_ERROR ("Legacy scom2 is not supported.");
         return;
@@ -30,9 +31,9 @@ void load_scom2 (SCom2Tree& scene, const std::filesystem::path& path) {
 
     fs.read ((char *)&version, sizeof (uint32_t));
 
-    if (version != SCOM2_VERSION) {
+    if (version != scom2::SCOM2_VERSION) {
         fs.close ();
-        printf ("[ERROR] SCom2 version mismatch (save is version %u, current version is %u)\n", version, SCOM2_VERSION);
+        printf ("[ERROR] SCom2 version mismatch (save is version %u, current version is %u)\n", version, scom2::SCOM2_VERSION);
         return;
     }
 
@@ -40,7 +41,7 @@ void load_scom2 (SCom2Tree& scene, const std::filesystem::path& path) {
     fs.read ((char *)&num_bricks, sizeof (uint32_t));
     fs.read ((char *)&vc_count, sizeof (uint32_t));
     fs.read ((char *)&pc_count, sizeof (uint32_t));
-    fs.read ((char *)&scene.header, sizeof (SCom2Header));
+    fs.read ((char *)&scene.header, sizeof (scom2::Header));
 
     scene.nodes.resize (num_nodes);
     scene.bricks.resize (num_bricks);
@@ -63,7 +64,7 @@ void load_scom2 (SCom2Tree& scene, const std::filesystem::path& path) {
     scene.name = path.stem ().string ();
 }
 
-void dump_sdf_scom2_text (const SCom2Tree& /*scene*/, const std::string& path_to_dump) {
+void dump_sdf_scom2_text (const scom2::SCom2Tree& /*scene*/, const std::string& path_to_dump) {
     std::ofstream dump_file (path_to_dump);
     if (!dump_file.is_open ()) {
         LOG_ERROR ("could not open file {} for dumping scom2", path_to_dump);
@@ -79,7 +80,7 @@ void dump_sdf_scom2_text (const SCom2Tree& /*scene*/, const std::string& path_to
     LOG_INFO ("SDF SCom2 successfully dumped to '{}'", path_to_dump);
 }
 
-float sample_sdf (const SCom2Tree& /*scene*/, const LiteMath::float3& /*p*/) {
+float sample_sdf (const scom2::SCom2Tree& /*scene*/, const LiteMath::float3& /*p*/) {
     // TODO
     assert (false);
     return 0.f;
@@ -91,7 +92,7 @@ SCom2TreeDescriptorSetInfo create_sdf_scom2_descriptor_set (
     , std::shared_ptr <vk_utils::ICopyEngine> /*copy_helper*/
     , vk_utils::DescriptorMaker& /*ds_maker*/
     , VkShaderStageFlags /*shader_stage_flags*/
-    , const sdf_raster::SCom2Tree& /*scom2*/
+    , const scom2::SCom2Tree& /*scom2*/
     , const size_t /*subtree_root_level*/
     , size_t /*max_frames_in_flight*/) {
     SCom2TreeDescriptorSetInfo info = {};
@@ -119,19 +120,19 @@ void cleanup_sdf_scom2_descriptor_set (VkDevice device, SCom2TreeDescriptorSetIn
     info = {};
 }
 
-std::vector <NodeContext> get_scom2_subtrees_payloads (const SCom2Tree& /*scene*/, int /*max_level_to_descend*/) {
+std::vector <NodeContext> get_scom2_subtrees_payloads (const scom2::SCom2Tree& /*scene*/, int /*max_level_to_descend*/) {
     // TODO
     assert (false);
     return {};
 }
 
-std::vector <NodeContext> get_scom2_subtrees_payloads_parallel (const SCom2Tree& /*scene*/, int /*max_level_to_descend*/) {
+std::vector <NodeContext> get_scom2_subtrees_payloads_parallel (const scom2::SCom2Tree& /*scene*/, int /*max_level_to_descend*/) {
     // TODO
     assert (false);
     return {};
 }
 
-int get_scom2_max_depth (const SCom2Tree& /*scene*/) {
+int get_scom2_max_depth (const scom2::SCom2Tree& /*scene*/) {
     // TODO
     assert (false);
     return 0;

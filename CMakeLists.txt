@@ -159,7 +159,7 @@ add_executable(${PROJECT_NAME}
     src/state.cpp
     src/vulkan_context.cpp
 
-    src/common/data_channel.cpp
+    src/sdf/scom2/data_channel/data_channel.cpp
 )
 
 target_include_directories (${PROJECT_NAME} PRIVATE

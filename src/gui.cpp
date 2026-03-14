@@ -383,7 +383,11 @@ void UI::renderer_window (Settings& settings) {
     ImGui::SeparatorText ("Culling");
 
     ImGui::InputInt ("frustum", &settings.frustum_culling_level);
-    settings.frustum_culling_level = LiteMath::clamp (settings.frustum_culling_level, 0, settings.octree_depth);
+    if (settings.octree_depth) {
+        settings.frustum_culling_level = LiteMath::clamp (settings.frustum_culling_level, settings.cpu_traversed, settings.octree_depth);
+    } else if (settings.cpu_traversed) {
+        settings.frustum_culling_level = LiteMath::max (settings.frustum_culling_level, settings.cpu_traversed);
+    }
     if (ImGui::IsItemHovered ()) {
         ImGui::SetTooltip ("Disables rendering of objects outside the camera's view frustum.");
     }
@@ -400,7 +404,11 @@ void UI::renderer_window (Settings& settings) {
     }
 
     ImGui::InputInt ("occlusion", &settings.occlusion_culling_level);
-    settings.occlusion_culling_level = LiteMath::clamp (settings.occlusion_culling_level, 0, settings.octree_depth);
+    if (settings.octree_depth) {
+        settings.occlusion_culling_level = LiteMath::clamp (settings.occlusion_culling_level, settings.cpu_traversed, settings.octree_depth);
+    } else if (settings.cpu_traversed) {
+        settings.occlusion_culling_level = LiteMath::max (settings.occlusion_culling_level, settings.cpu_traversed);
+    }
     if (ImGui::IsItemHovered (ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::BeginTooltip ();
         ImGui::SetTooltip ("Disables rendering of objects hidden behind other objects.");

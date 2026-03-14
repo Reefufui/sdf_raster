@@ -59,7 +59,7 @@ private:
     void compute_active_leafs (VkCommandBuffer cmd_buff);
     void hz_buffer_barrier (VkCommandBuffer cmd_buff);
     void prepare_draw_indirect (VkCommandBuffer cmd_buff);
-    void prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size, VkPipelineStageFlagBits dst_stage);
+    void prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size);
     void prefix_sum_pass1 (VkCommandBuffer cmd_buff);
     void prefix_sum_pass2 (VkCommandBuffer cmd_buff);
     void prefix_sum_pass3 (VkCommandBuffer cmd_buff);

@@ -1197,7 +1197,7 @@ void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff) {
         , 1, &other_lvls_as_general);
 }
 
-void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size, VkPipelineStageFlagBits dst_stage) {
+void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size) {
     VkMemoryBarrier barrier1 = {};
     barrier1.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier1.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -1228,11 +1228,11 @@ void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgro
     VkMemoryBarrier barrier2 = {};
     barrier2.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier2.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier2.dstAccessMask = (dst_stage == VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT) ? VK_ACCESS_INDIRECT_COMMAND_READ_BIT : VK_ACCESS_SHADER_READ_BIT;
+    barrier2.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
 
     vkCmdPipelineBarrier (cmd_buff
         , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-        , dst_stage
+        , VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT
         , 0
         , 1, &barrier2
         , 0, nullptr
@@ -1477,13 +1477,13 @@ void SDFRasterizer::draw_frustum (VkCommandBuffer cmd_buff) {
 }
 
 void SDFRasterizer::draw_active_leafs_mesh (VkCommandBuffer cmd_buff) {
-    this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_MESH_WORKGROUP}, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT);
+    this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_MESH_WORKGROUP});
     this->draw_mesh (cmd_buff);
 }
 
 void SDFRasterizer::draw_active_leafs_compute (VkCommandBuffer cmd_buff) {
     this->clear_geometry (cmd_buff);
-    this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_COMPUTE_WORKGROUP}, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_COMPUTE_WORKGROUP});
     this->compute_geometry (cmd_buff);
     this->geometry_barrier (cmd_buff);
     this->draw_geometry (cmd_buff);

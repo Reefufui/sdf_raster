@@ -801,9 +801,7 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
     if (!settings.frustum_view) {
         this->update_frustum_buffer (settings.camera);
         *ptr = this->frustum;
-        if (settings.frustum_culling_level > settings.cpu_traversed) {
-            frustum_culling (this->subtrees, this->frustum, this->visible_subtrees);
-        }
+        frustum_culling (this->subtrees, this->frustum, this->visible_subtrees);
         if (this->visible_subtrees.size ()) {
             memcpy (this->subtrees_memory_mapped, this->visible_subtrees.data (), this->visible_subtrees.size () * sizeof (NodeContext));
         }

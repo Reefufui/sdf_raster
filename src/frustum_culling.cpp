@@ -18,8 +18,8 @@ inline void project_aabb_cube_on_axis (LiteMath::float3 aabb_cube_min, LiteMath:
     LiteMath::float3 center = (aabb_cube_min + aabb_cube_max) * 0.5f;
     LiteMath::float3 half_extents = (aabb_cube_max - aabb_cube_min) * 0.5f;
 
-    float center_proj = dot (center, axis);
-    float radius_proj = abs (axis.x * half_extents.x) + abs (axis.y * half_extents.y) + abs (axis.z * half_extents.z);
+    float center_proj = LiteMath::dot (center, axis);
+    float radius_proj = LiteMath::abs (axis.x * half_extents.x) + LiteMath::abs (axis.y * half_extents.y) + LiteMath::abs (axis.z * half_extents.z);
 
     min_proj = center_proj - radius_proj;
     max_proj = center_proj + radius_proj;
@@ -34,10 +34,10 @@ bool aabb_cube_frustum_intersects (const FrustumGeometry& frustum_cb, LiteMath::
         float voxel_min_proj, voxel_max_proj;
         project_aabb_cube_on_axis (voxel_min_corner, voxel_max_corner, axis, voxel_min_proj, voxel_max_proj);
 
-        float frustum_min_proj = dot (LiteMath::to_float3 (frustum_cb.vertices [0]), axis);
+        float frustum_min_proj = LiteMath::dot (LiteMath::to_float3 (frustum_cb.vertices [0]), axis);
         float frustum_max_proj = frustum_min_proj;
         for (int k = 1; k < 8; k++) {
-            float proj = dot (LiteMath::to_float3 (frustum_cb.vertices [k]), axis);
+            float proj = LiteMath::dot (LiteMath::to_float3 (frustum_cb.vertices [k]), axis);
             if (proj < frustum_min_proj) frustum_min_proj = proj;
             if (proj > frustum_max_proj) frustum_max_proj = proj;
         }
@@ -53,10 +53,10 @@ bool aabb_cube_frustum_intersects (const FrustumGeometry& frustum_cb, LiteMath::
         float voxel_min_proj, voxel_max_proj;
         project_aabb_cube_on_axis (voxel_min_corner, voxel_max_corner, axis, voxel_min_proj, voxel_max_proj);
 
-        float frustum_min_proj = dot (LiteMath::to_float3 (frustum_cb.vertices [0]), axis);
+        float frustum_min_proj = LiteMath::dot (LiteMath::to_float3 (frustum_cb.vertices [0]), axis);
         float frustum_max_proj = frustum_min_proj;
         for (int k = 1; k < 8; k++) {
-            float proj = dot (LiteMath::to_float3 (frustum_cb.vertices [k]), axis);
+            float proj = LiteMath::dot (LiteMath::to_float3 (frustum_cb.vertices [k]), axis);
             if (proj < frustum_min_proj) frustum_min_proj = proj;
             if (proj > frustum_max_proj) frustum_max_proj = proj;
         }

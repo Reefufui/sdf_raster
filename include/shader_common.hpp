@@ -69,7 +69,7 @@ struct PushConstantsData {
     alignas (16) column_major float4x4 prev_view_proj;
     alignas (16) float4 camera_pos;
     alignas (4)  uint max_octree_depth;
-    alignas (4)  uint octree_leaf_level;
+    alignas (4)  uint lod;
     alignas (4)  uint subtree_root_level;
     alignas (4)  uint active_leafs_max_count;
     alignas (4)  uint occlusion_culling_level;

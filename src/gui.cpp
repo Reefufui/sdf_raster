@@ -362,8 +362,17 @@ void UI::renderer_window (Settings& settings) {
     }
 
     ImGui::SeparatorText ("Octree");
-    int levels_remaining = settings.octree_depth;
-    ImGui::Text ("total depth: %d", levels_remaining);
+    assert (settings.gpu_descend == 5); // const for now
+
+    ImGui::InputInt ("lod", &settings.lod);
+    if (settings.octree_depth) {
+        settings.lod = LiteMath::clamp (settings.lod, settings.cpu_traversed + settings.gpu_descend, settings.octree_depth);
+    } else {
+        settings.lod = LiteMath::max (settings.lod, settings.cpu_traversed + settings.gpu_descend);
+    }
+    ImGui::Text ("octree depth: %d/%d", settings.lod, settings.octree_depth);
+
+    int levels_remaining = settings.lod;
 
     ImGui::InputInt ("cpu traversed", &settings.cpu_traversed);
     if (ImGui::IsItemHovered ()) {
@@ -372,11 +381,11 @@ void UI::renderer_window (Settings& settings) {
     settings.cpu_traversed = LiteMath::clamp (settings.cpu_traversed, 0, 5);
     levels_remaining -= settings.cpu_traversed;
 
+    ImGui::BeginDisabled ();
     ImGui::InputInt ("gpu descend", &settings.gpu_descend);
     settings.gpu_descend = LiteMath::clamp (settings.gpu_descend, 0, LiteMath::min (5, levels_remaining));
     levels_remaining -= settings.gpu_descend;
 
-    ImGui::BeginDisabled ();
     ImGui::InputInt ("gpu dfs", &levels_remaining);
     ImGui::EndDisabled ();
 
@@ -405,9 +414,7 @@ void UI::renderer_window (Settings& settings) {
 
     ImGui::InputInt ("occlusion", &settings.occlusion_culling_level);
     if (settings.octree_depth) {
-        settings.occlusion_culling_level = LiteMath::clamp (settings.occlusion_culling_level, settings.cpu_traversed, settings.octree_depth);
-    } else if (settings.cpu_traversed) {
-        settings.occlusion_culling_level = LiteMath::max (settings.occlusion_culling_level, settings.cpu_traversed);
+        settings.occlusion_culling_level = LiteMath::clamp (settings.occlusion_culling_level, 0, settings.octree_depth);
     }
     if (ImGui::IsItemHovered (ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::BeginTooltip ();

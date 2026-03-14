@@ -791,7 +791,7 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
     this->push_constants.view_proj = settings.camera.get_view_projection_matrix ();
     this->push_constants.camera_pos = LiteMath::to_float4 (settings.camera.get_position (), 1.0f);
     this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
-    this->push_constants.octree_leaf_level = this->cpu_traversed + 5;
+    this->push_constants.lod = settings.lod;
     this->push_constants.subtree_root_level = this->cpu_traversed;
     this->push_constants.occlusion_culling_level = settings.occlusion_culling_level;
     this->push_constants.frustum_culling_level = settings.frustum_culling_level;

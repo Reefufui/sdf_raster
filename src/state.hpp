@@ -15,6 +15,7 @@ struct Settings {
     int octree_depth;
     int cpu_traversed = 3;
     int gpu_descend = 5;
+    int lod = 8;
 
     bool use_mesh_shading = true;
 

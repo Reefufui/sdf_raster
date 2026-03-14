@@ -23,7 +23,7 @@ void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
 
     [unroll]
     for (int i = 0; i < 8; ++i) {
-        context.cube_index |= (leaf_node.values[i] < 0.0f ? (1 << i) : 0);
+        context.cube_index |= (leaf_node.values [i] < 0.0f ? (1 << i) : 0);
     }
 
     if (context.cube_index == 0 || context.cube_index == 255) {
@@ -64,46 +64,47 @@ bool is_visible_node (int level, float3 node_coord, float node_size) {
     return true;
 }
 
+#define MAX_OCTREE_DEPTH 16
 #define MAX_DIRECT_DESCEND_PATH 5
 
+// NOTE: root expected to have children
 void dfs_octree (NodeContext root) {
-    int node_index_stack [16];
-    float3 coord_stack [16];
-    int path_stack [16];
+    int node_index_stack [MAX_OCTREE_DEPTH - MAX_DIRECT_DESCEND_PATH];
+    float3 coord_stack [MAX_OCTREE_DEPTH - MAX_DIRECT_DESCEND_PATH];
+    int path_stack [MAX_OCTREE_DEPTH - MAX_DIRECT_DESCEND_PATH];
 
     node_index_stack [0] = root.node_index;
     coord_stack [0] = float3 (root.min_corner_x, root.min_corner_y, root.min_corner_z);
     path_stack [1] = 0;
 
-    const int min_dfs_level = MAX_DIRECT_DESCEND_PATH + pc.subtree_root_level; // level = 0
-    const int max_dfs_level = pc.octree_leaf_level - MAX_DIRECT_DESCEND_PATH - pc.subtree_root_level;
-    int level = 1; // starting with level 1
-    while (level > 0) {
-        int child_index = path_stack [level];
-        if (child_index == 8 || level > max_dfs_level) { // no more children
-            level -= 1;
+    const int dfs_root_level = pc.subtree_root_level + MAX_DIRECT_DESCEND_PATH;
+    int dfs_level = 1; // starting with dfs_level 1
+    while (dfs_level > 0) {
+        int child_index = path_stack [dfs_level];
+        if (child_index == 8) { // no more children
+            dfs_level -= 1;
             continue;
         }
-        path_stack [level] += 1;
+        path_stack [dfs_level] += 1;
 
-        SdfOctreeNode parent_node = g_octree_data [node_index_stack [level - 1]];
+        SdfOctreeNode parent_node = g_octree_data [node_index_stack [dfs_level - 1]];
         int child_node_index = parent_node.offset + child_index;
         SdfOctreeNode child_node = g_octree_data [child_node_index];
 
-        float child_voxel_size = root.voxel_size / (float)(1u << level);
+        float child_voxel_size = root.voxel_size / (float)(1u << dfs_level);
 
         float3 child_corner_offset = {0.0f, 0.0f, 0.0f};
         child_corner_offset.x = (float)((child_index >> 0) & 1) * child_voxel_size;
         child_corner_offset.y = (float)((child_index >> 1) & 1) * child_voxel_size;
         child_corner_offset.z = (float)((child_index >> 2) & 1) * child_voxel_size;
 
-        float3 child_coord = coord_stack [level - 1] + child_corner_offset;
+        float3 child_coord = coord_stack [dfs_level - 1] + child_corner_offset;
 
-        if (!is_visible_node (min_dfs_level + level, child_coord, child_voxel_size)) {
+        if (!is_visible_node (dfs_root_level + dfs_level, child_coord, child_voxel_size)) {
             continue;
         }
 
-        if (child_node.offset == 0) { // leaf
+        if (child_node.offset == 0 || dfs_root_level + dfs_level == pc.lod) { // leaf
             NodeContext context;
             context.voxel_size = child_voxel_size;
             context.min_corner_x = child_coord.x;
@@ -112,11 +113,11 @@ void dfs_octree (NodeContext root) {
             context.node_index = child_node_index;
             process_voxel (context, child_node);
         } else { // internal node
-            node_index_stack [level] = child_node_index;
-            coord_stack [level] = child_coord;
+            node_index_stack [dfs_level] = child_node_index;
+            coord_stack [dfs_level] = child_coord;
 
-            level += 1;
-            path_stack [level] = 0;
+            dfs_level += 1;
+            path_stack [dfs_level] = 0;
         }
     }
 }
@@ -162,7 +163,7 @@ void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : 
 
     if (descend_path (path, current_context)) {
         SdfOctreeNode node = g_octree_data [current_context.node_index];
-        if (node.offset == 0 || pc.octree_leaf_level <= pc.subtree_root_level + MAX_DIRECT_DESCEND_PATH) {
+        if (node.offset == 0 || pc.lod <= pc.subtree_root_level + MAX_DIRECT_DESCEND_PATH) {
             process_voxel (current_context, node);
         } else {
             dfs_octree (current_context);

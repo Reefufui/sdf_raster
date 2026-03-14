@@ -41,7 +41,7 @@ float sample_sdf (const float3 p) {
     float voxel_size = 2.0f;
     uint level = 0;
 
-    while (node.offset != 0 && level < pc.octree_leaf_level) {
+    while (node.offset != 0 && level < pc.lod) {
         level += 1;
         float half = voxel_size * 0.5f;
         uint child_index = 0;

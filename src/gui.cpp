@@ -65,7 +65,7 @@ private:
     void key_input (Settings& settings);
     void menu_bar (Settings& settings);
     void file_dialog (Settings& settings);
-    void renderer_window (Settings& settings);
+    void renderer_window (Settings& settings, const Stats& stats);
     void status_bar (Settings& settings, const Stats& stats);
 
 private:
@@ -351,7 +351,7 @@ void UI::file_dialog (Settings& settings) {
     }
 }
 
-void UI::renderer_window (Settings& settings) {
+void UI::renderer_window (Settings& settings, const Stats& stats) {
     ImGui::Begin ("Rendering");
 
     ImGui::SeparatorText ("Common");
@@ -361,18 +361,33 @@ void UI::renderer_window (Settings& settings) {
         ImGui::SetTooltip ("Directly sends generated primitives to rasterizer.");
     }
 
-    ImGui::SeparatorText ("Octree");
-    assert (settings.gpu_descend == 5); // const for now
+    ImGui::SeparatorText ("Level of Detail");
 
-    ImGui::InputInt ("lod", &settings.lod);
-    if (settings.octree_depth) {
-        settings.lod = LiteMath::clamp (settings.lod, settings.cpu_traversed + settings.gpu_descend, settings.octree_depth);
-    } else {
-        settings.lod = LiteMath::max (settings.lod, settings.cpu_traversed + settings.gpu_descend);
+    if (ImGui::BeginTabBar ("LODControlTabs")) {
+        if (ImGui::BeginTabItem ("Auto")) {
+            ImGui::Text ("Screen size: %dx%d pixels", this->surface_extent.width, this->surface_extent.height);
+            ImGui::Text ("Root size: %.0f pixels", stats.max_dim);
+            ImGui::Text ("Calculated LOD Level: %d", stats.lod);
+            ImGui::EndTabItem ();
+        }
+
+        if (ImGui::BeginTabItem ("Manual")) {
+            ImGui::InputInt ("lod", &settings.max_lod);
+            if (settings.octree_depth) {
+                settings.max_lod = LiteMath::clamp (settings.max_lod, settings.cpu_traversed, settings.octree_depth);
+            } else {
+                settings.max_lod = LiteMath::max (settings.max_lod, settings.cpu_traversed);
+            }
+            ImGui::EndTabItem ();
+        }
+
+        ImGui::EndTabBar ();
     }
-    ImGui::Text ("octree depth: %d/%d", settings.lod, settings.octree_depth);
 
-    int levels_remaining = settings.lod;
+    ImGui::SeparatorText ("Octree");
+    ImGui::Text ("octree depth: %d/%d", settings.max_lod, settings.octree_depth);
+
+    int levels_remaining = settings.max_lod;
 
     ImGui::InputInt ("cpu traversed", &settings.cpu_traversed);
     if (ImGui::IsItemHovered ()) {
@@ -528,7 +543,7 @@ void UI::update (Settings& settings, const Stats& stats) {
         }
 
         if (settings.show_renderer_window) {
-            this->renderer_window (settings);
+            this->renderer_window (settings, stats);
         }
 
         this->status_bar (settings, stats);

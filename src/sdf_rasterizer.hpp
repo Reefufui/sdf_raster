@@ -9,6 +9,7 @@
 
 #include "camera.hpp"
 #include "indirect_dispatch.hpp"
+#include "lod.hpp"
 #include "marching_cubes_lookup_table.hpp"
 #include "mesh.hpp"
 #include "occlusion_culling.hpp"
@@ -83,6 +84,7 @@ private:
     HZBufferDescriptorSetInfo hz_buffer_ds {};
     FrustumDescriptorSetInfo frustum_ds {};
     IndirectDispatchDescriptorSetInfo indirect_dispatch_ds {};
+    LODDescriptorSetInfo lod_ds {};
 
     VkPipelineLayout mesh_pipeline_layout {VK_NULL_HANDLE};
     VkPipeline mesh_pipeline {VK_NULL_HANDLE};

@@ -9,14 +9,15 @@
 
 [[vk::binding (0, 0)]] StructuredBuffer <SdfOctreeNode> g_octree_data;
 [[vk::binding (1, 0)]] StructuredBuffer <NodeContext> g_roots;
-[[vk::binding (2, 0)]] StructuredBuffer <uint> g_clipped_flag;
 
 [[vk::binding (0, 1)]] RWStructuredBuffer <uint> g_active_leaf_counter;
 [[vk::binding (1, 1)]] RWStructuredBuffer <NodeContext> g_active_leafs;
 
-[[vk::binding (0, 2)]] ConstantBuffer <FrustumGeometry> frustum_geometry;
+[[vk::binding (0, 2)]] ConstantBuffer <FrustumGeometry> g_frustum_geometry;
 
-[[vk::binding (0, 3)]] Sampler2D <float> depth_sampler;
+[[vk::binding (0, 3)]] Sampler2D <float> g_depth_sampler;
+
+[[vk::binding (0, 4)]] RWStructuredBuffer <LevelOfDetail> g_lod;
 
 void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
     context.cube_index = 0;
@@ -40,9 +41,10 @@ void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
     g_active_leafs [active_leaf_offset] = context;
 }
 
-bool is_visible_node (int level, float3 node_coord, float node_size) {
+bool is_visible_node (int level, float3 node_coord, float node_size, out float max_dim) {
     if (level <= pc.frustum_culling_level) {
-        if (!aabb_cube_frustum_intersects (frustum_geometry, node_coord, node_size)) {
+        if (!aabb_cube_frustum_intersects (g_frustum_geometry, node_coord, node_size)) {
+            max_dim = 0.f;
             return false;
         }
     }
@@ -56,7 +58,7 @@ bool is_visible_node (int level, float3 node_coord, float node_size) {
             child_corners [i].z = node_coord.z + (((i >> 2) & 1) * node_size);
         }
 
-        if (voxel_occluded (depth_sampler, pc.prev_view_proj, child_corners)) {
+        if (voxel_occluded (g_depth_sampler, pc.prev_view_proj, child_corners, max_dim)) {
             return false;
         }
     }
@@ -68,7 +70,7 @@ bool is_visible_node (int level, float3 node_coord, float node_size) {
 #define MAX_DIRECT_DESCEND_PATH 5
 
 // NOTE: root expected to have children
-void dfs_octree (NodeContext root) {
+void dfs_octree (NodeContext root, uint lod) {
     int node_index_stack [MAX_OCTREE_DEPTH - MAX_DIRECT_DESCEND_PATH];
     float3 coord_stack [MAX_OCTREE_DEPTH - MAX_DIRECT_DESCEND_PATH];
     int path_stack [MAX_OCTREE_DEPTH - MAX_DIRECT_DESCEND_PATH];
@@ -100,11 +102,12 @@ void dfs_octree (NodeContext root) {
 
         float3 child_coord = coord_stack [dfs_level - 1] + child_corner_offset;
 
-        if (!is_visible_node (dfs_root_level + dfs_level, child_coord, child_voxel_size)) {
+        float max_dim;
+        if (!is_visible_node (dfs_root_level + dfs_level, child_coord, child_voxel_size, max_dim)) {
             continue;
         }
 
-        if (child_node.offset == 0 || dfs_root_level + dfs_level == pc.lod) { // leaf
+        if (child_node.offset == 0 || dfs_root_level + dfs_level == lod) { // leaf
             NodeContext context;
             context.voxel_size = child_voxel_size;
             context.min_corner_x = child_coord.x;
@@ -122,16 +125,19 @@ void dfs_octree (NodeContext root) {
     }
 }
 
-bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext current_context) {
+bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext current_context, uint lod, out bool force_process_voxel) {
+    force_process_voxel = true;
+    const int direct_root_level = pc.subtree_root_level;
+
     [unroll]
-    for (uint level = 0; level < MAX_DIRECT_DESCEND_PATH; ++level) {
-        uint child_index = path [level];
+    for (uint direct_level = 0; direct_level < MAX_DIRECT_DESCEND_PATH; ++direct_level) {
+        uint child_index = path [direct_level];
         SdfOctreeNode parent_node = g_octree_data [current_context.node_index];
 
-        if (parent_node.offset == 0) {
+        if (parent_node.offset == 0 || direct_root_level + direct_level == lod) {
             [unroll]
-            for (; level < MAX_DIRECT_DESCEND_PATH; ++level) {
-                if (path [level] != 0u) {
+            for (; direct_level < MAX_DIRECT_DESCEND_PATH; ++direct_level) {
+                if (path [direct_level] != 0u) {
                     return false;
                 }
             }
@@ -147,10 +153,26 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext curren
         current_context.node_index = parent_node.offset + child_index;
 
         float3 node_coord = float3 (current_context.min_corner_x, current_context.min_corner_y, current_context.min_corner_z);
-        if (!is_visible_node (pc.subtree_root_level + level, node_coord, node_size)) {
+        float max_dim;
+        if (!is_visible_node (direct_root_level + direct_level, node_coord, node_size, max_dim)) {
             return false;
         }
     }
+
+    force_process_voxel = direct_root_level + MAX_DIRECT_DESCEND_PATH == lod;
+    return true;
+}
+
+bool get_lod (out uint lod, out float max_dim) {
+    lod = 0;
+    max_dim = 0.f;
+
+    if (!is_visible_node (0, float3 (-1.f, -1.f, -1.f), 2.f, max_dim)) {
+        return false;
+    }
+
+    lod = (uint) round (log2 (max_dim / 30.0f));
+    lod = clamp (lod, pc.subtree_root_level, pc.max_lod);
 
     return true;
 }
@@ -158,15 +180,27 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext curren
 [shader ("compute")]
 [numthreads (8, 8, 8)]
 void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : SV_GroupThreadID) {
+    uint lod;
+    float max_dim;
+    if (!get_lod (lod, max_dim)) {
+        return;
+    }
+    if (dti.x == 0 && dti.y == 0 && dti.z == 0) {
+        g_lod [0].lod = lod;
+        g_lod [0].max_dim = max_dim;
+    }
+
     NodeContext current_context = g_roots [gi.z];
     const uint path [MAX_DIRECT_DESCEND_PATH] = {gi.y, gi.x, gti.z, gti.y, gti.x};
+    bool force_process_voxel = false;
 
-    if (descend_path (path, current_context)) {
+    if (descend_path (path, current_context, lod, force_process_voxel)) {
         SdfOctreeNode node = g_octree_data [current_context.node_index];
-        if (node.offset == 0 || pc.lod <= pc.subtree_root_level + MAX_DIRECT_DESCEND_PATH) {
+
+        if (node.offset == 0 || force_process_voxel) {
             process_voxel (current_context, node);
         } else {
-            dfs_octree (current_context);
+            dfs_octree (current_context, lod);
         }
     }
 

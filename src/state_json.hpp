@@ -75,7 +75,7 @@ namespace sdf_raster {
         scene_name,
         scene_path,
         cpu_traversed,
-        lod,
+        max_lod,
         frustum_culling_level,
         occlusion_culling_level,
         color_leafs,

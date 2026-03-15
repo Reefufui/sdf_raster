@@ -147,6 +147,7 @@ add_executable(${PROJECT_NAME}
     src/frustum_culling.cpp
     src/gui.cpp
     src/indirect_dispatch.cpp
+    src/lod.cpp
     src/logger.cpp
     src/main.cpp
     src/marching_cubes_lookup_table.cpp
@@ -158,6 +159,8 @@ add_executable(${PROJECT_NAME}
     src/sdf_scom2.cpp
     src/state.cpp
     src/vulkan_context.cpp
+
+    src/algorithms/scom2_traverse.cpp
 
     src/sdf/scom2/data_channel/data_channel.cpp
 )

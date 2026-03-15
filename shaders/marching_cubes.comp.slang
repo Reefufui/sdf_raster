@@ -41,7 +41,7 @@ float sample_sdf (const float3 p) {
     float voxel_size = 2.0f;
     uint level = 0;
 
-    while (node.offset != 0 && level < pc.lod) {
+    while (node.offset != 0 && level < pc.max_lod) { // TODO: bind current lod and read from it
         level += 1;
         float half = voxel_size * 0.5f;
         uint child_index = 0;

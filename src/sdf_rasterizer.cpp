@@ -167,6 +167,13 @@ void SDFRasterizer::init_descriptor_sets () {
         , *descriptor_maker
         , VK_SHADER_STAGE_COMPUTE_BIT
         , this->context->get_total_frames ());
+
+    this->lod_ds = create_lod_descriptor_set (this->context->get_device ()
+	    , this->context->get_physical_device ()
+	    , *descriptor_maker
+	    , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+	    , 1 // TODO: edit to match max models count in scene
+	    , this->context->get_total_frames ());
 }
 
 void SDFRasterizer::init_compute_hz_buffer_pipeline () {
@@ -186,6 +193,7 @@ void SDFRasterizer::init_compute_active_leafs_pipeline () {
             , this->active_leafs_ds.descriptor_set_layout
             , this->frustum_ds.descriptor_set_layout
             , this->hz_buffer_ds.descriptor_set_layout
+            , this->lod_ds.descriptor_set_layout
         }, sizeof (PushConstantsData));
     this->compute_active_leafs_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
@@ -788,10 +796,14 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
     this->stats.active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
     this->stats.active_roots_count = this->visible_subtrees.size ();
 
+    const auto lod = fetch_lod (this->context->get_copy_helper (), this->lod_ds, this->frame_index, 0);
+    this->stats.lod = lod.lod;
+    this->stats.max_dim = lod.max_dim;
+
     this->push_constants.view_proj = settings.camera.get_view_projection_matrix ();
     this->push_constants.camera_pos = LiteMath::to_float4 (settings.camera.get_position (), 1.0f);
     this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
-    this->push_constants.lod = settings.lod;
+    this->push_constants.max_lod = settings.max_lod;
     this->push_constants.subtree_root_level = this->cpu_traversed;
     this->push_constants.occlusion_culling_level = settings.occlusion_culling_level;
     this->push_constants.frustum_culling_level = settings.frustum_culling_level;
@@ -1127,11 +1139,12 @@ void SDFRasterizer::compute_active_leafs (VkCommandBuffer cmd_buff) {
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
 
-    std::array <VkDescriptorSet, 4> ds = {
+    std::array <VkDescriptorSet, 5> ds = {
         this->sdf_octree_ds.descriptor_sets [this->frame_index],
         this->active_leafs_ds.descriptor_sets [this->frame_index],
         this->frustum_ds.descriptor_sets [this->frame_index],
-        this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set
+        this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set,
+        this->lod_ds.descriptor_sets [this->frame_index]
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline_layout,
@@ -1550,6 +1563,7 @@ void SDFRasterizer::shutdown () {
     cleanup_draw_indexed_indirect_command_descriptor_set (this->context->get_device (), this->draw_indexed_indirect_command_ds);
     cleanup_hz_buffer_descriptor_set (this->context->get_device (), this->hz_buffer_ds);
     cleanup_indirect_dispatch_descriptor_set (this->context->get_device (), this->indirect_dispatch_ds);
+    cleanup_lod_descriptor_set (this->context->get_device (), this->lod_ds);
 
     if (this->frustum_draw_buffer) {
         this->frustum_draw_buffer.reset ();

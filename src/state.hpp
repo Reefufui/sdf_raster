@@ -15,7 +15,7 @@ struct Settings {
     int octree_depth;
     int cpu_traversed = 3;
     int gpu_descend = 5;
-    int lod = 8;
+    int max_lod = 8;
 
     bool use_mesh_shading = true;
 
@@ -33,6 +33,8 @@ struct Settings {
 struct Stats {
     uint32_t active_leafs_count = 0;
     uint32_t active_roots_count = 0;
+    int lod = 0;
+    float max_dim = 0.f; // NOTE: screen-space size of root voxel in pixels
 };
 
 void dump_state (const Settings& settings, const std::string& filename);

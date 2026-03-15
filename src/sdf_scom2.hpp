@@ -17,7 +17,6 @@
 namespace sdf_raster {
 
 void load_scom2 (scom2::SCom2Tree& scene, const std::filesystem::path& path);
-void dump_sdf_scom2_text (const scom2::SCom2Tree &scene, const std::string &path_to_dump);
 float sample_sdf (const scom2::SCom2Tree& scene, const LiteMath::float3& p);
 
 struct SCom2TreeDescriptorSetInfo {

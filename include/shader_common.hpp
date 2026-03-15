@@ -69,7 +69,7 @@ struct PushConstantsData {
     alignas (16) column_major float4x4 prev_view_proj;
     alignas (16) float4 camera_pos;
     alignas (4)  uint max_octree_depth;
-    alignas (4)  uint lod;
+    alignas (4)  uint max_lod;
     alignas (4)  uint subtree_root_level;
     alignas (4)  uint active_leafs_max_count;
     alignas (4)  uint occlusion_culling_level;
@@ -85,6 +85,13 @@ struct SdfOctreeNode {
 struct FrustumGeometry {
     float4 vertices [8];
     float4 normals [6];
+};
+
+struct LevelOfDetail {
+    alignas (4) uint max_lod;
+    alignas (4) uint min_lod;
+    alignas (4) uint lod;
+    alignas (4) float max_dim; // NOTE: screen-space size of root voxel in pixels
 };
 
 #endif // SHADER_COMMON_H

@@ -79,8 +79,6 @@ namespace sdf_raster {
         frustum_culling_level,
         occlusion_culling_level,
         color_leafs,
-        frustum_view,
-        disabled_cursor,
         show_ui,
         show_camera_window,
         show_renderer_window,

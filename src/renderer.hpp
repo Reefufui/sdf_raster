@@ -15,7 +15,7 @@ public:
     virtual void init () = 0;
     virtual void update (uint32_t frame_index, const SdfOctree& scene, Settings& settings) = 0;
     virtual void render (VkCommandBuffer cmd_buff) = 0;
-    virtual void shutdown () = 0;
+    virtual void shutdown (Settings& settings) = 0;
     virtual const Stats& get_stats () = 0;
 };
 

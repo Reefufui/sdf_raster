@@ -1549,7 +1549,7 @@ void SDFRasterizer::cleanup_subtree_roots_staging_buffer () {
     }
 }
 
-void SDFRasterizer::shutdown () {
+void SDFRasterizer::shutdown (Settings& settings) {
     vkDeviceWaitIdle (this->context->get_device ());
 
     if (!this->context || !this->context->is_initialized ()) {
@@ -1570,6 +1570,8 @@ void SDFRasterizer::shutdown () {
     cleanup_lod_descriptor_set (this->context->get_device (), this->lod_ds);
 
     if (this->frustum_draw_buffer) {
+        settings.frustum_view = false;
+        settings.camera = this->frustum_draw_buffer->get_camera ();
         this->frustum_draw_buffer.reset ();
     }
     this->descriptor_maker.reset ();

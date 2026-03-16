@@ -30,7 +30,7 @@ public:
     void init () override;
     void update (uint32_t frame_index, const SdfOctree& scene, Settings& settings) override;
     void render (VkCommandBuffer cmd_buff) override;
-    void shutdown () override;
+    void shutdown (Settings& settings) override;
     const Stats& get_stats () override;
 
 private:

@@ -173,7 +173,7 @@ void Application::cleanup () {
     gui::cleanup ();
 
     if (this->renderer) {
-        this->renderer->shutdown ();
+        this->renderer->shutdown (this->settings);
     }
 
     if (this->vulkan_context) {

@@ -71,6 +71,9 @@ struct adl_serializer <sdf_raster::Camera> {
 namespace sdf_raster {
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE (
         Settings,
+        window_width,
+        window_height,
+        window_maximized,
         camera,
         scene_name,
         scene_path,

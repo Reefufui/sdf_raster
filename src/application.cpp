@@ -28,6 +28,8 @@ Application::Application ()
 }
 
 Application::~Application () {
+    settings.window_maximized = glfwGetWindowAttrib (this->window, GLFW_MAXIMIZED);
+    glfwGetWindowSize (window, &this->settings.window_width, &this->settings.window_height);
     glfwSetWindowShouldClose (this->window, true);
     cleanup ();
     dump_state (this->settings, "/tmp/sdf_raster.json");
@@ -90,8 +92,10 @@ void Application::init_window () {
     glfwWindowHint (GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint (GLFW_RESIZABLE, GLFW_TRUE);
 
-    glfwWindowHint (GLFW_MAXIMIZED, GLFW_TRUE);
-    this->window = glfwCreateWindow (1080, 900, APP_NAME, nullptr, nullptr);
+    this->window = glfwCreateWindow (this->settings.window_width, this->settings.window_height, APP_NAME, nullptr, nullptr);
+    if (this->settings.window_maximized) {
+        glfwMaximizeWindow (this->window);
+    }
     if (!this->window) {
         glfwTerminate ();
         throw std::runtime_error ("Failed to create GLFW window.");

@@ -8,6 +8,10 @@
 namespace sdf_raster {
 
 struct Settings {
+    int window_width = 1980;
+    int window_height = 1080;
+    bool window_maximized = true;
+
     Camera camera {};
     std::string scene_name {"lowpoly_bunny"};
     std::filesystem::path scene_path {"./assets/lowpoly_bunny.octree"};

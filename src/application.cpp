@@ -133,7 +133,7 @@ void Application::init_vulkan () {
     };
 
     auto resize_gui = [&] () {
-        gui::cleanup ();
+        gui::cleanup (this->settings);
         init_gui ();
     };
 
@@ -170,11 +170,11 @@ void Application::init_gui () {
         .depth_format = this->vulkan_context->get_depth_format (),
     };
 
-    gui::init (init_info);
+    gui::init (init_info, this->settings);
 }
 
 void Application::cleanup () {
-    gui::cleanup ();
+    gui::cleanup (this->settings);
 
     if (this->renderer) {
         this->renderer->shutdown (this->settings);

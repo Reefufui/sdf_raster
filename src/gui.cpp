@@ -30,10 +30,10 @@ public:
         return ui;
     }
 
-    void init (const InitInfo& info);
+    void init (const InitInfo& info, Settings& settings);
     void update (Settings& settings, const Stats& stats);
     void draw (uint32_t image_index, VkCommandBuffer cmd_buff);
-    void cleanup ();
+    void cleanup (Settings& settings);
 
 private:
     UI () = default;
@@ -147,7 +147,7 @@ void UI::create_imgui_framebuffers () {
     LOG_INFO ("[UI] Created framebuffers.");
 }
 
-void UI::init (const InitInfo& info) {
+void UI::init (const InitInfo& info, Settings& settings) {
     assert (info.device != VK_NULL_HANDLE && "InitInfo.device must be valid.");
     assert (info.window != nullptr && "InitInfo.window must be valid.");
     assert (info.instance != VK_NULL_HANDLE && "InitInfo.instance must be valid.");
@@ -215,6 +215,7 @@ void UI::init (const InitInfo& info) {
 
     this->init_style ();
 
+    this->file_browser = ImGui::FileBrowser (0, settings.scenes_directory);
     this->file_browser.SetTitle ("Pick SDF-scene file");
     this->file_browser.SetTypeFilters ({ ".octree", ".scom2" });
 }
@@ -577,7 +578,9 @@ void UI::draw (uint32_t image_index, VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void UI::cleanup () {
+void UI::cleanup (Settings& settings) {
+    settings.scenes_directory = this->file_browser.GetDirectory ();
+
     if (this->device == VK_NULL_HANDLE) {
         return;
     }
@@ -702,8 +705,8 @@ void UI::init_style () {
     }
 }
 
-void init (const InitInfo& info) {
-    UI::get_instance ().init (info);
+void init (const InitInfo& info, Settings& settings) {
+    UI::get_instance ().init (info, settings);
 }
 
 void update (Settings& settings, const Stats& stats) {
@@ -714,8 +717,8 @@ void draw (uint32_t image_index, VkCommandBuffer cmd_buff) {
     UI::get_instance ().draw (image_index, cmd_buff);
 }
 
-void cleanup () {
-    UI::get_instance ().cleanup ();
+void cleanup (Settings& settings) {
+    UI::get_instance ().cleanup (settings);
 }
 
 }

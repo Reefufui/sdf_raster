@@ -77,6 +77,7 @@ namespace sdf_raster {
         camera,
         scene_name,
         scene_path,
+        scenes_directory,
         cpu_traversed,
         max_lod,
         frustum_culling_level,

@@ -14,7 +14,8 @@ struct Settings {
 
     Camera camera {};
     std::string scene_name {"lowpoly_bunny"};
-    std::filesystem::path scene_path {"./assets/lowpoly_bunny.octree"};
+    std::filesystem::path scene_path {"./assets/lowpoly_bunny.octree"}; // TODO: no default scene
+    std::filesystem::path scenes_directory {std::filesystem::current_path ()};
     
     int octree_depth;
     int cpu_traversed = 3;

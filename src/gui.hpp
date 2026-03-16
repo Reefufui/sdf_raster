@@ -27,13 +27,13 @@ struct InitInfo {
     VkFormat depth_format;
 };
 
-void init (const InitInfo& info);
+void init (const InitInfo& info, Settings& settings);
 
 void update (Settings& settings, const Stats& stats);
 
 void draw (uint32_t image_index, VkCommandBuffer cmd_buff);
 
-void cleanup ();
+void cleanup (Settings& settings);
 
 }
 

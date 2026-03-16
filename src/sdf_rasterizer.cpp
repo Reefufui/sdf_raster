@@ -250,6 +250,7 @@ void SDFRasterizer::init_compute_geometry_pipeline () {
             , this->marching_cubes_lookup_table_ds.descriptor_set_layout
             , this->active_leafs_ds.descriptor_set_layout
             , this->draw_indexed_indirect_command_ds.descriptor_set_layout
+            , this->lod_ds.descriptor_set_layout
         }, sizeof (PushConstantsData));
     this->compute_geometry_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
@@ -798,10 +799,12 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
 
     const auto lod = fetch_lod (this->context->get_copy_helper (), this->lod_ds, this->frame_index, 0);
     this->stats.lod = lod.lod;
-    this->stats.max_dim = lod.max_dim;
+    this->stats.distance = lod.distance;
 
     this->push_constants.view_proj = settings.camera.get_view_projection_matrix ();
     this->push_constants.camera_pos = LiteMath::to_float4 (settings.camera.get_position (), 1.0f);
+    this->push_constants.far_plane = settings.camera.get_far_plane ();
+    this->push_constants.near_plane = settings.camera.get_near_plane ();
     this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
     this->push_constants.max_lod = settings.max_lod;
     this->push_constants.subtree_root_level = this->cpu_traversed;
@@ -1277,12 +1280,13 @@ void SDFRasterizer::prefix_sum_pass3 (VkCommandBuffer) {
 void SDFRasterizer::compute_geometry (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_geometry_pipeline);
 
-    std::array <VkDescriptorSet, 5> ds = {
+    std::array <VkDescriptorSet, 6> ds = {
         this->sdf_octree_ds.descriptor_sets [this->frame_index],
         this->mesh_ds.descriptor_sets [this->frame_index],
         this->marching_cubes_lookup_table_ds.descriptor_set,
         this->active_leafs_ds.descriptor_sets [this->frame_index],
-        this->draw_indexed_indirect_command_ds.descriptor_sets [this->frame_index]
+        this->draw_indexed_indirect_command_ds.descriptor_sets [this->frame_index],
+        this->lod_ds.descriptor_sets [this->frame_index]
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_geometry_pipeline_layout,

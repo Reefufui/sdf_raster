@@ -34,7 +34,7 @@ struct Stats {
     uint32_t active_leafs_count = 0;
     uint32_t active_roots_count = 0;
     int lod = 0;
-    float max_dim = 0.f; // NOTE: screen-space size of root voxel in pixels
+    float distance = 0.f;
 };
 
 void dump_state (const Settings& settings, const std::string& filename);

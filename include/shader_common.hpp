@@ -68,6 +68,8 @@ struct PushConstantsData {
     alignas (16) column_major float4x4 view_proj;
     alignas (16) column_major float4x4 prev_view_proj;
     alignas (16) float4 camera_pos;
+    alignas (4)  float far_plane;
+    alignas (4)  float near_plane;
     alignas (4)  uint max_octree_depth;
     alignas (4)  uint max_lod;
     alignas (4)  uint subtree_root_level;
@@ -91,7 +93,7 @@ struct LevelOfDetail {
     alignas (4) uint max_lod;
     alignas (4) uint min_lod;
     alignas (4) uint lod;
-    alignas (4) float max_dim; // NOTE: screen-space size of root voxel in pixels
+    alignas (4) float distance;
 };
 
 #endif // SHADER_COMMON_H

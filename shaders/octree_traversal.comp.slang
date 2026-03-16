@@ -163,36 +163,39 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext curren
     return true;
 }
 
-bool get_lod (out uint lod, out float max_dim) {
-    lod = 0;
-    max_dim = 0.f;
+uint get_lod (bool store) {
+    const float min_distance = pc.near_plane;
+    const float max_distance = pc.far_plane;
+    const uint min_lod = pc.subtree_root_level;
+    const uint max_lod = pc.max_lod;
 
-    if (!is_visible_node (0, float3 (-1.f, -1.f, -1.f), 2.f, max_dim)) {
-        return false;
+    const float distance = distance (float3 (0, 0, 0), pc.camera_pos.xyz);
+
+    if (distance < min_distance) {
+        return max_lod;
+    } else if (distance > max_distance) {
+        return min_lod;
     }
 
-    lod = (uint) round (log2 (max_dim / 30.0f));
-    lod = clamp (lod, pc.subtree_root_level, pc.max_lod);
+    const float normalized_distance = (distance - min_distance) / (max_distance - min_distance);
+    const float current_lod_float = float (min_lod) + ((1.f - normalized_distance) * (float)(max_lod - min_lod));
+    const uint lod = uint (round (current_lod_float));
 
-    return true;
+    if (store) {
+        g_lod [0].lod = lod;
+        g_lod [0].distance = distance;
+    }
+
+    return lod;
 }
 
 [shader ("compute")]
 [numthreads (8, 8, 8)]
 void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : SV_GroupThreadID) {
-    uint lod;
-    float max_dim;
-    if (!get_lod (lod, max_dim)) {
-        return;
-    }
-    if (dti.x == 0 && dti.y == 0 && dti.z == 0) {
-        g_lod [0].lod = lod;
-        g_lod [0].max_dim = max_dim;
-    }
-
     NodeContext current_context = g_roots [gi.z];
     const uint path [MAX_DIRECT_DESCEND_PATH] = {gi.y, gi.x, gti.z, gti.y, gti.x};
     bool force_process_voxel = false;
+    uint lod = get_lod (dti.x == 0 && dti.y == 0 && dti.z == 0);
 
     if (descend_path (path, current_context, lod, force_process_voxel)) {
         SdfOctreeNode node = g_octree_data [current_context.node_index];

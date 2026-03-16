@@ -24,6 +24,8 @@
 
 [[vk::binding (0, 4)]] RWStructuredBuffer <VkDrawIndexedIndirectCommand> g_draw_indexed_indirect_command;
 
+[[vk::binding (0, 5)]] RWStructuredBuffer <LevelOfDetail> g_lod;
+
 static const float eps = 1e-6f;
 
 float3 interpolate (float3 p1, float3 p2, float valp1, float valp2) {
@@ -41,7 +43,7 @@ float sample_sdf (const float3 p) {
     float voxel_size = 2.0f;
     uint level = 0;
 
-    while (node.offset != 0 && level < pc.max_lod) { // TODO: bind current lod and read from it
+    while (node.offset != 0 && level < g_lod [0].lod) {
         level += 1;
         float half = voxel_size * 0.5f;
         uint child_index = 0;

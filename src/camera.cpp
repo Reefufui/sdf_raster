@@ -32,6 +32,14 @@ const std::array <LiteMath::float4, 8>& Camera::get_frustum_corners () const {
     return this->frustum_corners;
 }
 
+float Camera::get_near_plane () const {
+    return this->near_plane;
+}
+
+float Camera::get_far_plane () const {
+    return this->far_plane;
+}
+
 void Camera::set_aspect_ratio (float aspect_ratio) {
     this->aspect_ratio = aspect_ratio;
 }

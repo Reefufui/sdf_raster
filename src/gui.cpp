@@ -354,6 +354,8 @@ void UI::file_dialog (Settings& settings) {
 void UI::renderer_window (Settings& settings, const Stats& stats) {
     ImGui::Begin ("Rendering");
 
+    ImGui::Text ("Screen size: %dx%d pixels", this->surface_extent.width, this->surface_extent.height);
+
     ImGui::SeparatorText ("Common");
 
     ImGui::Checkbox ("use mesh shading", &settings.use_mesh_shading);
@@ -363,25 +365,13 @@ void UI::renderer_window (Settings& settings, const Stats& stats) {
 
     ImGui::SeparatorText ("Level of Detail");
 
-    if (ImGui::BeginTabBar ("LODControlTabs")) {
-        if (ImGui::BeginTabItem ("Auto")) {
-            ImGui::Text ("Screen size: %dx%d pixels", this->surface_extent.width, this->surface_extent.height);
-            ImGui::Text ("Root size: %.0f pixels", stats.max_dim);
-            ImGui::Text ("Calculated LOD Level: %d", stats.lod);
-            ImGui::EndTabItem ();
-        }
-
-        if (ImGui::BeginTabItem ("Manual")) {
-            ImGui::InputInt ("lod", &settings.max_lod);
-            if (settings.octree_depth) {
-                settings.max_lod = LiteMath::clamp (settings.max_lod, settings.cpu_traversed, settings.octree_depth);
-            } else {
-                settings.max_lod = LiteMath::max (settings.max_lod, settings.cpu_traversed);
-            }
-            ImGui::EndTabItem ();
-        }
-
-        ImGui::EndTabBar ();
+    ImGui::Text ("distance: %.3f", stats.distance);
+    ImGui::Text ("calculated LOD level: %d", stats.lod);
+    ImGui::InputInt ("max lod", &settings.max_lod);
+    if (settings.octree_depth) {
+        settings.max_lod = LiteMath::clamp (settings.max_lod, settings.cpu_traversed, settings.octree_depth);
+    } else {
+        settings.max_lod = LiteMath::max (settings.max_lod, settings.cpu_traversed);
     }
 
     ImGui::SeparatorText ("Octree");

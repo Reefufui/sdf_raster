@@ -28,6 +28,9 @@ public:
     const LiteMath::float4x4& get_projection_matrix () const;
     const std::array <LiteMath::float4, 8>& get_frustum_corners () const;
 
+    float get_near_plane () const;
+    float get_far_plane () const;
+
     void set_aspect_ratio (float aspect_ratio);
     void set_far_plane (float far_plane);
 

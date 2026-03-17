@@ -801,15 +801,15 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
     this->stats.lod = lod.lod;
     this->stats.distance = lod.distance;
 
-    this->push_constants.view_proj = settings.camera.get_view_projection_matrix ();
-    this->push_constants.camera_pos = LiteMath::to_float4 (settings.camera.get_position (), 1.0f);
-    this->push_constants.far_plane = settings.camera.get_far_plane ();
-    this->push_constants.near_plane = settings.camera.get_near_plane ();
+    this->push_constants.view_proj = settings.scene_state.camera.get_view_projection_matrix ();
+    this->push_constants.camera_pos = LiteMath::to_float4 (settings.scene_state.camera.get_position (), 1.0f);
+    this->push_constants.far_plane = settings.scene_state.camera.get_far_plane ();
+    this->push_constants.near_plane = settings.scene_state.camera.get_near_plane ();
     this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
-    this->push_constants.max_lod = settings.max_lod;
+    this->push_constants.max_lod = settings.scene_state.max_lod;
     this->push_constants.subtree_root_level = this->cpu_traversed;
-    this->push_constants.occlusion_culling_level = settings.occlusion_culling_level;
-    this->push_constants.frustum_culling_level = settings.frustum_culling_level;
+    this->push_constants.occlusion_culling_level = settings.scene_state.occlusion_culling_level;
+    this->push_constants.frustum_culling_level = settings.scene_state.frustum_culling_level;
     this->push_constants.color_leafs = settings.color_leafs;
 
     FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);

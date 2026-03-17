@@ -7,7 +7,7 @@
 
 #include "logger.hpp"
 #include "sdf_scom2.hpp"
-#include "sdf/scom2/defs.hpp"
+#include "scenes/scom2/defs.hpp"
 
 namespace sdf_raster {
 

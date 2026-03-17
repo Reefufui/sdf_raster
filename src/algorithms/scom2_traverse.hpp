@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sdf/scom2/scom2.hpp"
+#include "scenes/scom2/scom2.hpp"
 
 #include <filesystem>
 

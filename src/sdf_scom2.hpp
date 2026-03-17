@@ -10,7 +10,7 @@
 #include "vk_descriptor_sets.h"
 #include "vk_utils.h"
 
-#include "sdf/scom2/scom2.hpp"
+#include "scenes/scom2/scom2.hpp"
 
 #include "shader_common.hpp"
 

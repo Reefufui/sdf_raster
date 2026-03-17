@@ -1,4 +1,5 @@
 #pragma once
+
 #include <string>
 
 #ifndef KERNEL_SLICER

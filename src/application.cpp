@@ -70,8 +70,8 @@ void Application::run (bool /*single_frame*/) {
 
             gui::update (this->settings, this->renderer->get_stats ());
 
-            if (this->scene.name != settings.scene_name) { // TODO: scene manager
-                load_sdf_octree (this->scene, settings.scene_path);
+            if (this->scene.name != settings.scene_state.scene_name) { // TODO: scene manager
+                load_sdf_octree (this->scene, settings.scene_state.scene_path);
             }
 
             this->renderer->update (i, this->scene, this->settings);
@@ -114,7 +114,7 @@ void Application::init_window () {
     float f_width = static_cast <float> (width);
     float f_height = static_cast <float> (height);
 
-    this->settings.camera.set_aspect_ratio (f_width / f_height);
+    this->settings.scene_state.camera.set_aspect_ratio (f_width / f_height);
 }
 
 void Application::init_vulkan () {
@@ -129,7 +129,7 @@ void Application::init_vulkan () {
 
     auto resize_camera = [&] () {
         auto extent = this->vulkan_context->get_swapchain_extent ();
-        this->settings.camera.set_aspect_ratio (static_cast <float> (extent.width) / static_cast <float> (extent.height));
+        this->settings.scene_state.camera.set_aspect_ratio (static_cast <float> (extent.width) / static_cast <float> (extent.height));
     };
 
     auto resize_gui = [&] () {

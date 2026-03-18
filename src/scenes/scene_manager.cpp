@@ -28,7 +28,7 @@ void SceneManager::load_scene (const std::filesystem::path& path) {
         return nullptr;
     });
 
-    m_scenes [path].state.scene_path = path;
+    m_scenes [path].state.path = path;
 }
 
 Scene* SceneManager::get_scene (const std::filesystem::path& path) {

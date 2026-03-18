@@ -21,6 +21,7 @@ Application::Application ()
         init_vulkan ();
         init_renderer ();
         init_gui ();
+        init_scene_manager ();
     } catch (...) {
         cleanup ();
         throw;
@@ -70,8 +71,8 @@ void Application::run (bool /*single_frame*/) {
 
             gui::update (this->settings, this->renderer->get_stats ());
 
-            if (this->scene.name != settings.scene_state.scene_name) { // TODO: scene manager
-                load_sdf_octree (this->scene, settings.scene_state.scene_path);
+            if (this->scene.name != settings.scene_state.name) { // TODO: scene manager
+                load_sdf_octree (this->scene, settings.scene_state.path);
             }
 
             this->renderer->update (i, this->scene, this->settings);
@@ -171,6 +172,10 @@ void Application::init_gui () {
     };
 
     gui::init (init_info, this->settings);
+}
+
+void Application::init_scene_manager () {
+    this->scene_manager = std::make_unique <SceneManager> ();
 }
 
 void Application::cleanup () {

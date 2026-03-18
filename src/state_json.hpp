@@ -71,8 +71,8 @@ struct adl_serializer <sdf_raster::SceneState> {
     static void to_json (json& j, const sdf_raster::SceneState& scene_state) {
         j = json {
             {"camera", scene_state.camera},
-            {"scene_name", scene_state.scene_name},
-            {"scene_path", scene_state.scene_path},
+            {"name", scene_state.name},
+            {"path", scene_state.path},
             {"octree_depth", scene_state.octree_depth},
             {"cpu_traversed", scene_state.cpu_traversed},
             {"gpu_descend", scene_state.gpu_descend},
@@ -84,8 +84,8 @@ struct adl_serializer <sdf_raster::SceneState> {
 
     static void from_json (const json& j, sdf_raster::SceneState& scene_state) {
         j.at ("camera").get_to (scene_state.camera);
-        j.at ("scene_name").get_to (scene_state.scene_name);
-        j.at ("scene_path").get_to (scene_state.scene_path);
+        j.at ("name").get_to (scene_state.name);
+        j.at ("path").get_to (scene_state.path);
         j.at ("octree_depth").get_to (scene_state.octree_depth);
         j.at ("cpu_traversed").get_to (scene_state.cpu_traversed);
         j.at ("gpu_descend").get_to (scene_state.gpu_descend);
@@ -104,7 +104,6 @@ namespace sdf_raster {
         window_height,
         window_maximized,
         scenes_directory,
-        cpu_traversed,
         color_leafs,
         show_ui,
         show_camera_window,

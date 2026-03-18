@@ -248,7 +248,7 @@ namespace {
 
 void camera_input (Settings& settings) {
     ImGuiIO& io = ImGui::GetIO ();
-    Camera& camera = settings.camera;
+    Camera& camera = settings.scene_state.camera;
 
     LiteMath::float3 move {0.f, 0.f, 0.f};
     move.x += static_cast <float> (ImGui::IsKeyDown (ImGuiKey_W));
@@ -282,7 +282,7 @@ void UI::key_input (Settings& settings) {
     }
 
     if (ImGui::IsKeyPressed (ImGuiKey_R, false)) {
-        settings.camera.reset ();
+        settings.scene_state.camera.reset ();
     }
 
     if (ImGui::IsKeyPressed (ImGuiKey_V, false)) {
@@ -345,10 +345,10 @@ void camera_window (Camera& camera) {
 void UI::file_dialog (Settings& settings) {
     this->file_browser.Display ();
     if (this->file_browser.HasSelected ()) {
-        settings.scene_path = this->file_browser.GetSelected ();
-        LOG_INFO ("[UI] selected SDF filename: {}", settings.scene_path.string ());
+        settings.scene_state.path = this->file_browser.GetSelected ();
+        LOG_INFO ("[UI] selected SDF filename: {}", settings.scene_state.path.string ());
         this->file_browser.ClearSelected ();
-        settings.scene_name = settings.scene_path.stem ().string ();
+        settings.scene_state.name = settings.scene_state.path.stem ().string ();
     }
 }
 
@@ -368,17 +368,17 @@ void UI::renderer_window (Settings& settings, const Stats& stats) {
 
     ImGui::Text ("distance: %.3f", stats.distance);
     ImGui::Text ("calculated LOD level: %d", stats.lod);
-    ImGui::InputInt ("max lod", &settings.max_lod);
-    if (settings.octree_depth) {
-        settings.max_lod = LiteMath::clamp (settings.max_lod, settings.scene_state.cpu_traversed, settings.octree_depth);
+    ImGui::InputInt ("max lod", &settings.scene_state.max_lod);
+    if (settings.scene_state.octree_depth) {
+        settings.scene_state.max_lod = LiteMath::clamp (settings.scene_state.max_lod, settings.scene_state.cpu_traversed, settings.scene_state.octree_depth);
     } else {
-        settings.max_lod = LiteMath::max (settings.max_lod, settings.scene_state.cpu_traversed);
+        settings.scene_state.max_lod = LiteMath::max (settings.scene_state.max_lod, settings.scene_state.cpu_traversed);
     }
 
     ImGui::SeparatorText ("Octree");
-    ImGui::Text ("octree depth: %d/%d", settings.max_lod, settings.octree_depth);
+    ImGui::Text ("octree depth: %d/%d", settings.scene_state.max_lod, settings.scene_state.octree_depth);
 
-    int levels_remaining = settings.max_lod;
+    int levels_remaining = settings.scene_state.max_lod;
 
     ImGui::InputInt ("cpu traversed", &settings.scene_state.cpu_traversed);
     if (ImGui::IsItemHovered ()) {
@@ -388,9 +388,9 @@ void UI::renderer_window (Settings& settings, const Stats& stats) {
     levels_remaining -= settings.scene_state.cpu_traversed;
 
     ImGui::BeginDisabled ();
-    ImGui::InputInt ("gpu descend", &settings.gpu_descend);
-    settings.gpu_descend = LiteMath::clamp (settings.gpu_descend, 0, LiteMath::min (5, levels_remaining));
-    levels_remaining -= settings.gpu_descend;
+    ImGui::InputInt ("gpu descend", &settings.scene_state.gpu_descend);
+    settings.scene_state.gpu_descend = LiteMath::clamp (settings.scene_state.gpu_descend, 0, LiteMath::min (5, levels_remaining));
+    levels_remaining -= settings.scene_state.gpu_descend;
 
     ImGui::InputInt ("gpu dfs", &levels_remaining);
     ImGui::EndDisabled ();
@@ -398,8 +398,8 @@ void UI::renderer_window (Settings& settings, const Stats& stats) {
     ImGui::SeparatorText ("Culling");
 
     ImGui::InputInt ("frustum", &settings.scene_state.frustum_culling_level);
-    if (settings.octree_depth) {
-        settings.scene_state.frustum_culling_level = LiteMath::clamp (settings.scene_state.frustum_culling_level, settings.scene_state.cpu_traversed, settings.octree_depth);
+    if (settings.scene_state.octree_depth) {
+        settings.scene_state.frustum_culling_level = LiteMath::clamp (settings.scene_state.frustum_culling_level, settings.scene_state.cpu_traversed, settings.scene_state.octree_depth);
     } else if (settings.scene_state.cpu_traversed) {
         settings.scene_state.frustum_culling_level = LiteMath::max (settings.scene_state.frustum_culling_level, settings.scene_state.cpu_traversed);
     }
@@ -419,8 +419,8 @@ void UI::renderer_window (Settings& settings, const Stats& stats) {
     }
 
     ImGui::InputInt ("occlusion", &settings.scene_state.occlusion_culling_level);
-    if (settings.octree_depth) {
-        settings.scene_state.occlusion_culling_level = LiteMath::clamp (settings.scene_state.occlusion_culling_level, 0, settings.octree_depth);
+    if (settings.scene_state.octree_depth) {
+        settings.scene_state.occlusion_culling_level = LiteMath::clamp (settings.scene_state.occlusion_culling_level, 0, settings.scene_state.octree_depth);
     }
     if (ImGui::IsItemHovered (ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::BeginTooltip ();
@@ -450,7 +450,7 @@ void UI::status_bar (Settings& settings, const Stats& stats) {
 
     std::vector <StatusBarElement> elements;
     elements.push_back (StatusBarElement {
-        .text = std::format ("Scene:{}", settings.scene_name)
+        .text = std::format ("Scene:{}", settings.scene_state.name)
     });
     elements.push_back (StatusBarElement {
         .text = std::format ("Mode:{}", (settings.frustum_view) ? "frustum" : "camera")
@@ -530,7 +530,7 @@ void UI::update (Settings& settings, const Stats& stats) {
         this->file_dialog (settings);
 
         if (settings.show_camera_window) {
-            camera_window (settings.camera);
+            camera_window (settings.scene_state.camera);
         }
 
         if (settings.show_renderer_window) {
@@ -540,7 +540,7 @@ void UI::update (Settings& settings, const Stats& stats) {
         this->status_bar (settings, stats);
     }
 
-    settings.camera.update ();
+    settings.scene_state.camera.update ();
     this->previous_frame_settings = settings;
 }
 

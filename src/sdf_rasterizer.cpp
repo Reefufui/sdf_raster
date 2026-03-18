@@ -739,7 +739,7 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
 
     if (!settings.frustum_view && this->frustum_draw_buffer) {
         this->clear_color = {0.2f, 0.3f, 0.3f, 1.0f};
-        settings.camera = this->frustum_draw_buffer->get_camera ();
+        settings.scene_state.camera = this->frustum_draw_buffer->get_camera ();
         this->frustum_draw_buffer.reset ();
         LOG_INFO ("[{}] Frustum view mode: OFF.", RENDERER_NAME);
     } else if (settings.frustum_view && !this->frustum_draw_buffer) {
@@ -747,7 +747,7 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
         this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()
-            , settings.camera);
+            , settings.scene_state.camera);
         LOG_INFO ("[{}] Frustum view mode: ON.", RENDERER_NAME);
     }
 
@@ -765,7 +765,7 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
     }
 
     // TODO: separate scene_name update and cpu_traversed update
-    if (scene.name != this->scene_name || settings.cpu_traversed != this->cpu_traversed) {
+    if (scene.name != this->scene_name || settings.scene_state.cpu_traversed != this->cpu_traversed) {
         vkDeviceWaitIdle (this->context->get_device ());
 
         cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
@@ -775,23 +775,23 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
 	        , *descriptor_maker
 	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
 	        , scene // TODO: pass nodes without scene name
-	        , settings.cpu_traversed
+	        , settings.scene_state.cpu_traversed
 	        , this->context->get_total_frames ());
         this->scene_name = scene.name;
 
-        settings.octree_depth = get_octree_max_depth (scene);
-        settings.frustum_culling_level = LiteMath::min (settings.frustum_culling_level, settings.octree_depth);
-        settings.occlusion_culling_level = LiteMath::min (settings.frustum_culling_level, settings.octree_depth);
+        settings.scene_state.octree_depth = get_octree_max_depth (scene);
+        settings.scene_state.frustum_culling_level = LiteMath::min (settings.scene_state.frustum_culling_level, settings.scene_state.octree_depth);
+        settings.scene_state.occlusion_culling_level = LiteMath::min (settings.scene_state.frustum_culling_level, settings.scene_state.octree_depth);
 
-        this->cpu_traversed = settings.cpu_traversed;
-        this->subtrees = get_octree_subtrees_payloads (scene, settings.cpu_traversed);
+        this->cpu_traversed = settings.scene_state.cpu_traversed;
+        this->subtrees = get_octree_subtrees_payloads (scene, settings.scene_state.cpu_traversed);
         this->init_subtree_roots_staging_buffer ();
 
         LOG_INFO ("[{}] Loaded sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
              , scene.name
-             , settings.octree_depth
+             , settings.scene_state.octree_depth
              , this->cpu_traversed
-             , settings.octree_depth - this->cpu_traversed);
+             , settings.scene_state.octree_depth - this->cpu_traversed);
     }
 
     this->stats.active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
@@ -814,7 +814,7 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
 
     FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);
     if (!settings.frustum_view) {
-        this->update_frustum_buffer (settings.camera);
+        this->update_frustum_buffer (settings.scene_state.camera);
         *ptr = this->frustum;
         frustum_culling (this->subtrees, this->frustum, this->visible_subtrees);
         if (this->visible_subtrees.size ()) {
@@ -1571,7 +1571,7 @@ void SDFRasterizer::shutdown (Settings& settings) {
 
     if (this->frustum_draw_buffer) {
         settings.frustum_view = false;
-        settings.camera = this->frustum_draw_buffer->get_camera ();
+        settings.scene_state.camera = this->frustum_draw_buffer->get_camera ();
         this->frustum_draw_buffer.reset ();
     }
     this->descriptor_maker.reset ();

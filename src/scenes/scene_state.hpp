@@ -9,14 +9,14 @@ namespace sdf_raster {
 
 struct SceneState {
     Camera camera {};
-    std::string scene_name {"N/A"};
-    std::filesystem::path scene_path {};
-    int octree_depth;
-    int cpu_traversed;
-    int gpu_descend;
-    int max_lod;
-    int frustum_culling_level;
-    int occlusion_culling_level;
+    std::string name {"N/A"};
+    std::filesystem::path path {"./../assets/lowpoly_bunny.octree"};
+    int octree_depth {16};
+    int cpu_traversed {3};
+    int gpu_descend {5};
+    int max_lod {10};
+    int frustum_culling_level {10};
+    int occlusion_culling_level {10};
 };
 
 } // sdf_raster

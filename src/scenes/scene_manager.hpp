@@ -22,13 +22,13 @@ namespace sdf_raster {
 class SceneManager {
 private:
     struct ManagedScene {
-        SceneState state; 
+        SceneState state;
 
         std::variant <
-            std::monostate, 
-            std::future <std::unique_ptr <Scene>>, 
-            std::unique_ptr <Scene>
-        > data;
+            std::monostate
+            , std::future <std::unique_ptr <Scene>>
+            , std::unique_ptr <Scene>
+            > data;
     };
 
     std::map <std::filesystem::path, ManagedScene> m_scenes;

@@ -1,19 +1,80 @@
 #include "scenes/octree/octree.hpp"
+#include "shader_common.hpp"
+
+#include <fstream>
+
+namespace {
+
+int get_octree_max_depth (const std::vector <SdfOctreeNode>& nodes) {
+    if (nodes.empty ()) {
+        return 0;
+    }
+
+    int max_overall_depth = 0;
+
+    struct StackFrame {
+        uint32_t node_idx;
+        int level;
+    };
+    std::stack <StackFrame> s;
+
+    uint32_t root_node_idx = 0;
+    s.push ({root_node_idx, 0});
+
+    while (!s.empty ()) {
+        StackFrame current = s.top ();
+        s.pop ();
+
+        max_overall_depth = std::max (max_overall_depth, current.level);
+
+        const SdfOctreeNode& node = nodes [current.node_idx];
+
+        if (node.offset == 0) {
+            continue;
+        }
+
+        for (int i = 0; i < 8; ++i) {
+            uint32_t child_node_idx = node.offset + i;
+            s.push ({ child_node_idx, current.level + 1 });
+        }
+    }
+
+    return max_overall_depth;
+}
+
+} // anon
 
 namespace sdf_raster {
 
 bool OctreeScene::load (const std::filesystem::path& path) {
-    // TODO:
+    std::ifstream fs (path, std::ios::binary);
+    unsigned sz = 0;
+    fs.read ((char *) &sz, sizeof (unsigned));
+    this->m_nodes.resize (sz);
+    fs.read ((char *) this->m_nodes.data (), this->m_nodes.size () * sizeof (SdfOctreeNode));
+    fs.close ();
+
+    const int depth = get_octree_max_depth (this->m_nodes);
+
+    this->m_state = SceneState {
+        .camera = Camera (),
+        .name = path.stem ().string (),
+        .path = path,
+        .octree_depth = depth,
+        .cpu_traversed = LiteMath::min (3, depth),
+        .frustum_culling_level = depth,
+        .occlusion_culling_level = depth
+    };
+
     return true;
 }
 
 SceneState OctreeScene::get_state () const {
-    SceneState state;
-    // TODO:
-    return state;
+    return this->m_state;
 }
 
 OctreeScene::~OctreeScene () {
+    this->m_nodes.clear ();
 }
 
 } // sdf_raster

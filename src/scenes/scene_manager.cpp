@@ -1,41 +1,51 @@
 #include "scenes/scene_manager.hpp"
 
-#include "logger.hpp"
-
 namespace sdf_raster {
 
-template <typename SceneType>
 void SceneManager::load_scene (const std::filesystem::path& path) {
-    static_assert (std::is_base_of_v <Scene, SceneType>, "SceneType must be derived from Scene");
+    const std::string extension = path.extension ().string ();
 
     std::lock_guard lock (m_mutex);
 
-    auto it = this->m_scenes.find (path);
-    if (it != m_scenes.end ()) {
-        if (!std::holds_alternative <std::monostate> (it->second.data)) {
-            LOG_INFO ("Scene {} is already loaded or is loading.", path.string ());
-            return;
-        }
+    auto factory_it = this->m_factory_registry.find (extension);
+    if (factory_it == this->m_factory_registry.end ()) {
+        LOG_ERROR ("[{}] No scene type registered for extension '{}'. Cannot load {}.", SCENE_MANAGER_NAME, extension, path.string ());
+        return;
     }
 
-    LOG_INFO ("Starting background loading for scene: {}", path.string ());
+    auto it = this->m_scenes.find (path);
+    if (it != this->m_scenes.end () && !std::holds_alternative <std::monostate> (it->second.data)) {
+        LOG_INFO ("[{}] Scene {} is already loaded or is loading.", SCENE_MANAGER_NAME, path.string ());
+        return;
+    }
 
-    m_scenes [path].data = std::async (std::launch::async, [path_copy = path]() -> std::unique_ptr <Scene> {
-        auto scene = std::make_unique <SceneType> ();
-        if (scene->load (path_copy)) {
-            return scene;
+    LOG_INFO ("[{}] Starting background loading for scene: {}", SCENE_MANAGER_NAME, path.string ());
+
+    auto factory_func = factory_it->second;
+
+    this->m_scenes [path].data = std::async (std::launch::async
+        , [path_copy = path, factory = std::move (factory_func)] () -> std::unique_ptr <Scene> {
+            std::unique_ptr <Scene> scene = factory ();
+            if (!scene) {
+                return nullptr;
+            }
+
+            if (scene->load (path_copy)) {
+                return scene;
+            }
+
+            return nullptr;
         }
-        return nullptr;
-    });
+    );
 
-    m_scenes [path].state.path = path;
+    this->m_scenes [path].state.path = path;
 }
 
 Scene* SceneManager::get_scene (const std::filesystem::path& path) {
     std::lock_guard lock (m_mutex);
 
-    auto it = m_scenes.find (path);
-    if (it == m_scenes.end ()) {
+    auto it = this->m_scenes.find (path);
+    if (it == this->m_scenes.end ()) {
         return nullptr;
     }
 
@@ -73,8 +83,8 @@ Scene* SceneManager::get_scene (const std::filesystem::path& path) {
 void SceneManager::unload_scene (const std::filesystem::path& path) {
     std::lock_guard lock (m_mutex);
 
-    auto it = m_scenes.find (path);
-    if (it != m_scenes.end ()) {
+    auto it = this->m_scenes.find (path);
+    if (it != this->m_scenes.end ()) {
         if (std::holds_alternative <std::unique_ptr <Scene>> (it->second.data)) {
             LOG_INFO ("Unloading scene data for: {}. State will be cached.", path.string ());
             it->second.data = std::monostate {};
@@ -85,8 +95,8 @@ void SceneManager::unload_scene (const std::filesystem::path& path) {
 std::optional <SceneState> SceneManager::get_cached_state (const std::filesystem::path& path) const {
     std::lock_guard lock (m_mutex);
 
-    auto it = m_scenes.find (path);
-    if (it != m_scenes.end ()) {
+    auto it = this->m_scenes.find (path);
+    if (it != this->m_scenes.end ()) {
         return it->second.state;
     }
 

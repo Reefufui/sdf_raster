@@ -1,6 +1,7 @@
 #pragma once
 
-#include "scenes/scene_state.hpp"
+#include "logger.hpp"
+#include "scenes/scene.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -16,12 +17,7 @@
 
 namespace sdf_raster {
 
-class Scene {
-public:
-    virtual ~Scene () = default;
-    virtual bool load (const std::filesystem::path& path) = 0;
-    virtual SceneState get_state () const = 0;
-};
+#define SCENE_MANAGER_NAME "SceneManager"
 
 class SceneManager {
 private:
@@ -36,6 +32,7 @@ private:
     };
 
     std::map <std::filesystem::path, ManagedScene> m_scenes;
+    std::map <std::string, std::function <std::unique_ptr <Scene> ()>> m_factory_registry;
     mutable std::mutex m_mutex;
 
 public:
@@ -46,6 +43,18 @@ public:
     SceneManager& operator= (SceneManager&&) = delete;
 
     template <typename SceneType>
+    void register_scene_type (std::string_view extension) {
+        static_assert (std::is_base_of_v <Scene, SceneType>, "SceneType must be derived from Scene");
+        static_assert (std::is_default_constructible_v <SceneType>, "SceneType must be default constructible for the factory");
+
+        std::string ext_str (extension);
+        LOG_INFO ("[{}] Registering scene type of extension '{}'", SCENE_MANAGER_NAME, ext_str);
+
+        this->m_factory_registry [ext_str] = [] () {
+            return std::make_unique <SceneType> ();
+        };
+    }
+
     void load_scene (const std::filesystem::path& path);
 
     Scene* get_scene (const std::filesystem::path& path);

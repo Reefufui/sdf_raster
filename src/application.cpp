@@ -5,11 +5,12 @@
 #include <thread>
 
 #include "application.hpp"
-#include "sdf_rasterizer.hpp"
 #include "gui.hpp"
 #include "logger.hpp"
 #include "marching_cubes.hpp"
+#include "scenes/octree/octree.hpp"
 #include "sdf_octree.hpp"
+#include "sdf_rasterizer.hpp"
 
 namespace sdf_raster {
 
@@ -73,6 +74,7 @@ void Application::run (bool /*single_frame*/) {
 
             if (this->scene.name != settings.scene_state.name) { // TODO: scene manager
                 load_sdf_octree (this->scene, settings.scene_state.path);
+                this->scene_manager->load_scene (settings.scene_state.path);
             }
 
             this->renderer->update (i, this->scene, this->settings);
@@ -176,6 +178,8 @@ void Application::init_gui () {
 
 void Application::init_scene_manager () {
     this->scene_manager = std::make_unique <SceneManager> ();
+    // this->scene_manager.register_scene_type <ObjScene> (".obj");
+    this->scene_manager->register_scene_type <OctreeScene> (".octree");
 }
 
 void Application::cleanup () {

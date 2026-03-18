@@ -9,7 +9,7 @@ namespace sdf_raster {
 
 struct SceneState {
     Camera camera {};
-    std::string name {"N/A"};
+    std::string name {"lowpoly_bunny"};
     std::filesystem::path path {"./../assets/lowpoly_bunny.octree"};
     int octree_depth {16};
     int cpu_traversed {3};

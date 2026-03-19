@@ -73,6 +73,7 @@ void Application::run (bool /*single_frame*/) {
             gui::update (this->settings, this->renderer->get_stats ());
 
             if (this->scene.name != settings.scene_state.name) { // TODO: scene manager
+                // Scene* scene = this->scene_manager->get_scene (path);
                 load_sdf_octree (this->scene, settings.scene_state.path);
                 this->scene_manager->load_scene (settings.scene_state.path);
             }
@@ -180,6 +181,10 @@ void Application::init_scene_manager () {
     this->scene_manager = std::make_unique <SceneManager> ();
     // this->scene_manager.register_scene_type <ObjScene> (".obj");
     this->scene_manager->register_scene_type <OctreeScene> (".octree");
+
+    this->scene_manager->subscribe ([this] (SceneEventType type, const std::filesystem::path& path) {
+        this->on_scene_event (type, path);
+    });
 }
 
 void Application::cleanup () {
@@ -219,6 +224,27 @@ void Application::mouse_button_callback (GLFWwindow* window, int button, int act
             app->settings.disabled_cursor = true;
             glfwSetInputMode (window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             LOG_INFO ("Entered camera mode. Cursor DISABLED.");
+        }
+    }
+}
+
+void Application::on_scene_event (SceneEventType type, const std::filesystem::path& path) {
+    LOG_INFO ("[Application] Received event: {} for scene {}", type == SceneEventType::LOADED ? "LOADED" : "UNLOADED", path.string ());
+
+    switch (type) {
+        case SceneEventType::LOADED: {
+            this->scene_manager->set_current_scene (path);
+            Scene* scene = this->scene_manager->get_current_scene ();
+            if (scene) {
+                // this->renderer.update_scene (scene);
+            } else {
+                LOG_ERROR ("[Application] Error: Scene was reported loaded, but 'get_scene()' returned null!");
+            }
+            break;
+        }
+
+        case SceneEventType::UNLOADED: {
+            break;
         }
     }
 }

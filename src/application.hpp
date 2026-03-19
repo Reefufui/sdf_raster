@@ -35,6 +35,8 @@ private:
     static void framebuffer_resize_callback (GLFWwindow* window, int width, int height);
     static void mouse_button_callback (GLFWwindow* a_window, int button, int action, int mods);
 
+    void on_scene_event (SceneEventType type, const std::filesystem::path& path);
+
 private:
     GLFWwindow* window;
 

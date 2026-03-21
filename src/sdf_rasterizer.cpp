@@ -4,6 +4,7 @@
 #include "frustum_culling.hpp"
 #include "gui.hpp"
 #include "logger.hpp"
+#include "scenes/octree/octree.hpp"
 
 #include <spdlog/stopwatch.h>
 #include <vk_buffers.h>
@@ -734,7 +735,7 @@ void SDFRasterizer::init_subtree_roots_staging_buffer () {
     VK_CHECK_RESULT (vkMapMemory (this->context->get_device (), this->subtrees_memory, 0, staging_buffer_size, 0, &this->subtrees_memory_mapped));
 }
 
-void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settings& settings) {
+void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
     this->frame_index = frame_index;
 
     if (!settings.frustum_view && this->frustum_draw_buffer) {
@@ -762,36 +763,6 @@ void SDFRasterizer::update (uint32_t frame_index, const SdfOctree& scene, Settin
     } else if (!settings.use_mesh_shading && this->draw_active_leafs != &SDFRasterizer::draw_active_leafs_compute) {
         this->draw_active_leafs = &SDFRasterizer::draw_active_leafs_compute;
         LOG_INFO ("[{}] Mesh shading: OFF.", RENDERER_NAME);
-    }
-
-    // TODO: separate scene_name update and cpu_traversed update
-    if (scene.name != this->scene_name || settings.scene_state.cpu_traversed != this->cpu_traversed) {
-        vkDeviceWaitIdle (this->context->get_device ());
-
-        cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
-	    this->sdf_octree_ds = create_sdf_octree_descriptor_set (this->context->get_device ()
-	        , this->context->get_physical_device ()
-	        , this->context->get_copy_helper ()
-	        , *descriptor_maker
-	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-	        , scene // TODO: pass nodes without scene name
-	        , settings.scene_state.cpu_traversed
-	        , this->context->get_total_frames ());
-        this->scene_name = scene.name;
-
-        settings.scene_state.octree_depth = get_octree_max_depth (scene);
-        settings.scene_state.frustum_culling_level = LiteMath::min (settings.scene_state.frustum_culling_level, settings.scene_state.octree_depth);
-        settings.scene_state.occlusion_culling_level = LiteMath::min (settings.scene_state.frustum_culling_level, settings.scene_state.octree_depth);
-
-        this->cpu_traversed = settings.scene_state.cpu_traversed;
-        this->subtrees = get_octree_subtrees_payloads (scene, settings.scene_state.cpu_traversed);
-        this->init_subtree_roots_staging_buffer ();
-
-        LOG_INFO ("[{}] Loaded sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
-             , scene.name
-             , settings.scene_state.octree_depth
-             , this->cpu_traversed
-             , settings.scene_state.octree_depth - this->cpu_traversed);
     }
 
     this->stats.active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
@@ -1010,6 +981,10 @@ void SDFRasterizer::copy_subtrees (VkCommandBuffer cmd_buff) {
     copy_region.dstOffset = 0;
     copy_region.size = this->subtrees.size () * sizeof (NodeContext);
 
+    if (!copy_region.size) {
+        return;
+    }
+
     vkCmdCopyBuffer (cmd_buff, this->subtrees_buffer, this->sdf_octree_ds.subtree_root_buffers [this->frame_index], 1, &copy_region);
 
     VkBufferMemoryBarrier barr = {};
@@ -1227,6 +1202,9 @@ void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgro
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prepare_indirect_pipeline);
 
+    assert (!this->active_leafs_ds.descriptor_sets.empty ());
+    assert (!this->indirect_dispatch_ds.descriptor_sets.empty ());
+
     std::array <VkDescriptorSet, 2> ds = {
         this->active_leafs_ds.descriptor_sets [this->frame_index],
         this->indirect_dispatch_ds.descriptor_sets [this->frame_index],
@@ -1278,7 +1256,18 @@ void SDFRasterizer::prefix_sum_pass3 (VkCommandBuffer) {
 }
 
 void SDFRasterizer::compute_geometry (VkCommandBuffer cmd_buff) {
+    if (this->sdf_octree_ds.descriptor_sets.empty ()) {
+        return;
+    }
+
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_geometry_pipeline);
+
+    assert (!this->sdf_octree_ds.descriptor_sets.empty ());
+    assert (!this->mesh_ds.descriptor_sets.empty ());
+    assert (this->marching_cubes_lookup_table_ds.descriptor_set != VK_NULL_HANDLE);
+    assert (!this->active_leafs_ds.descriptor_sets.empty ());
+    assert (!this->draw_indexed_indirect_command_ds.descriptor_sets.empty ());
+    assert (!this->lod_ds.descriptor_sets.empty ());
 
     std::array <VkDescriptorSet, 6> ds = {
         this->sdf_octree_ds.descriptor_sets [this->frame_index],
@@ -1534,6 +1523,76 @@ void SDFRasterizer::render (VkCommandBuffer cmd_buff) {
 
 const Stats& SDFRasterizer::get_stats () {
     return this->stats;
+}
+
+void SDFRasterizer::process_commands (std::queue <RenderCommand>& commands, std::mutex& mutex) {
+    std::queue <RenderCommand> local_commands;
+    {
+        std::lock_guard lock (mutex);
+        if (commands.empty ()) return;
+        commands.swap (local_commands);
+    }
+
+    if (!local_commands.empty ()) {
+        vkDeviceWaitIdle (context->get_device ());
+    }
+
+    while (!local_commands.empty ()) {
+        RenderCommand& cmd_func = local_commands.front ();
+        if (cmd_func) {
+            cmd_func (dynamic_cast <Renderer*> (this));
+        }
+
+        local_commands.pop ();
+    }
+}
+
+void SDFRasterizer::recreate_scene_resources (Scene* scene) {
+    if (!scene) {
+        LOG_WARN("[{}] recreate_scene_resources called with a null scene. Clearing resources.", RENDERER_NAME);
+        release_scene_resources ();
+        return;
+    }
+
+    SdfOctreeScene* octree_scene = dynamic_cast <SdfOctreeScene*> (scene);
+    if (!octree_scene) {
+        LOG_ERROR ("[{}] Received a scene that is not of type SdfOctreeScene. Cannot render.", RENDERER_NAME);
+        // release_scene_resources ();
+        return;
+    }
+
+    const SdfOctree& scene_data = octree_scene->get_octree_data ();
+    const SceneState& scene_state = octree_scene->get_state ();
+
+    vkDeviceWaitIdle (this->context->get_device());
+
+    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
+
+    this->sdf_octree_ds = create_sdf_octree_descriptor_set (
+        this->context->get_device (),
+        this->context->get_physical_device (),
+        this->context->get_copy_helper (),
+        *descriptor_maker,
+        VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT,
+        scene_data,
+        scene_state.cpu_traversed,
+        this->context->get_total_frames ()
+    );
+
+	this->cpu_traversed = scene_state.cpu_traversed;
+	this->subtrees = get_octree_subtrees_payloads (scene_data, scene_state.cpu_traversed);
+	this->init_subtree_roots_staging_buffer ();
+
+	LOG_INFO ("[{}] Created gpu resources for sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
+	       , scene_state.name
+	       , scene_state.octree_depth
+	       , this->cpu_traversed
+	       , scene_state.octree_depth - this->cpu_traversed);
+}
+
+void SDFRasterizer::release_scene_resources () {
+    vkDeviceWaitIdle (this->context->get_device());
+    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
 }
 
 void SDFRasterizer::cleanup_subtree_roots_staging_buffer () {

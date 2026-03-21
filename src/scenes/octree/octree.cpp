@@ -46,17 +46,17 @@ int get_octree_max_depth (const std::vector <SdfOctreeNode>& nodes) {
 
 namespace sdf_raster {
 
-bool OctreeScene::load (const std::filesystem::path& path) {
+bool SdfOctreeScene::load (const std::filesystem::path& path) {
     std::ifstream fs (path, std::ios::binary);
     unsigned sz = 0;
     fs.read ((char *) &sz, sizeof (unsigned));
-    this->m_nodes.resize (sz);
-    fs.read ((char *) this->m_nodes.data (), this->m_nodes.size () * sizeof (SdfOctreeNode));
+    this->data.nodes.resize (sz);
+    fs.read ((char *) this->data.nodes.data (), this->data.nodes.size () * sizeof (SdfOctreeNode));
     fs.close ();
 
-    const int depth = get_octree_max_depth (this->m_nodes);
+    const int depth = get_octree_max_depth (this->data.nodes);
 
-    this->m_state = SceneState {
+    this->state = SceneState {
         .camera = Camera (),
         .name = path.stem ().string (),
         .path = path,
@@ -69,12 +69,16 @@ bool OctreeScene::load (const std::filesystem::path& path) {
     return true;
 }
 
-SceneState OctreeScene::get_state () const {
-    return this->m_state;
+SceneState SdfOctreeScene::get_state () const {
+    return this->state;
 }
 
-OctreeScene::~OctreeScene () {
-    this->m_nodes.clear ();
+const SdfOctree& SdfOctreeScene::get_octree_data () const {
+    return this->data;
+}
+
+SdfOctreeScene::~SdfOctreeScene () {
+    this->data.nodes.clear ();
 }
 
 } // sdf_raster

@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,7 @@
 #include "mesh.hpp"
 #include "occlusion_culling.hpp"
 #include "renderer.hpp"
+#include "scenes/scene.hpp"
 #include "sdf_octree.hpp"
 #include "shader_common.hpp"
 #include "state.hpp"
@@ -28,9 +30,12 @@ public:
     ~SDFRasterizer ();
 
     void init () override;
-    void update (uint32_t frame_index, const SdfOctree& scene, Settings& settings) override;
+    void update (uint32_t frame_index, Settings& settings) override;
     void render (VkCommandBuffer cmd_buff) override;
     void shutdown (Settings& settings) override;
+    void process_commands (std::queue <RenderCommand>& commands, std::mutex& mutex) override;
+    void recreate_scene_resources (Scene* scene);
+    void release_scene_resources ();
     const Stats& get_stats () override;
 
 private:

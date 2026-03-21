@@ -10,19 +10,21 @@
 #include "marching_cubes.hpp"
 #include "scenes/octree/octree.hpp"
 #include "sdf_octree.hpp"
-#include "sdf_rasterizer.hpp"
 
 namespace sdf_raster {
 
 Application::Application ()
     : user_data ({this}) {
     try {
-        load_state (this->settings, "/tmp/sdf_raster.json");
+        SessionState session;
+        load_session (session, "/tmp/sdf_raster.json");
+        this->settings = session.settings;
+
         init_window ();
         init_vulkan ();
         init_renderer ();
+        init_scene_manager (session);
         init_gui ();
-        init_scene_manager ();
     } catch (...) {
         cleanup ();
         throw;
@@ -33,8 +35,22 @@ Application::~Application () {
     settings.window_maximized = glfwGetWindowAttrib (this->window, GLFW_MAXIMIZED);
     glfwGetWindowSize (window, &this->settings.window_width, &this->settings.window_height);
     glfwSetWindowShouldClose (this->window, true);
+
+    SessionState session_to_save;
+    session_to_save.settings = this->settings;
+
+    if (auto current_scene = this->scene_manager->get_current_scene ()) {
+        if (auto current_state = this->scene_manager->get_current_state ()) {
+        }
+    }
+
+    session_to_save.scene_states = this->scene_manager->get_all_states ();
+    session_to_save.current_scene_path = this->scene_manager->get_current_scene_path ();
+
+    dump_session (session_to_save, "/tmp/sdf_raster.json");
+    this->scene_manager.reset ();
+
     cleanup ();
-    dump_state (this->settings, "/tmp/sdf_raster.json");
 }
 
 void Application::marching_cubes_cpu (const std::string& a_octree_filename, const std::string& a_mesh_filename) {
@@ -72,13 +88,8 @@ void Application::run (bool /*single_frame*/) {
 
             gui::update (this->settings, this->renderer->get_stats ());
 
-            if (this->scene.name != settings.scene_state.name) { // TODO: scene manager
-                // Scene* scene = this->scene_manager->get_scene (path);
-                load_sdf_octree (this->scene, settings.scene_state.path);
-                this->scene_manager->load_scene (settings.scene_state.path);
-            }
-
-            this->renderer->update (i, this->scene, this->settings);
+            this->renderer->process_commands (this->render_commands, this->render_command_mutex);
+            this->renderer->update (i, this->settings); // TODO: update everything through 'process_commands'
 
             this->renderer->render (cmd_buff);
             gui::draw (this->vulkan_context->get_swapchain_image_index (), cmd_buff);
@@ -174,17 +185,23 @@ void Application::init_gui () {
         .depth_format = this->vulkan_context->get_depth_format (),
     };
 
-    gui::init (init_info, this->settings);
+    gui::init (vulkan_context, scene_manager, init_info, this->settings);
 }
 
-void Application::init_scene_manager () {
+void Application::init_scene_manager (const SessionState& session) {
     this->scene_manager = std::make_unique <SceneManager> ();
-    // this->scene_manager.register_scene_type <ObjScene> (".obj");
-    this->scene_manager->register_scene_type <OctreeScene> (".octree");
+    this->scene_manager->register_scene_type <SdfOctreeScene> (".octree");
 
     this->scene_manager->subscribe ([this] (SceneEventType type, const std::filesystem::path& path) {
         this->on_scene_event (type, path);
     });
+
+    this->scene_manager->restore_states (session.scene_states);
+
+    if (session.current_scene_path.has_value ()) {
+        this->scene_manager->set_current_scene (*session.current_scene_path);
+        this->scene_manager->load_scene (*session.current_scene_path);
+    }
 }
 
 void Application::cleanup () {
@@ -234,12 +251,25 @@ void Application::on_scene_event (SceneEventType type, const std::filesystem::pa
     switch (type) {
         case SceneEventType::LOADED: {
             this->scene_manager->set_current_scene (path);
-            Scene* scene = this->scene_manager->get_current_scene ();
-            if (scene) {
-                // this->renderer.update_scene (scene);
+            Scene* scene_ptr = this->scene_manager->get_current_scene ();
+
+            if (scene_ptr) {
+                RenderCommand command = [scene_ptr] (Renderer* renderer) {
+                    if (SDFRasterizer* sdf_rasterizer = dynamic_cast <SDFRasterizer*> (renderer)) {
+                        sdf_rasterizer->recreate_scene_resources (scene_ptr);
+                    }
+                };
+                std::lock_guard lock (this->render_command_mutex);
+                this->render_commands.push (std::move (command));
             } else {
                 LOG_ERROR ("[Application] Error: Scene was reported loaded, but 'get_scene()' returned null!");
             }
+
+            this->settings.scene_state = scene_ptr->get_state ();
+
+            auto extent = this->vulkan_context->get_swapchain_extent ();
+            this->settings.scene_state.camera.set_aspect_ratio (static_cast <float> (extent.width) / static_cast <float> (extent.height));
+
             break;
         }
 

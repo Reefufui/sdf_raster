@@ -9,17 +9,24 @@ struct SdfOctreeNode;
 
 namespace sdf_raster {
 
-class OctreeScene : public Scene {
+struct SdfOctree {
+    std::string name; // TODO: remove
+    std::vector <SdfOctreeNode> nodes;
+};
+
+class SdfOctreeScene : public Scene {
 public:
     bool load (const std::filesystem::path& path) override;
 
     SceneState get_state () const override;
 
-    ~OctreeScene () override;
+    ~SdfOctreeScene () override;
+
+    const SdfOctree& get_octree_data () const;
 
 private:
-    SceneState m_state;
-    std::vector <SdfOctreeNode> m_nodes;
+    SceneState state;
+    SdfOctree data;
 };
 
 } // sdf_raster

@@ -8,28 +8,29 @@
 
 namespace sdf_raster {
 
-void dump_state(const Settings& settings, const std::string& filename) {
+void dump_session (const SessionState& session, const std::string& filename) {
     try {
-        json j = settings;
+        json j = session;
         std::ofstream file (filename);
-        file << j.dump (4);
+        if (file.is_open ()) {
+            file << j.dump (4);
+        }
     } catch (const json::exception& e) {
-        LOG_ERROR ("JSON dump error: {}", e.what ());
+        LOG_ERROR ("JSON session dump error: {}", e.what ());
     }
 }
 
-void load_state (Settings& settings, const std::string& filename) {
+void load_session (SessionState& session, const std::string& filename) {
     try {
         std::ifstream file (filename);
         if (!file.is_open ()) {
-            LOG_WARN ("Settings file not found {}. Using default settings.", filename);
+            LOG_WARN("Session file not found {}. Using default session.", filename);
             return;
         }
-
         json j = json::parse (file);
-        j.get_to (settings);
+        j.get_to (session);
     } catch (const json::exception& e) {
-        LOG_ERROR ("JSON load error: {}", e.what ());
+        LOG_ERROR ("JSON session load error: {}", e.what ());
     }
 }
 

@@ -1,23 +1,20 @@
 #pragma once
 
+#include "scenes/octree/octree.hpp"
+
+#include "shader_common.hpp"
+
+#include <LiteMath.h>
+#include <vk_copy.h>
+#include <vk_descriptor_sets.h>
+#include <vk_utils.h>
+
 #include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "LiteMath.h"
-#include "vk_copy.h"
-#include "vk_descriptor_sets.h"
-#include "vk_utils.h"
-
-#include "shader_common.hpp"
-
 namespace sdf_raster {
-
-struct SdfOctree {
-    std::string name;
-    std::vector <SdfOctreeNode> nodes;
-};
 
 void load_sdf_octree (SdfOctree& scene, const std::filesystem::path& path);
 void save_sdf_octree (const SdfOctree &scene, const std::string &path);

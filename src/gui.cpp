@@ -30,7 +30,7 @@ public:
         return ui;
     }
 
-    void init (const InitInfo& info, Settings& settings);
+    void init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <SceneManager> scene_manager, const InitInfo& info, Settings& settings);
     void update (Settings& settings, const Stats& stats);
     void draw (uint32_t image_index, VkCommandBuffer cmd_buff);
     void cleanup (Settings& settings);
@@ -64,7 +64,7 @@ private:
 
     void key_input (Settings& settings);
     void menu_bar (Settings& settings);
-    void file_dialog (Settings& settings);
+    void file_dialog ();
     void renderer_window (Settings& settings, const Stats& stats);
     void status_bar (Settings& settings, const Stats& stats);
 
@@ -77,6 +77,8 @@ private:
 
     bool lock_occlusion_culling = false;
     bool lock_mesh_shading = false;
+
+    std::shared_ptr <SceneManager> scene_manager;
 };
 
 void UI::create_render_pass () {
@@ -147,7 +149,10 @@ void UI::create_imgui_framebuffers () {
     LOG_INFO ("[UI] Created framebuffers.");
 }
 
-void UI::init (const InitInfo& info, Settings& settings) {
+void UI::init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <SceneManager> scene_manager, const InitInfo& info, Settings& settings) {
+    assert (scene_manager);
+    this->scene_manager = scene_manager;
+
     assert (info.device != VK_NULL_HANDLE && "InitInfo.device must be valid.");
     assert (info.window != nullptr && "InitInfo.window must be valid.");
     assert (info.instance != VK_NULL_HANDLE && "InitInfo.instance must be valid.");
@@ -217,7 +222,7 @@ void UI::init (const InitInfo& info, Settings& settings) {
 
     this->file_browser = ImGui::FileBrowser (0, settings.scenes_directory);
     this->file_browser.SetTitle ("Pick SDF-scene file");
-    this->file_browser.SetTypeFilters ({ ".octree", ".scom2" });
+    this->file_browser.SetTypeFilters ({ ".octree", ".scom2" }); // TODO: ask scene manager of registered extentions
 }
 
 void UI::menu_bar (Settings& settings) {
@@ -342,13 +347,13 @@ void camera_window (Camera& camera) {
     ImGui::End ();
 }
 
-void UI::file_dialog (Settings& settings) {
+void UI::file_dialog () {
     this->file_browser.Display ();
     if (this->file_browser.HasSelected ()) {
-        settings.scene_state.path = this->file_browser.GetSelected ();
-        LOG_INFO ("[UI] selected SDF filename: {}", settings.scene_state.path.string ());
+        const auto& path = this->file_browser.GetSelected ();
+        LOG_INFO ("[UI] selected SDF filename: {}", path.string ());
         this->file_browser.ClearSelected ();
-        settings.scene_state.name = settings.scene_state.path.stem ().string ();
+        this->scene_manager->load_scene (path);
     }
 }
 
@@ -527,7 +532,7 @@ void UI::update (Settings& settings, const Stats& stats) {
     this->show_ui = settings.show_ui;
     if (this->show_ui) {
         this->menu_bar (settings);
-        this->file_dialog (settings);
+        this->file_dialog ();
 
         if (settings.show_camera_window) {
             camera_window (settings.scene_state.camera);
@@ -705,8 +710,8 @@ void UI::init_style () {
     }
 }
 
-void init (const InitInfo& info, Settings& settings) {
-    UI::get_instance ().init (info, settings);
+void init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <SceneManager> scene_manager, const InitInfo& info, Settings& settings) {
+    UI::get_instance ().init (vulkan_context, scene_manager, info, settings);
 }
 
 void update (Settings& settings, const Stats& stats) {

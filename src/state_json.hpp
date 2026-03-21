@@ -95,6 +95,25 @@ struct adl_serializer <sdf_raster::SceneState> {
     }
 };
 
+template <typename T>
+struct adl_serializer <std::optional <T>> {
+    static void to_json (json& j, const std::optional <T>& opt) {
+        if (opt.has_value ()) {
+            j = *opt;
+        } else {
+            j = nullptr;
+        }
+    }
+
+    static void from_json (const json& j, std::optional <T>& opt) {
+        if (j.is_null ()) {
+            opt = std::nullopt;
+        } else {
+            opt = j.get <T>();
+        }
+    }
+};
+
 } // namespace nlohmann
 
 namespace sdf_raster {
@@ -109,6 +128,13 @@ namespace sdf_raster {
         show_camera_window,
         show_renderer_window,
         use_mesh_shading
+    )
+
+    NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE (
+        SessionState,
+        settings,
+        current_scene_path,
+        scene_states
     )
 } // namespace sdf_raster
 

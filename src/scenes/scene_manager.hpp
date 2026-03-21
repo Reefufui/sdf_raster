@@ -49,6 +49,10 @@ public:
         };
     }
 
+    std::map <std::filesystem::path, SceneState> get_all_states () const;
+
+    void restore_states (const std::map <std::filesystem::path, SceneState>& states);
+
     void load_scene (const std::filesystem::path& path);
 
     void set_current_scene (const std::filesystem::path& path);
@@ -56,6 +60,8 @@ public:
     Scene* get_scene (const std::filesystem::path& path);
 
     Scene* get_current_scene ();
+
+    std::optional <std::filesystem::path> get_current_scene_path ();
 
     void unload_scene (const std::filesystem::path& path);
 
@@ -66,6 +72,8 @@ public:
     void subscribe (SceneEventCallback callback);
 
 private:
+    [[nodiscard]] std::optional <SceneState> get_state_impl (const std::filesystem::path& path) const;
+
     void notify (SceneEventType type, const std::filesystem::path& path);
 
     void worker_thread_loop ();

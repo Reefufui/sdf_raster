@@ -3,17 +3,34 @@
 namespace sdf_raster {
 
 SceneManager::SceneManager () {
-    LOG_INFO ("[{}] Initializing and starting worker thread.", SCENE_MANAGER_NAME);
     this->is_running = true;
     this->worker = std::thread (&SceneManager::worker_thread_loop, this);
 }
 
 SceneManager::~SceneManager () {
-    LOG_INFO ("[{}] Shutting down worker thread.", SCENE_MANAGER_NAME);
     this->is_running = false;
     if (this->worker.joinable ()) {
         this->worker.join ();
     }
+}
+
+std::map <std::filesystem::path, SceneState> SceneManager::get_all_states () const {
+    std::lock_guard lock (this->mutex);
+    std::map <std::filesystem::path, SceneState> result;
+    for (const auto& [path, managed_scene] : this->scenes) {
+        result [path] = managed_scene.state;
+    }
+    return result;
+}
+
+void SceneManager::restore_states (const std::map <std::filesystem::path, SceneState>& states) {
+    std::lock_guard lock (this->mutex);
+
+    for (const auto& [path, state] : states) {
+        this->scenes [path].state = state;
+    }
+
+    LOG_INFO ("[{}] Restored {} scene states.", SCENE_MANAGER_NAME, states.size());
 }
 
 void SceneManager::load_scene (const std::filesystem::path& path) {
@@ -91,7 +108,7 @@ Scene* SceneManager::get_scene (const std::filesystem::path& path) {
                     std::unique_ptr <Scene> scene_ptr = future.get ();
 
                     if (scene_ptr) {
-                        managed_scene.state = scene_ptr->get_state (); 
+                        managed_scene.state = scene_ptr->get_state ();
                         managed_scene.data = std::move (scene_ptr);
                         scene_ptr_to_return = scene_ptr.get ();
                         event_to_fire = {SceneEventType::LOADED, path};
@@ -129,6 +146,10 @@ Scene* SceneManager::get_current_scene () {
     return this->get_scene (path_to_get);
 }
 
+std::optional <std::filesystem::path> SceneManager::get_current_scene_path () {
+    return this->current_scene_path;
+}
+
 void SceneManager::unload_scene (const std::filesystem::path& path) {
     std::lock_guard lock (this->mutex);
 
@@ -149,17 +170,29 @@ void SceneManager::unload_scene (const std::filesystem::path& path) {
 
 std::optional <SceneState> SceneManager::get_state (const std::filesystem::path& path) const {
     std::lock_guard lock (this->mutex);
+    return get_state_impl (path);
+}
 
-    auto it = this->scenes.find (path);
-    if (it != this->scenes.end ()) {
-        return it->second.state;
+std::optional <SceneState> SceneManager::get_current_state () const {
+    std::lock_guard lock (this->mutex);
+
+    if (!this->current_scene_path.has_value ()) {
+        return std::nullopt;
     }
 
-    return std::nullopt;
+    return get_state_impl (*this->current_scene_path);
 }
 
 void SceneManager::subscribe (SceneEventCallback callback) {
     this->subscribers.push_back (std::move (callback));
+}
+
+[[nodiscard]] std::optional <SceneState> SceneManager::get_state_impl (const std::filesystem::path& path) const {
+    auto it = this->scenes.find (path);
+    if (it != this->scenes.end ()) {
+        return it->second.state;
+    }
+    return std::nullopt;
 }
 
 void SceneManager::notify (SceneEventType type, const std::filesystem::path& path) {

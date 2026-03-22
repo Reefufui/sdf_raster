@@ -114,8 +114,6 @@ void UI::create_depth_buffer () {
         , this->surface_extent.width
         , this->surface_extent.height
         , this->depth_format);
-
-    LOG_TRACE ("[UI] Created depth buffer.");
 }
 
 void UI::create_imgui_framebuffers () {
@@ -145,8 +143,6 @@ void UI::create_imgui_framebuffers () {
             throw std::runtime_error ("Failed to create ImGui framebuffer for swapchain image " + std::to_string (i) + "!");
         }
     }
-
-    LOG_INFO ("[UI] Created framebuffers.");
 }
 
 void UI::init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <SceneManager> scene_manager, const InitInfo& info, Settings& settings) {
@@ -180,7 +176,6 @@ void UI::init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <
     this->create_imgui_framebuffers ();
 
     ImGui::CreateContext ();
-    LOG_INFO ("[UI] Created ImGui context.");
     ImGuiIO& io = ImGui::GetIO ();
 
     int window_w, window_h;
@@ -222,7 +217,7 @@ void UI::init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <
 
     this->file_browser = ImGui::FileBrowser (0, settings.scenes_directory);
     this->file_browser.SetTitle ("Pick SDF-scene file");
-    this->file_browser.SetTypeFilters ({ ".octree", ".scom2" }); // TODO: ask scene manager of registered extentions
+    this->file_browser.SetTypeFilters (this->scene_manager->get_registered_extensions ());
 }
 
 void UI::menu_bar (Settings& settings) {

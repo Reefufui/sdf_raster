@@ -1363,7 +1363,7 @@ void SDFRasterizer::draw_geometry (VkCommandBuffer cmd_buff) {
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
 
-    VkRect2D scissor{};
+    VkRect2D scissor {};
     scissor.offset = {0, 0};
     scissor.extent = extent;
     vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
@@ -1557,7 +1557,7 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
     SdfOctreeScene* octree_scene = dynamic_cast <SdfOctreeScene*> (scene);
     if (!octree_scene) {
         LOG_ERROR ("[{}] Received a scene that is not of type SdfOctreeScene. Cannot render.", RENDERER_NAME);
-        // release_scene_resources ();
+        release_scene_resources ();
         return;
     }
 
@@ -1592,6 +1592,10 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
 
 void SDFRasterizer::release_scene_resources () {
     vkDeviceWaitIdle (this->context->get_device());
+	this->cpu_traversed = 0;
+	this->subtrees.clear ();
+    this->visible_subtrees.clear ();
+    this->cleanup_subtree_roots_staging_buffer ();
     cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
 }
 

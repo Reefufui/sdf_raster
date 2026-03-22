@@ -14,6 +14,18 @@ SceneManager::~SceneManager () {
     }
 }
 
+[[nodiscard]] std::vector <std::string> SceneManager::get_registered_extensions () const {
+    std::lock_guard lock (this->mutex);
+
+    std::vector <std::string> extensions;
+    extensions.reserve (this->factory_registry.size ());
+    for (const auto& [extension, factory_func] : this->factory_registry) {
+        extensions.push_back (extension);
+    }
+
+    return extensions;
+}
+
 std::map <std::filesystem::path, SceneState> SceneManager::get_all_states () const {
     std::lock_guard lock (this->mutex);
     std::map <std::filesystem::path, SceneState> result;
@@ -73,16 +85,31 @@ void SceneManager::load_scene (const std::filesystem::path& path) {
 }
 
 void SceneManager::set_current_scene (const std::filesystem::path& path) {
-    std::lock_guard lock (this->mutex);
+    std::optional <std::filesystem::path> old_current_path;
 
-    if (this->scenes.find (path) == this->scenes.end ()) {
-        LOG_ERROR ("[{}] Cannot set scene '{}' as current: scene is not managed.", SCENE_MANAGER_NAME, path.string ());
-        this->current_scene_path.reset ();
-        return;
+    {
+        std::lock_guard lock (this->mutex);
+
+        if (this->scenes.find (path) == this->scenes.end ()) {
+            LOG_ERROR ("[{}] Cannot set scene '{}' as current: scene is not managed.", SCENE_MANAGER_NAME, path.string ());
+            return;
+        }
+
+        if (this->current_scene_path.has_value () && *this->current_scene_path == path) {
+            return;
+        }
+
+        old_current_path = this->current_scene_path;
+
+        LOG_INFO ("[{}] Scene '{}' is now set as current.", SCENE_MANAGER_NAME, path.string());
+        this->current_scene_path = path;
+
     }
 
-    LOG_INFO ("[{}] Scene '{}' is now set as current.", SCENE_MANAGER_NAME, path.string ());
-    this->current_scene_path = path;
+    if (old_current_path.has_value ()) {
+        LOG_INFO ("[{}] Automatically unloading previous scene: {}", SCENE_MANAGER_NAME, old_current_path->string ());
+        this->unload_scene (*old_current_path);
+    }
 }
 
 Scene* SceneManager::get_scene (const std::filesystem::path& path) {
@@ -151,20 +178,21 @@ std::optional <std::filesystem::path> SceneManager::get_current_scene_path () {
 }
 
 void SceneManager::unload_scene (const std::filesystem::path& path) {
-    std::lock_guard lock (this->mutex);
+    std::optional <std::pair <SceneEventType, std::filesystem::path>> event_to_fire;
 
-    if (this->current_scene_path && *this->current_scene_path == path) {
-        LOG_INFO("[{}] Unloading the current scene. There will be no current scene now.", SCENE_MANAGER_NAME);
-        this->current_scene_path.reset ();
+    {
+        std::lock_guard lock (this->mutex);
+
+        auto it = this->scenes.find (path);
+        if (it != this->scenes.end () && std::holds_alternative <std::unique_ptr <Scene>> (it->second.data)) {
+            LOG_INFO ("[{}] Unloading scene data for: {}. State will be cached.", SCENE_MANAGER_NAME, path.string());
+            it->second.data = std::monostate {};
+            event_to_fire = {SceneEventType::UNLOADED, path};
+        }
     }
 
-    auto it = this->scenes.find (path);
-    if (it != this->scenes.end ()) {
-        if (std::holds_alternative <std::unique_ptr <Scene>> (it->second.data)) {
-            LOG_INFO ("Unloading scene data for: {}. State will be cached.", path.string ());
-            it->second.data = std::monostate {};
-            this->notify (SceneEventType::UNLOADED, path);
-        }
+    if (event_to_fire.has_value ()) {
+        this->notify (event_to_fire->first, event_to_fire->second);
     }
 }
 

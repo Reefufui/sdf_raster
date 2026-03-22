@@ -16,8 +16,8 @@
 
 namespace sdf_raster {
 
-void load_scom2 (scom2::SCom2Tree& scene, const std::filesystem::path& path);
-float sample_sdf (const scom2::SCom2Tree& scene, const LiteMath::float3& p);
+void load_scom2 (SCom2Tree& scene, const std::filesystem::path& path);
+float sample_sdf (const SCom2Tree& scene, const LiteMath::float3& p);
 
 struct SCom2TreeDescriptorSetInfo {
     std::vector <VkDescriptorSet> descriptor_sets;
@@ -35,15 +35,15 @@ SCom2TreeDescriptorSetInfo create_sdf_scom2_descriptor_set (
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
         , vk_utils::DescriptorMaker& ds_maker
         , VkShaderStageFlags shader_stage_flags
-        , const scom2::SCom2Tree& scom2
+        , const SCom2Tree& scom2
         , size_t subtree_root_level
         , size_t max_frames_in_flight);
 
 void cleanup_sdf_scom2_descriptor_set (VkDevice device, SCom2TreeDescriptorSetInfo& info);
 
-std::vector <NodeContext> get_scom2_subtrees_payloads (const scom2::SCom2Tree& scene, int max_level_to_descend);
-std::vector <NodeContext> get_scom2_subtrees_payloads_parallel (const scom2::SCom2Tree& scene, int max_level_to_descend);
-int get_scom2_max_depth (const scom2::SCom2Tree& scene);
+std::vector <NodeContext> get_scom2_subtrees_payloads (const SCom2Tree& scene, int max_level_to_descend);
+std::vector <NodeContext> get_scom2_subtrees_payloads_parallel (const SCom2Tree& scene, int max_level_to_descend);
+int get_scom2_max_depth (const SCom2Tree& scene);
 
 }
 

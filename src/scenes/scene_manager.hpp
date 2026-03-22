@@ -49,6 +49,8 @@ public:
         };
     }
 
+    [[nodiscard]] std::vector <std::string> get_registered_extensions () const;
+
     std::map <std::filesystem::path, SceneState> get_all_states () const;
 
     void restore_states (const std::map <std::filesystem::path, SceneState>& states);

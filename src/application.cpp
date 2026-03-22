@@ -9,6 +9,7 @@
 #include "logger.hpp"
 #include "marching_cubes.hpp"
 #include "scenes/octree/octree.hpp"
+#include "scenes/scom2/scom2.hpp"
 #include "sdf_octree.hpp"
 
 namespace sdf_raster {
@@ -38,12 +39,6 @@ Application::~Application () {
 
     SessionState session_to_save;
     session_to_save.settings = this->settings;
-
-    if (auto current_scene = this->scene_manager->get_current_scene ()) {
-        if (auto current_state = this->scene_manager->get_current_state ()) {
-        }
-    }
-
     session_to_save.scene_states = this->scene_manager->get_all_states ();
     session_to_save.current_scene_path = this->scene_manager->get_current_scene_path ();
 
@@ -191,6 +186,7 @@ void Application::init_gui () {
 void Application::init_scene_manager (const SessionState& session) {
     this->scene_manager = std::make_unique <SceneManager> ();
     this->scene_manager->register_scene_type <SdfOctreeScene> (".octree");
+    this->scene_manager->register_scene_type <SCom2TreeScene> (".scom2");
 
     this->scene_manager->subscribe ([this] (SceneEventType type, const std::filesystem::path& path) {
         this->on_scene_event (type, path);

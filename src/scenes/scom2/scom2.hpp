@@ -12,7 +12,7 @@ namespace sdf_raster {
 struct SCom2Tree {
     std::string name;
 
-    scom2::Header header;
+    Header header;
     std::vector <uint32_t> nodes;
     std::vector <uint32_t> bricks;
 };
@@ -26,6 +26,8 @@ public:
     ~SCom2TreeScene () override;
 
     const SCom2Tree& get_octree_data () const;
+
+    void dump_as_json (const std::filesystem::path& path) const;
 
 private:
     SceneState state;

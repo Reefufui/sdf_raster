@@ -5,6 +5,7 @@
 #include "gui.hpp"
 #include "logger.hpp"
 #include "scenes/octree/octree.hpp"
+#include "scenes/scom2/scom2.hpp"
 
 #include <spdlog/stopwatch.h>
 #include <vk_buffers.h>
@@ -1556,7 +1557,12 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
 
     SdfOctreeScene* octree_scene = dynamic_cast <SdfOctreeScene*> (scene);
     if (!octree_scene) {
-        LOG_ERROR ("[{}] Received a scene that is not of type SdfOctreeScene. Cannot render.", RENDERER_NAME);
+        LOG_WARN ("[{}] Received a scene that is not of type SdfOctreeScene. Cannot render.", RENDERER_NAME);
+        if (SCom2TreeScene* scom2_scene = dynamic_cast <SCom2TreeScene*> (scene)) {
+            const std::filesystem::path path ("scom2.json");
+            LOG_INFO ("[{}] Received a scene that of type SCom2TreeScene. Dumping to {}.", RENDERER_NAME, path.string ());
+            scom2_scene->dump_as_json (path);
+        }
         release_scene_resources ();
         return;
     }

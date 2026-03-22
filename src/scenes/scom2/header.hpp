@@ -1,9 +1,9 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 namespace sdf_raster {
-namespace scom2 {
 
 struct Header {
     uint32_t brick_size;
@@ -54,7 +54,7 @@ struct Header {
 
     float max_val;
     uint32_t max_depth;
-    float user_params [7];
+    std::array <float, 7> user_params;
 
     //to allow further extensions without breaking binary compatibility
     uint32_t _pad0;
@@ -64,6 +64,5 @@ struct Header {
     uint32_t _pad4;
 };
 
-} // scom2
 } // sdf_raster
 

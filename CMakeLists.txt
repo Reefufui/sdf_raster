@@ -163,8 +163,9 @@ add_executable(${PROJECT_NAME}
     src/algorithms/scom2_traverse.cpp
 
     src/scenes/octree/octree.cpp
-    src/scenes/scom2/scom2.cpp
     src/scenes/scene_manager.cpp
+    src/scenes/scom2/scom2.cpp
+    src/scenes/scom2/utils.cpp
 )
 
 target_include_directories (${PROJECT_NAME} PRIVATE

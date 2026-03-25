@@ -127,6 +127,52 @@ ExtStackElement init_root (const Header& header, const std::vector <uint32_t>& n
 #define bit_count(x) __builtin_popcount(x)
 #endif
 
+template <typename T>
+void process_leaf (T& out, const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks, uint32_t child_link, LiteMath::uint2 p_size) {
+    LiteMath::uint3 p = LiteMath::uint3 (p_size.x >> 16, p_size.x & 0xFFFF, p_size.y >> 16);
+    uint32_t level_sz = p_size.y & 0xFFFF;
+
+    const float d = 2.0f / float (level_sz);
+    LiteMath::float3 p_f = LiteMath::float3 (p);
+    float max_val = get_max_sdf_val (float (level_sz));
+
+    uint32_t link_data = nodes [child_link];
+    SdfDAGDataEdge de = unpack_data_edge (header, max_val, link_data, link_data);
+    uint32_t offset = header.bricks_step * de.data_offset;
+    uint32_t rotation_index = 0; // TODO:
+    float add = de.add;
+
+    for (uint32_t vox_idx = 0; vox_idx < 8; ++vox_idx) {
+        float vmin = std::numeric_limits <float>::min ();
+        float vmax = std::numeric_limits <float>::max ();
+        float values [8] = {};
+
+        LiteMath::uint3 vox_p = LiteMath::uint3 (((vox_idx & 4) >> 2), ((vox_idx & 2) >> 1), (vox_idx & 1));
+        LiteMath::float3 vox_p_f = LiteMath::float3 (vox_p);
+
+        for (int i = 0; i < 8; ++i) {
+            LiteMath::uint4 value_p = LiteMath::to_uint4 (vox_p, 0) + LiteMath::uint4 (((i & 4) >> 2), ((i & 2) >> 1), (i & 1), 1);
+            LiteMath::uint4 rot_0_modifier = LiteMath::uint4 (header.v_size * header.v_size, header.v_size, 1, 0);
+            uint32_t vId0 = uint32_t (dot (rot_0_modifier, value_p));
+
+            const uint32_t p_val = bricks [offset + vId0 / header.values_per_uint];
+            const uint32_t p_off = (vId0 % header.values_per_uint) * header.bits_per_value;
+            float val = max_val * (2.0f * ((p_val >> p_off) & header.value_mask) / float(header.value_mask) - 1) + add;
+            values [i] = val - 0.5f * SCOM2_EPS * d;
+            vmin = std::min (vmin, val);
+            vmax = std::max (vmax, val);
+        }
+
+        if (vmin <= 0.0f && vmax >= 0.0f) {
+            nlohmann::json leaf_data;
+            LiteMath::float3 min_pos = LiteMath::float3 (-1, -1, -1) + d * p_f + 0.5f * d * vox_p_f;
+            leaf_data ["min_pos"] = { min_pos.x, min_pos.y, min_pos.z };
+            leaf_data ["sdf"] = { values [0], values [1], values [2], values [3], values [4], values [5], values [6], values [7] };
+            out.push_back (leaf_data);
+        }
+    }
+}
+
 nlohmann::json dump_active_leafs (const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks) {
     nlohmann::json result;
     nlohmann::json active_leafs = nlohmann::json::array ();
@@ -168,16 +214,16 @@ nlohmann::json dump_active_leafs (const Header& header, const std::vector <uint3
         assert (rot_id == 0); // TODO: rotations
 
         d = 1.0f / float (cur.p_size.y & 0xFFFF);
-        LiteMath::float3 pf2 = LiteMath::float3 (
-              float (cur.p_size.x >> 16)    + (((child & 4) > 0) ? 1.0f : 0.5f)
-            , float (cur.p_size.x & 0xFFFF) + (((child & 2) > 0) ? 1.0f : 0.5f)
-            , float (cur.p_size.y >> 16)    + (((child & 1) > 0) ? 1.0f : 0.5f));
 
         std::string indent (top * 4, ' ');
 
         if (child_has_data == 0) {
             LOG_TRACE ("{}Child {}: No data", indent, child);
         } else if (child_is_leaf > 0) {
+            LiteMath::float3 pf2 = LiteMath::float3 (
+                float (cur.p_size.x >> 16)    + (((child & 4) > 0) ? 1.0f : 0.5f)
+                , float (cur.p_size.x & 0xFFFF) + (((child & 2) > 0) ? 1.0f : 0.5f)
+                , float (cur.p_size.y >> 16)    + (((child & 1) > 0) ? 1.0f : 0.5f));
             LOG_TRACE ("{}Leaf {}: pos={}", indent, child, pf2 * d);
         } else {
             LOG_TRACE ("{}Node {}: Entering... (d={})", indent, child, d);
@@ -192,53 +238,11 @@ nlohmann::json dump_active_leafs (const Header& header, const std::vector <uint3
             }
         } else if (child_is_leaf > 0) {
             uint32_t level_sz = 2 * (cur.p_size.y & 0xFFFF);
-            LiteMath::uint3 p = 2 * LiteMath::uint3 (cur.p_size.x >> 16, cur.p_size.x & 0xFFFF, cur.p_size.y >> 16)
-                + LiteMath::uint3 ((child & 4) >> 2, (child & 2) >> 1, child & 1);
             d = 2.0f / float (level_sz);
             final_voxel_size = d * 0.5f;
 
-            LiteMath::float3 p_f = LiteMath::float3 (p);
-            float max_val = get_max_sdf_val (float (level_sz));
-
-            uint32_t link_data = nodes [child_link];
-            SdfDAGDataEdge de = unpack_data_edge (header, max_val, link_data, link_data);
-            uint32_t offset = header.bricks_step * de.data_offset;
-            uint32_t rotation_index = 0; // TODO:
-            float add = de.add;
-
-            for (uint32_t vox_idx = 0; vox_idx < 8; ++vox_idx) {
-                float vmin = std::numeric_limits <float>::min ();
-                float vmax = std::numeric_limits <float>::max ();
-                float values [8] = {};
-
-                LiteMath::uint3 vox_p = LiteMath::uint3 (((vox_idx & 4) >> 2), ((vox_idx & 2) >> 1), (vox_idx & 1));
-                LiteMath::float3 vox_p_f = LiteMath::float3 (vox_p);
-
-                for (int i = 0; i < 8; ++i) {
-                    LiteMath::uint4 value_p = LiteMath::to_uint4 (vox_p, 0) + LiteMath::uint4 (((i & 4) >> 2), ((i & 2) >> 1), (i & 1), 1);
-                    LiteMath::uint4 rot_0_modifier = LiteMath::uint4 (header.v_size * header.v_size, header.v_size, 1, 0);
-                    uint32_t vId0 = uint32_t (dot (rot_0_modifier, value_p));
-
-                    const uint32_t p_val = bricks [offset + vId0 / header.values_per_uint];
-                    const uint32_t p_off = (vId0 % header.values_per_uint) * header.bits_per_value;
-                    float val = max_val * (2.0f * ((p_val >> p_off) & header.value_mask) / float(header.value_mask) - 1) + add;
-                    values [i] = val - 0.5f * SCOM2_EPS * d;
-                    vmin = std::min (vmin, val);
-                    vmax = std::max (vmax, val);
-                }
-
-                std::string value_indent = indent + std::string (4, ' ');
-                if (vmin <= 0.0f && vmax >= 0.0f) {
-                    LOG_TRACE ("{}Has values (dumped).", value_indent);
-                    nlohmann::json leaf_data;
-                    LiteMath::float3 min_pos = LiteMath::float3 (-1, -1, -1) + d * p_f + 0.5f * d * vox_p_f;
-                    leaf_data ["min_pos"] = { min_pos.x, min_pos.y, min_pos.z };
-                    leaf_data ["sdf"] = { values [0], values [1], values [2], values [3], values [4], values [5], values [6], values [7] };
-                    active_leafs.push_back (leaf_data);
-                } else {
-                    LOG_TRACE ("{}No values.", value_indent);
-                }
-            }
+            const LiteMath::uint2 leaf_p_size = (cur.p_size << 1) | LiteMath::uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
+            process_leaf (active_leafs, header, nodes, bricks, child_link, leaf_p_size);
 
             const uint32_t next_child = child + 1;
             if (next_child >= 8) {

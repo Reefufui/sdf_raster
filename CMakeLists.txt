@@ -186,6 +186,8 @@ target_link_libraries (${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
 )
 
+target_compile_definitions (${PROJECT_NAME} PRIVATE APP_NAME="${PROJECT_NAME}")
+
 if (CMAKE_BUILD_TYPE MATCHES Debug)
     message (STATUS "Configuring for Debug build...")
     target_compile_options (${PROJECT_NAME} PRIVATE -g -O0 -Wall -Wextra)

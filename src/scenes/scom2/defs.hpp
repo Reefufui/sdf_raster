@@ -2,6 +2,8 @@
 
 namespace sdf_raster {
 
+inline static constexpr float SCOM2_EPS = 1e-6f;
+
 // TODO: enum
 inline static constexpr unsigned SCOM2_CHILD_EMPTY        = 0;
 inline static constexpr unsigned SCOM2_CHILD_LEAF_VOLUME  = 1;

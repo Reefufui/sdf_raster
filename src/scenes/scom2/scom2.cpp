@@ -8,15 +8,6 @@
 
 #include <fstream>
 
-namespace {
-
-int get_scom2_max_depth (const sdf_raster::SCom2Tree& /*scom2*/) {
-    // TODO
-    return 0;
-}
-
-} // anon
-
 namespace sdf_raster {
 
 bool SCom2TreeScene::load (const std::filesystem::path& path) {
@@ -63,7 +54,7 @@ bool SCom2TreeScene::load (const std::filesystem::path& path) {
 
     fs.close ();
 
-    const int depth = get_scom2_max_depth (this->data);
+    const int depth = this->data.header.max_depth;
 
     this->state = SceneState {
         .camera = Camera (),
@@ -116,25 +107,18 @@ struct ExtStackElement {
     uint32_t links_offset;
     uint32_t transform;
     uint32_t info;
+    LiteMath::uint2 p_size;
 };
 
 ExtStackElement init_root (const Header& header, const std::vector <uint32_t>& nodes) {
-    LOG_INFO ("root: offset={}, overall size={}", header.root_node_off, nodes.size ());
     uint32_t node_data = nodes [header.root_node_off];
     NodeHeadUnpacked node = unpack_node_head (header, node_data, node_data);
-    LOG_INFO ("root base type: {}", (node.base_type == SCOM2_CHILD_EMPTY) ? "SCOM2_CHILD_EMPTY"
-         : (node.base_type == SCOM2_CHILD_LEAF_VOLUME) ? "SCOM2_CHILD_LEAF_VOLUME"
-         : (node.base_type == SCOM2_CHILD_LEAF_SURFACE) ? "SCOM2_CHILD_LEAF_SURFACE"
-         : (node.base_type == SCOM2_CHILD_NODE) ? "SCOM2_CHILD_NODE" : "UNKNOWN");
-    LOG_INFO ("root base_links_end={}", node.base_links_end);
-    LOG_INFO ("root children_types={:016b}", node.children_types);
-    LOG_INFO ("root children active\n76543210\n{:8b}", node.children_active);
-    return ExtStackElement {
-        .links_offset = header.root_node_off + header.links_offset + ((node.base_type) == SCOM2_CHILD_EMPTY ? 0 : 1),
-        .transform = 0,
-        .info = (0 << 24) | (node.children_types << 8) | 0
-        /*      rotation  | children types             | current child index */
-    };
+    ExtStackElement root;
+    root.links_offset = header.root_node_off + header.links_offset + ((node.base_type) == SCOM2_CHILD_EMPTY ? 0 : 1);
+    root.transform = 0;
+    root.info = (0 << 24) | (node.children_types << 8) | 0;
+    root.p_size = LiteMath::uint2 (0, 1);
+    return root;
 }
 
 #ifdef _MSC_VER
@@ -143,59 +127,63 @@ ExtStackElement init_root (const Header& header, const std::vector <uint32_t>& n
 #define bit_count(x) __builtin_popcount(x)
 #endif
 
-nlohmann::json dump_as_json (const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks) {
+nlohmann::json dump_active_leafs (const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks) {
+    nlohmann::json result;
+    nlohmann::json active_leafs = nlohmann::json::array ();
+
+    float final_voxel_size = 0.0f;
+
     ExtStackElement stack [16];
+
+    int top = 0;
+    float d = 1.0f;
 
     ExtStackElement cur = init_root (header, nodes);
 
-    int top = 0;
-
-    stack [top].links_offset = 0xFFFFFFFFu;
-    stack [top].info = 0;
-    stack [top].transform = 0;
+    stack [0].links_offset = 0xFFFFFFFFu;
+    stack [0].info = 0;
+    stack [0].transform = 0;
+    stack [0].p_size = LiteMath::uint2 (0, 0);
 
     assert (header.children_types_shift == 8);
+    assert (header.children_types_mask == 0xFFFF);
     assert (header.children_active_bits_shift == 24);
-
-    LOG_INFO ("root info\nrrrrrrrr7766554433221100iiiiiiii\n{:032b}", cur.info);
 
     while (top >= 0) {
         const uint32_t child = cur.info & 0x7;
         assert (child >= 0 && child < 8);
-        LOG_INFO ("child\n------------------------iiiiiiii\n{:032b}", child);
 
-        const LiteMath::uint3 child_offset = LiteMath::uint3 ((child & 4) >> 2, (child & 2) >> 1, child & 1); // (0,0,0)..(1,1,1)
+        const LiteMath::uint3 voxel_pos = LiteMath::uint3 ((child & 4) >> 2, (child & 2) >> 1, child & 1); // (0,0,0)..(1,1,1)
         assert (cur.transform == 0); // TODO: transform
         const uint32_t child_n = child; // TODO: transform
+        const uint32_t child_n_mask = 1u << (2 * child_n);
 
-        const uint32_t children_types_mask = (cur.info >> header.children_types_shift) & header.children_types_mask; // 16bit
-        LOG_INFO ("children_types_mask\n----------------7766554433221100\n{:032b}", children_types_mask);
-
-        const uint32_t active_children_mask = ((children_types_mask & 0x0000AAAAu) >> 1) | (children_types_mask & 0x00005555u); // 16bit (odd)
-        LOG_INFO ("active_children_mask\n----------------7766554433221100\n{:032b}", active_children_mask);
-
-        const uint32_t child_n_mask = 1u << (2 * child_n); // 16bit (odd)
-        LOG_INFO ("child_n_mask\n----------------7766554433221100\n{:032b}", child_n_mask);
-
-        const uint32_t left_from_child_n_mask = child_n_mask - 1; // 16bit
-        LOG_INFO ("left_from_child_n_mask\n----------------7766554433221100\n{:032b}", left_from_child_n_mask);
-
-        const uint32_t child_link_offset = bit_count (active_children_mask & left_from_child_n_mask);
-        const uint32_t child_link = cur.links_offset + child_link_offset;
-        LOG_INFO ("child_link={}+{}={}", cur.links_offset, child_link_offset, child_link);
-
+        const uint32_t children_types_mask = (cur.info >> header.children_types_shift) & header.children_types_mask;
+        const uint32_t active_children_mask = ((children_types_mask & 0x0000AAAAu) >> 1) | (children_types_mask & 0x00005555u);
+        const uint32_t child_link = cur.links_offset + bit_count (active_children_mask & (child_n_mask - 1));
         const uint32_t child_has_data = active_children_mask & child_n_mask;
-        const uint32_t child_is_leaf = (cur.info >> (header.children_types_shift + 1)) & child_n_mask;
+        const uint32_t child_is_leaf = cur.info & (1u << (header.children_types_shift + 2 * child_n));
         const uint32_t rot_id = cur.info >> header.children_active_bits_shift;
 
         assert (rot_id == 0); // TODO: rotations
 
-        LOG_INFO ("child_n={}, active_children_mask={}, child_link={}, child_has_data={}, child_is_leaf={}"
-            , child_n, active_children_mask, child_link
-            , child_has_data > 0, child_is_leaf > 0);
+        d = 1.0f / float (cur.p_size.y & 0xFFFF);
+        LiteMath::float3 pf2 = LiteMath::float3 (
+              float (cur.p_size.x >> 16)    + (((child & 4) > 0) ? 1.0f : 0.5f)
+            , float (cur.p_size.x & 0xFFFF) + (((child & 2) > 0) ? 1.0f : 0.5f)
+            , float (cur.p_size.y >> 16)    + (((child & 1) > 0) ? 1.0f : 0.5f));
+
+        std::string indent (top * 4, ' ');
 
         if (child_has_data == 0) {
-            LOG_WARN ("Child {}: no data.", child);
+            LOG_TRACE ("{}Child {}: No data", indent, child);
+        } else if (child_is_leaf > 0) {
+            LOG_TRACE ("{}Leaf {}: pos={}", indent, child, pf2 * d);
+        } else {
+            LOG_TRACE ("{}Node {}: Entering... (d={})", indent, child, d);
+        }
+
+        if (child_has_data == 0) {
             const uint32_t next_child = child + 1; // TODO: rotations?
             if (next_child >= 8) {
                 cur = stack [top--];
@@ -203,11 +191,14 @@ nlohmann::json dump_as_json (const Header& header, const std::vector <uint32_t>&
                 cur.info = next_child | (cur.info & 0xFFFFFF00u);
             }
         } else if (child_is_leaf > 0) {
-            LOG_WARN ("Child {}: is leaf.", child);
+            uint32_t level_sz = 2 * (cur.p_size.y & 0xFFFF);
+            LiteMath::uint3 p = 2 * LiteMath::uint3 (cur.p_size.x >> 16, cur.p_size.x & 0xFFFF, cur.p_size.y >> 16)
+                + LiteMath::uint3 ((child & 4) >> 2, (child & 2) >> 1, child & 1);
+            d = 2.0f / float (level_sz);
+            final_voxel_size = d * 0.5f;
 
-            // uint32_t level_sz = 2 * (cur.p_size.y & 0xFFFF);
-            // const float max_sdf = get_max_sdf_val (float level_size);
-            /*
+            LiteMath::float3 p_f = LiteMath::float3 (p);
+            float max_val = get_max_sdf_val (float (level_sz));
 
             uint32_t link_data = nodes [child_link];
             SdfDAGDataEdge de = unpack_data_edge (header, max_val, link_data, link_data);
@@ -215,73 +206,80 @@ nlohmann::json dump_as_json (const Header& header, const std::vector <uint32_t>&
             uint32_t rotation_index = 0; // TODO:
             float add = de.add;
 
-            uint32_t current_voxel = 0;
-            while (current_voxel < 8) {
-                float values [8];
-                for (int i = 0; i < 8; i++) {
-                    LiteMath::int4 pI = LiteMath::int4 ((current_voxel & 4) >> 2, (current_voxel & 2) >> 1, current_voxel & 1, 0)
-                        + LiteMath::int4 ((i & 4) >> 2 , (i & 2) >> 1, i & 1, 1);
+            for (uint32_t vox_idx = 0; vox_idx < 8; ++vox_idx) {
+                float vmin = std::numeric_limits <float>::min ();
+                float vmax = std::numeric_limits <float>::max ();
+                float values [8] = {};
 
-                    // uint32_t vId0 = 0;
+                LiteMath::uint3 vox_p = LiteMath::uint3 (((vox_idx & 4) >> 2), ((vox_idx & 2) >> 1), (vox_idx & 1));
+                LiteMath::float3 vox_p_f = LiteMath::float3 (vox_p);
 
-                    // uint32_t p_val = bricks [offset + vId0 / header.values_per_uint];
-                    // float val = max_val * (2.0f * ((p_val >> p_off) & header.value_mask) / float(header.value_mask) - 1) + add;
-                    // values [i] = val - 0.5f * m_preset.compact_sdf_eps * d;
+                for (int i = 0; i < 8; ++i) {
+                    LiteMath::uint4 value_p = LiteMath::to_uint4 (vox_p, 0) + LiteMath::uint4 (((i & 4) >> 2), ((i & 2) >> 1), (i & 1), 1);
+                    LiteMath::uint4 rot_0_modifier = LiteMath::uint4 (header.v_size * header.v_size, header.v_size, 1, 0);
+                    uint32_t vId0 = uint32_t (dot (rot_0_modifier, value_p));
+
+                    const uint32_t p_val = bricks [offset + vId0 / header.values_per_uint];
+                    const uint32_t p_off = (vId0 % header.values_per_uint) * header.bits_per_value;
+                    float val = max_val * (2.0f * ((p_val >> p_off) & header.value_mask) / float(header.value_mask) - 1) + add;
+                    values [i] = val - 0.5f * SCOM2_EPS * d;
+                    vmin = std::min (vmin, val);
+                    vmax = std::max (vmax, val);
+                }
+
+                std::string value_indent = indent + std::string (4, ' ');
+                if (vmin <= 0.0f && vmax >= 0.0f) {
+                    LOG_TRACE ("{}Has values (dumped).", value_indent);
+                    nlohmann::json leaf_data;
+                    LiteMath::float3 min_pos = LiteMath::float3 (-1, -1, -1) + d * p_f + 0.5f * d * vox_p_f;
+                    leaf_data ["min_pos"] = { min_pos.x, min_pos.y, min_pos.z };
+                    leaf_data ["sdf"] = { values [0], values [1], values [2], values [3], values [4], values [5], values [6], values [7] };
+                    active_leafs.push_back (leaf_data);
+                } else {
+                    LOG_TRACE ("{}No values.", value_indent);
                 }
             }
-            */
 
-            const uint32_t next_child = child + 1; // TODO: rotations?
+            const uint32_t next_child = child + 1;
             if (next_child >= 8) {
                 cur = stack [top--];
             } else {
                 cur.info = next_child | (cur.info & 0xFFFFFF00u);
             }
         } else {
-            LOG_WARN ("Child {}: is node.", child);
-            const uint32_t next_child = child + 1; // TODO: rotations?
+            const uint32_t next_child = child + 1;
             if (next_child < 8) {
                 cur.info = next_child | (cur.info & 0xFFFFFF00u);
                 stack [++top] = cur; // NOTE: return parent we previously popped for other children
             }
-            // TODO: voxel_size?
+
+            d = 0.5f / float (cur.p_size.y & 0xFFFF);
 
             uint32_t link_data = nodes [child_link];
             SdfDAGChildEdge ce = unpack_child_edge (header, link_data, link_data);
 
-            LOG_INFO ("ce: child_offset={}, rotation_id={}.", ce.child_offset, ce.rotation_id);
-
             uint32_t node_data = nodes [ce.child_offset];
             NodeHeadUnpacked node = unpack_node_head (header, node_data, node_data);
 
-            assert (ce.rotation_id == 48); // TODO: rotations: modify cur.transform. 48 means that leaf is unique
-            const uint32_t next_node = 0;
-
+            // uint32_t rotIdx = m_RotAddTable[rotId * ROT_COUNT + ce.rotation_id];
             cur.links_offset = ce.child_offset + header.links_offset + (node.base_type == SCOM2_CHILD_EMPTY ? 0 : 1);
-            cur.info = (0 /* rot_idx */ << 24) | (node.children_types << 8) | next_node;
+            // cur.transform = m_RotAddTable[cur.transform * ROT_COUNT + ce.rotation_id];
+            cur.info = (0 /* rot_idx */ << 24) | (node.children_types << 8);
+            cur.p_size = (cur.p_size << 1) | LiteMath::uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
         }
     }
 
-    ////
+    result ["voxels"] = active_leafs;
+    result ["size"] = final_voxel_size;
 
-    nlohmann::json nodes_json = nlohmann::json::array ();
-
-    for (size_t i = 0; i < 10; ++i) {
-        nodes_json.push_back ({
-            {"index", i}
-            , {"raw_value", nodes[i]}
-            , {"head", unpack_node_head (header, nodes[i], nodes[i])}
-        });
-    }
-
-    return nodes_json;
+    return result;
 }
 
 inline void to_json (nlohmann::json& j, const SCom2Tree& tree) {
     j = nlohmann::json {
         {"name", tree.name}
         , {"header", tree.header}
-        , {"tree", dump_as_json (tree.header, tree.nodes, tree.bricks)}
+        , {"active_leafs", dump_active_leafs (tree.header, tree.nodes, tree.bricks)}
     };
 }
 

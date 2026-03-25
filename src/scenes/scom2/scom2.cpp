@@ -127,18 +127,25 @@ ExtStackElement init_root (const Header& header, const std::vector <uint32_t>& n
 #define bit_count(x) __builtin_popcount(x)
 #endif
 
+struct BrickPayload {
+    LiteMath::uint2 p_size;
+    uint32_t child_link;
+    uint32_t rotation;
+};
+
 template <typename T>
-void process_leaf (T& out, const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks, uint32_t child_link, LiteMath::uint2 p_size) {
-    LiteMath::uint3 p = LiteMath::uint3 (p_size.x >> 16, p_size.x & 0xFFFF, p_size.y >> 16);
-    uint32_t level_sz = p_size.y & 0xFFFF;
+void process_leaf (T& out, const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks, BrickPayload payload) {
+    LiteMath::uint3 p = LiteMath::uint3 (payload.p_size.x >> 16, payload.p_size.x & 0xFFFF, payload.p_size.y >> 16);
+    uint32_t level_sz = payload.p_size.y & 0xFFFF;
 
     const float d = 2.0f / float (level_sz);
     LiteMath::float3 p_f = LiteMath::float3 (p);
     float max_val = get_max_sdf_val (float (level_sz));
 
-    uint32_t link_data = nodes [child_link];
+    uint32_t link_data = nodes [payload.child_link];
     SdfDAGDataEdge de = unpack_data_edge (header, max_val, link_data, link_data);
     uint32_t offset = header.bricks_step * de.data_offset;
+    assert (payload.rotation == 0); // TODO: rotations
     uint32_t rotation_index = 0; // TODO:
     float add = de.add;
 
@@ -241,8 +248,11 @@ nlohmann::json dump_active_leafs (const Header& header, const std::vector <uint3
             d = 2.0f / float (level_sz);
             final_voxel_size = d * 0.5f;
 
-            const LiteMath::uint2 leaf_p_size = (cur.p_size << 1) | LiteMath::uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
-            process_leaf (active_leafs, header, nodes, bricks, child_link, leaf_p_size);
+            BrickPayload payload;
+            payload.p_size = (cur.p_size << 1) | LiteMath::uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
+            payload.child_link = child_link;
+            payload.rotation = 0; // TODO: rotations
+            process_leaf (active_leafs, header, nodes, bricks, payload);
 
             const uint32_t next_child = child + 1;
             if (next_child >= 8) {

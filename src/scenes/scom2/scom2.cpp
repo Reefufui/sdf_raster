@@ -1,6 +1,7 @@
 #include "scenes/scom2/scom2.hpp"
 
 #include "logger.hpp"
+#include "marching_cubes_lookup_table.hpp"
 #include "scenes/scom2/defs.hpp"
 #include "scenes/scom2/utils.hpp"
 
@@ -133,6 +134,77 @@ struct BrickPayload {
     uint32_t rotation;
 };
 
+namespace {
+
+LiteMath::float3 interpolate_vertex (float isolevel, LiteMath::float3 p1, LiteMath::float3 p2, float valp1, float valp2) {
+    if (std::abs (isolevel - valp1) < 0.00001)
+        return (p1);
+    if (std::abs (isolevel - valp2) < 0.00001)
+        return (p2);
+    if (std::abs (valp1 - valp2) < 0.00001)
+        return (p1);
+
+    float mu = (isolevel - valp1) / (valp2 - valp1);
+
+    LiteMath::float3 p;
+    p.x = p1.x + mu * (p2.x - p1.x);
+    p.y = p1.y + mu * (p2.y - p1.y);
+    p.z = p1.z + mu * (p2.z - p1.z);
+    return (p);
+}
+
+}
+
+void process_voxel (nlohmann::json& out, LiteMath::float3 min_pos, float values [8], float voxel_size) {
+    auto vertices = nlohmann::json::array ();
+
+    const LiteMath::float3 voxel_size_modifier {voxel_size};
+    int cube_index = 0;
+    LiteMath::float3 corners [8];
+
+    for (int i = 0; i < 8; ++i) {
+        LiteMath::float3 corner_offset = {0.0f, 0.0f, 0.0f};
+        if ((i >> 0) & 1) corner_offset.x = voxel_size;
+        if ((i >> 1) & 1) corner_offset.y = voxel_size;
+        if ((i >> 2) & 1) corner_offset.z = voxel_size;
+        corners [i] = min_pos + corner_offset;
+
+        if (values [i] < 0.f) {
+            cube_index |= (1 << i);
+        }
+    }
+
+    int edge_mask = cube_index_2_edge_mask [cube_index];
+    if (edge_mask == 0) {
+        return;
+    }
+
+    LiteMath::float3 edge_vertices [12];
+    for (int i = 0; i < 12; ++i) {
+        const auto corner_indices = edge_corners [i];
+        edge_vertices [i] = interpolate_vertex (0.f
+                                                , corners [corner_indices.x]
+                                                , corners [corner_indices.y]
+                                                , values [corner_indices.x]
+                                                , values [corner_indices.y]
+                                                );
+    }
+
+    const int *triangle_indices = cube_index_2_triangle_indices [cube_index];
+    for (int i = 0; triangle_indices [i] != -1; ++i) {
+        const auto position = edge_vertices [triangle_indices [i]];
+        const auto color = LiteMath::normalize (LiteMath::abs (min_pos));
+
+        nlohmann::json vertex;
+        vertex ["position"] = { position.x, position.y, position.z, 1.f };
+        vertex ["normal"] = { 0.f, 0.f, 0.f, 1.f };
+        vertex ["color"] = { color.x, color.y, color.z, 1.f };
+        vertices.push_back (vertex);
+    }
+
+    out ["vertices"] = vertices;
+}
+
 template <typename T>
 void process_leaf (T& out, const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks, BrickPayload payload) {
     LiteMath::uint3 p = LiteMath::uint3 (payload.p_size.x >> 16, payload.p_size.x & 0xFFFF, payload.p_size.y >> 16);
@@ -175,6 +247,8 @@ void process_leaf (T& out, const Header& header, const std::vector <uint32_t>& n
             LiteMath::float3 min_pos = LiteMath::float3 (-1, -1, -1) + d * p_f + 0.5f * d * vox_p_f;
             leaf_data ["min_pos"] = { min_pos.x, min_pos.y, min_pos.z };
             leaf_data ["sdf"] = { values [0], values [1], values [2], values [3], values [4], values [5], values [6], values [7] };
+            process_voxel (leaf_data, min_pos, values, d);
+
             out.push_back (leaf_data);
         }
     }

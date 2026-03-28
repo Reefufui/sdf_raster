@@ -167,7 +167,7 @@ struct VoxelContext {
     float size;
 };
 
-void process_voxel(auto&& cb, const VoxelContext& ctx) {
+void process_voxel (auto&& cb, const VoxelContext& ctx) {
     auto vertices = nlohmann::json::array ();
 
     const LiteMath::float3 voxel_size_modifier {ctx.size};
@@ -417,6 +417,52 @@ Mesh SCom2TreeScene::generate_mesh () const {
 
     traverse_scom2_core (this->data.header, this->data.nodes, this->data.bricks, mesh_cb);
 
+    return mesh;
+}
+
+namespace {
+
+void add_voxel_to_mesh (Mesh& mesh, LiteMath::float3 min_p, float size) {
+    float s = size * 0.9f;
+    LiteMath::float3 p [8];
+    for (int i = 0; i < 8; ++i) {
+        p [i] = min_p + LiteMath::float3 (
+            (i & 4) ? s : 0.0f
+            , (i & 2) ? s : 0.0f
+            , (i & 1) ? s : 0.0f
+        );
+    }
+
+    auto color = LiteMath::to_float4 (LiteMath::abs (LiteMath::normalize (min_p)), 1.0f);
+    auto n = LiteMath::float4 (0, 0, 0, 0);
+
+    auto add_f = [&] (int i0, int i1, int i2, int i3) {
+        mesh.add_triangle ({LiteMath::to_float4 (p [i0],1), n, color}, {LiteMath::to_float4 (p [i1],1), n, color}, {LiteMath::to_float4 (p [i2],1), n, color});
+        mesh.add_triangle ({LiteMath::to_float4 (p [i0],1), n, color}, {LiteMath::to_float4 (p [i2],1), n, color}, {LiteMath::to_float4 (p [i3],1), n, color});
+    };
+
+    add_f (0, 4, 6, 2); // Left
+    add_f (1, 3, 7, 5); // Right
+    add_f (0, 1, 5, 4); // Bottom
+    add_f (2, 6, 7, 3); // Top
+    add_f (0, 2, 3, 1); // Back
+    add_f (4, 5, 7, 6); // Front
+}
+
+}
+
+Mesh SCom2TreeScene::generate_voxel_mesh () const {
+    Mesh mesh;
+
+    auto voxel_cb = [&] (auto /*tri*/, const VoxelContext& ctx) {
+        static LiteMath::float3 last_pos = {-100, -100, -100};
+        if (LiteMath::length (ctx.min_pos - last_pos) > 1e-5f) {
+            add_voxel_to_mesh (mesh, ctx.min_pos, ctx.size * 0.5f);
+            last_pos = ctx.min_pos;
+        }
+    };
+
+    traverse_scom2_core (this->data.header, this->data.nodes, this->data.bricks, voxel_cb);
     return mesh;
 }
 

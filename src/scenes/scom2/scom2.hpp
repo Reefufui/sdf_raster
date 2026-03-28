@@ -32,6 +32,8 @@ public:
 
     Mesh generate_mesh () const;
 
+    Mesh generate_voxel_mesh () const;
+
 private:
     SceneState state;
     SCom2Tree data;

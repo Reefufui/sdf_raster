@@ -1752,7 +1752,7 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
         return;
     }
 
-    auto can_not_render_measures = [this] () {
+    auto scene_resources_cleanup = [this] () {
         release_scene_resources ();
         this->visible_subtrees.clear ();
         this->subtrees.clear ();
@@ -1788,7 +1788,7 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
 	           , scene_state.octree_depth - this->cpu_traversed);
     } else if (ObjScene* obj_scene = dynamic_cast <ObjScene*> (scene)) {
         LOG_INFO ("[{}] Received a scene that of type ObjScene.", RENDERER_NAME);
-        can_not_render_measures ();
+        scene_resources_cleanup ();
 
         const auto& model_data = obj_scene->get_model_data ();
         const auto& scene_state = obj_scene->get_state ();
@@ -1817,13 +1817,39 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
         LOG_INFO ("[{}] Created GPU resources for OBJ scene '{}'. Vertices: {}, Indices: {}"
             , RENDERER_NAME, scene_state.name, model_data.vertices.size (), this->explicit_index_count);
     } else if (SCom2TreeScene* scom2_scene = dynamic_cast <SCom2TreeScene*> (scene)) {
+        scene_resources_cleanup ();
+
         const std::filesystem::path path ("scom2.json");
-        LOG_INFO ("[{}] Received a scene that of type SCom2TreeScene. Dumping to {}.", RENDERER_NAME, path.string ());
+        LOG_INFO ("[{}] Received a scene that of type SCom2TreeScene. Dumping to {}. Converting to Mesh for rendering", RENDERER_NAME, path.string ());
         scom2_scene->dump_as_json (path);
-        can_not_render_measures ();
+
+        Mesh mesh = scom2_scene->generate_mesh ();
+        if (mesh.is_empty ()) {
+            LOG_ERROR ("[{}] SCom2 mesh generation resulted in 0 vertices!", RENDERER_NAME);
+            return;
+        }
+
+        const auto& verts = mesh.get_vertices ();
+        const auto& indices = mesh.get_indices ();
+
+        for (uint32_t i = 0; i < this->context->get_total_frames (); ++i) {
+            this->context->get_copy_helper ()->UpdateBuffer (
+                this->mesh_ds.vertices_buffers [i], 0
+                , verts.data (), verts.size () * sizeof (Vertex)
+            );
+            this->context->get_copy_helper ()->UpdateBuffer (
+                this->mesh_ds.indices_buffers [i], 0
+                , indices.data (), indices.size () * sizeof (uint32_t)
+            );
+        }
+
+        this->explicit_index_count = static_cast <uint32_t> (indices.size ());
+
+        LOG_INFO ("[{}] SCom2 converted: {} vertices, {} indices. Rendering mode: Explicit."
+             , RENDERER_NAME, verts.size (), this->explicit_index_count);
     } else {
         LOG_ERROR ("[{}] Received a scene that is not of any renderable type. Cannot render.", RENDERER_NAME);
-        can_not_render_measures ();
+        scene_resources_cleanup ();
     }
 }
 

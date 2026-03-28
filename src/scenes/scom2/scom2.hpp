@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mesh.hpp"
 #include "scenes/scene_state.hpp"
 #include "scenes/scene.hpp"
 #include "scenes/scom2/header.hpp"
@@ -28,6 +29,8 @@ public:
     const SCom2Tree& get_octree_data () const;
 
     void dump_as_json (const std::filesystem::path& path) const;
+
+    Mesh generate_mesh () const;
 
 private:
     SceneState state;

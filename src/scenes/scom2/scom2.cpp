@@ -59,7 +59,7 @@ bool SCom2TreeScene::load (const std::filesystem::path& path) {
 
     this->state = SceneState {
         .camera = Camera (),
-        .draw_method = DrawMethod::None, // TODO: own draw method
+        .draw_method = DrawMethod::Explicit,
         .name = path.stem ().string (),
         .path = path,
         .octree_depth = depth,
@@ -156,21 +156,32 @@ LiteMath::float3 interpolate_vertex (float isolevel, LiteMath::float3 p1, LiteMa
 
 }
 
-void process_voxel (nlohmann::json& out, LiteMath::float3 min_pos, float values [8], float voxel_size) {
+template <typename T>
+concept VertexCallback = requires (T cb, std::span <Vertex, 3> tri) {
+    cb (tri);
+};
+
+struct VoxelContext {
+    LiteMath::float3 min_pos;
+    float sdf [8];
+    float size;
+};
+
+void process_voxel(auto&& cb, const VoxelContext& ctx) {
     auto vertices = nlohmann::json::array ();
 
-    const LiteMath::float3 voxel_size_modifier {voxel_size};
+    const LiteMath::float3 voxel_size_modifier {ctx.size};
     int cube_index = 0;
     LiteMath::float3 corners [8];
 
     for (int i = 0; i < 8; ++i) {
         LiteMath::float3 corner_offset = {0.0f, 0.0f, 0.0f};
-        if ((i >> 0) & 1) corner_offset.x = voxel_size;
-        if ((i >> 1) & 1) corner_offset.y = voxel_size;
-        if ((i >> 2) & 1) corner_offset.z = voxel_size;
-        corners [i] = min_pos + corner_offset;
+        if ((i >> 0) & 1) corner_offset.x = ctx.size;
+        if ((i >> 1) & 1) corner_offset.y = ctx.size;
+        if ((i >> 2) & 1) corner_offset.z = ctx.size;
+        corners [i] = ctx.min_pos + corner_offset;
 
-        if (values [i] < 0.f) {
+        if (ctx.sdf [i] < 0.f) {
             cube_index |= (1 << i);
         }
     }
@@ -186,28 +197,25 @@ void process_voxel (nlohmann::json& out, LiteMath::float3 min_pos, float values 
         edge_vertices [i] = interpolate_vertex (0.f
                                                 , corners [corner_indices.x]
                                                 , corners [corner_indices.y]
-                                                , values [corner_indices.x]
-                                                , values [corner_indices.y]
+                                                , ctx.sdf [corner_indices.x]
+                                                , ctx.sdf [corner_indices.y]
                                                 );
     }
 
     const int *triangle_indices = cube_index_2_triangle_indices [cube_index];
-    for (int i = 0; triangle_indices [i] != -1; ++i) {
-        const auto position = edge_vertices [triangle_indices [i]];
-        const auto color = LiteMath::normalize (LiteMath::abs (min_pos));
-
-        nlohmann::json vertex;
-        vertex ["position"] = { position.x, position.y, position.z, 1.f };
-        vertex ["normal"] = { 0.f, 0.f, 0.f, 1.f };
-        vertex ["color"] = { color.x, color.y, color.z, 1.f };
-        vertices.push_back (vertex);
+    for (int i = 0; triangle_indices [i] != -1; i += 3) {
+        std::array <Vertex, 3> tri;
+        for(int j = 0; j < 3; ++j) {
+            auto position = edge_vertices [triangle_indices [i + j]];
+            tri [j].position = { position.x, position.y, position.z, 1.f };
+            tri [j].normal = { 0.f, 0.f, 0.f, 0.f };
+            tri [j].color = LiteMath::to_float4 (LiteMath::normalize (LiteMath::abs (ctx.min_pos)), 1.f);
+        }
+        cb (tri, ctx);
     }
-
-    out ["vertices"] = vertices;
 }
 
-template <typename T>
-void process_leaf (T& out, const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks, BrickPayload payload) {
+void process_leaf (auto&& cb, const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks, BrickPayload payload) {
     LiteMath::uint3 p = LiteMath::uint3 (payload.p_size.x >> 16, payload.p_size.x & 0xFFFF, payload.p_size.y >> 16);
     uint32_t level_sz = payload.p_size.y & 0xFFFF;
 
@@ -219,7 +227,7 @@ void process_leaf (T& out, const Header& header, const std::vector <uint32_t>& n
     SdfDAGDataEdge de = unpack_data_edge (header, max_val, link_data, link_data);
     uint32_t offset = header.bricks_step * de.data_offset;
     assert (payload.rotation == 0); // TODO: rotations
-    uint32_t rotation_index = 0; // TODO:
+    // uint32_t rotation_index = 0; // TODO:
     float add = de.add;
 
     for (uint32_t vox_idx = 0; vox_idx < 8; ++vox_idx) {
@@ -228,7 +236,6 @@ void process_leaf (T& out, const Header& header, const std::vector <uint32_t>& n
         float values [8] = {};
 
         LiteMath::uint3 vox_p = LiteMath::uint3 (((vox_idx & 4) >> 2), ((vox_idx & 2) >> 1), (vox_idx & 1));
-        LiteMath::float3 vox_p_f = LiteMath::float3 (vox_p);
 
         for (int i = 0; i < 8; ++i) {
             LiteMath::uint4 value_p = LiteMath::to_uint4 (vox_p, 0) + LiteMath::uint4 (((i & 4) >> 2), ((i & 2) >> 1), (i & 1), 1);
@@ -244,22 +251,19 @@ void process_leaf (T& out, const Header& header, const std::vector <uint32_t>& n
         }
 
         if (vmin <= 0.0f && vmax >= 0.0f) {
-            nlohmann::json leaf_data;
-            LiteMath::float3 min_pos = LiteMath::float3 (-1, -1, -1) + d * p_f + 0.5f * d * vox_p_f;
-            leaf_data ["min_pos"] = { min_pos.x, min_pos.y, min_pos.z };
-            leaf_data ["sdf"] = { values [0], values [1], values [2], values [3], values [4], values [5], values [6], values [7] };
-            process_voxel (leaf_data, min_pos, values, d);
+            VoxelContext ctx;
+            ctx.min_pos = LiteMath::float3 (-1, -1, -1) + d * p_f + 0.5f * d * LiteMath::float3 (((vox_idx & 4) >> 2), ((vox_idx & 2) >> 1), (vox_idx & 1));
+            ctx.size = d;
+            std::copy (std::begin (values), std::end (values), std::begin (ctx.sdf));
 
-            out.push_back (leaf_data);
+            process_voxel (cb, ctx);
         }
     }
 }
 
-nlohmann::json dump_active_leafs (const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks) {
+void traverse_scom2_core (const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks, auto&& cb) {
     nlohmann::json result;
     nlohmann::json active_leafs = nlohmann::json::array ();
-
-    float final_voxel_size = 0.0f;
 
     ExtStackElement stack [16];
 
@@ -319,15 +323,11 @@ nlohmann::json dump_active_leafs (const Header& header, const std::vector <uint3
                 cur.info = next_child | (cur.info & 0xFFFFFF00u);
             }
         } else if (child_is_leaf > 0) {
-            uint32_t level_sz = 2 * (cur.p_size.y & 0xFFFF);
-            d = 2.0f / float (level_sz);
-            final_voxel_size = d * 0.5f;
-
             BrickPayload payload;
             payload.p_size = (cur.p_size << 1) | LiteMath::uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
             payload.child_link = child_link;
             payload.rotation = 0; // TODO: rotations
-            process_leaf (active_leafs, header, nodes, bricks, payload);
+            process_leaf (cb, header, nodes, bricks, payload);
 
             const uint32_t next_child = child + 1;
             if (next_child >= 8) {
@@ -357,14 +357,30 @@ nlohmann::json dump_active_leafs (const Header& header, const std::vector <uint3
             cur.p_size = (cur.p_size << 1) | LiteMath::uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
         }
     }
-
-    result ["voxels"] = active_leafs;
-    result ["size"] = final_voxel_size;
-
-    return result;
 }
 
-inline void to_json (nlohmann::json& j, const SCom2Tree& tree) {
+nlohmann::json dump_active_leafs (const Header& h, const auto& n, const auto& b) {
+    nlohmann::json active_leafs = nlohmann::json::array ();
+
+    auto json_cb = [&] (auto tri, const VoxelContext& ctx) {
+        nlohmann::json leaf_data;
+        leaf_data ["min_pos"] = { ctx.min_pos.x, ctx.min_pos.y, ctx.min_pos.z };
+        leaf_data ["sdf"] = { ctx.sdf [0], ctx.sdf [1], ctx.sdf [2], ctx.sdf [3], ctx.sdf [4], ctx.sdf [5], ctx.sdf [6], ctx.sdf [7] };
+        for (const auto& v : tri) {
+            leaf_data ["vertices"].push_back ({
+                {"position", {v.position.x, v.position.y, v.position.z, 1.0f}}
+                , {"normal", {0, 0, 0, 1}}
+                , {"color", {v.color.x, v.color.y, v.color.z, 1.0f}}
+            });
+        }
+        active_leafs.push_back (leaf_data);
+    };
+
+    traverse_scom2_core (h, n, b, json_cb);
+    return active_leafs;
+}
+
+void to_json (nlohmann::json& j, const SCom2Tree& tree) {
     j = nlohmann::json {
         {"name", tree.name}
         , {"header", tree.header}
@@ -391,6 +407,17 @@ void SCom2TreeScene::dump_as_json (const std::filesystem::path& path) const {
     } catch (const std::exception& e) {
         LOG_ERROR ("[SCom2TreeScene] An unexpected error occurred during dump: {}", e.what ());
     }
+}
+
+Mesh SCom2TreeScene::generate_mesh () const {
+    Mesh mesh;
+    auto mesh_cb = [&](auto tri, const VoxelContext& /*ctx*/) {
+        mesh.add_triangle (tri [0], tri [1], tri [2]);
+    };
+
+    traverse_scom2_core (this->data.header, this->data.nodes, this->data.bricks, mesh_cb);
+
+    return mesh;
 }
 
 SCom2TreeScene::~SCom2TreeScene () {

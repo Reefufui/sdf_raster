@@ -22,6 +22,8 @@
 #include "vk_descriptor_sets.h"
 #include "vulkan_context.hpp"
 
+#include <string_view>
+
 namespace sdf_raster {
 
 class SDFRasterizer : public Renderer {
@@ -48,7 +50,8 @@ private:
     void init_compute_prefix_sum_pass2_pipeline ();
     void init_compute_prefix_sum_pass3_pipeline ();
     void init_compute_geometry_pipeline ();
-    void init_graphics_shading_pipeline ();
+    void init_graphics_identity_pipeline ();
+    void init_graphics_viewproj_pipeline ();
     void init_mesh_shading_pipeline ();
 
     void register_resizable ();
@@ -72,10 +75,11 @@ private:
     void compute_geometry (VkCommandBuffer cmd_buff);
     void geometry_barrier (VkCommandBuffer cmd_buff);
     void draw_geometry (VkCommandBuffer cmd_buff);
-    void draw_mesh (VkCommandBuffer cmd_buff);
     void draw_frustum (VkCommandBuffer cmd_buff);
     void copy_depth (VkCommandBuffer cmd_buff);
     void copy_subtrees (VkCommandBuffer cmd_buff);
+
+    void sync_draw_method (SceneState& scene_state);
 
     std::shared_ptr <VulkanContext> context {nullptr};
 
@@ -94,10 +98,12 @@ private:
     VkPipelineLayout mesh_pipeline_layout {VK_NULL_HANDLE};
     VkPipeline mesh_pipeline {VK_NULL_HANDLE};
 
-    VkPipelineLayout graphics_pipeline_layout {VK_NULL_HANDLE};
-    VkPipeline graphics_pipeline {VK_NULL_HANDLE};
-    VkPipelineLayout graphics_frustum_pipeline_layout {VK_NULL_HANDLE};
     VkPipeline graphics_frustum_pipeline {VK_NULL_HANDLE};
+    VkPipeline graphics_identity_pipeline {VK_NULL_HANDLE};
+    VkPipeline graphics_viewproj_pipeline {VK_NULL_HANDLE};
+    VkPipelineLayout graphics_frustum_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout graphics_identity_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout graphics_viewproj_pipeline_layout {VK_NULL_HANDLE};
 
     VkPipeline compute_hz_buffer_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_active_leafs_pipeline {VK_NULL_HANDLE};
@@ -120,10 +126,27 @@ private:
     VkDeviceMemory subtrees_memory {VK_NULL_HANDLE};
     void* subtrees_memory_mapped = nullptr;
 
-    void draw_active_leafs_mesh (VkCommandBuffer cmd_buff);
-    void draw_active_leafs_compute (VkCommandBuffer cmd_buff);
+    void raster_explicit (VkCommandBuffer cmd_buff);
+    void raster_implicit_via_compute_shading (VkCommandBuffer cmd_buff);
+    void raster_implicit_via_mesh_shading (VkCommandBuffer cmd_buff);
     using RenderMethodPtr = void (SDFRasterizer::*)(VkCommandBuffer);
-    RenderMethodPtr draw_active_leafs = nullptr;
+    RenderMethodPtr draw = &SDFRasterizer::raster_explicit;
+
+    struct MethodTrait {
+        DrawMethod method;
+        RenderMethodPtr ptr;
+        std::string_view name;
+        bool needs_mesh_shading;
+    };
+
+    static inline constexpr std::array <MethodTrait, 4> draw_strategies = {{
+          { DrawMethod::None,            &SDFRasterizer::raster_explicit, "None (Idle)", false}
+        , { DrawMethod::Explicit,        &SDFRasterizer::raster_explicit, "Explicit", false}
+        , { DrawMethod::ImplicitCompute, &SDFRasterizer::raster_implicit_via_compute_shading, "Compute", false}
+        , { DrawMethod::ImplicitMesh,    &SDFRasterizer::raster_implicit_via_mesh_shading, "Mesh", true }
+    }};
+
+    DrawMethod last_applied_method = DrawMethod::None;
 
     FrustumGeometry frustum {};
     std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer {nullptr};
@@ -133,6 +156,8 @@ private:
     int cpu_traversed {};
     std::string scene_name;
     LiteMath::float4 clear_color {0.2f, 0.3f, 0.3f, 1.0f};
+
+    uint32_t explicit_index_count {};
 
     uint32_t frame_index {0};
     bool initialized {false};

@@ -59,6 +59,7 @@ bool SCom2TreeScene::load (const std::filesystem::path& path) {
 
     this->state = SceneState {
         .camera = Camera (),
+        .draw_method = DrawMethod::None, // TODO: own draw method
         .name = path.stem ().string (),
         .path = path,
         .octree_depth = depth,

@@ -152,9 +152,9 @@ void Application::init_vulkan () {
 }
 
 void Application::init_renderer () {
-    if (this->settings.use_mesh_shading && !this->vulkan_context->get_use_mesh_shading ()) {
+    if (this->settings.scene_state.draw_method == DrawMethod::ImplicitMesh && !this->vulkan_context->get_use_mesh_shading ()) {
         LOG_WARN ("[Application] Turned off 'use_mesh_shading' settings: device doesn't support mesh shading.");
-        this->settings.use_mesh_shading = false;
+        this->settings.scene_state.draw_method = DrawMethod::ImplicitCompute;
     }
     this->renderer = std::make_unique <SDFRasterizer> (this->vulkan_context);
     this->renderer->init ();

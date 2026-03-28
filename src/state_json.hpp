@@ -71,6 +71,7 @@ struct adl_serializer <sdf_raster::SceneState> {
     static void to_json (json& j, const sdf_raster::SceneState& scene_state) {
         j = json {
             {"camera", scene_state.camera},
+            {"draw_method", scene_state.draw_method},
             {"name", scene_state.name},
             {"path", scene_state.path},
             {"octree_depth", scene_state.octree_depth},
@@ -84,6 +85,7 @@ struct adl_serializer <sdf_raster::SceneState> {
 
     static void from_json (const json& j, sdf_raster::SceneState& scene_state) {
         j.at ("camera").get_to (scene_state.camera);
+        j.at ("draw_method").get_to (scene_state.draw_method);
         j.at ("name").get_to (scene_state.name);
         j.at ("path").get_to (scene_state.path);
         j.at ("octree_depth").get_to (scene_state.octree_depth);
@@ -126,8 +128,7 @@ namespace sdf_raster {
         color_leafs,
         show_ui,
         show_camera_window,
-        show_renderer_window,
-        use_mesh_shading
+        show_renderer_window
     )
 
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE (

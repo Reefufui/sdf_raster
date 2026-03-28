@@ -359,9 +359,12 @@ void UI::renderer_window (Settings& settings, const Stats& stats) {
 
     ImGui::SeparatorText ("Common");
 
-    ImGui::Checkbox ("use mesh shading", &settings.use_mesh_shading);
-    if (ImGui::IsItemHovered ()) {
-        ImGui::SetTooltip ("Directly sends generated primitives to rasterizer.");
+    if (settings.scene_state.draw_method == DrawMethod::ImplicitMesh || settings.scene_state.draw_method == DrawMethod::ImplicitCompute) {
+        bool use_mesh_shading = settings.scene_state.draw_method == DrawMethod::ImplicitMesh;
+        ImGui::Checkbox ("use mesh shading", &use_mesh_shading);
+        if (ImGui::IsItemHovered ()) {
+            ImGui::SetTooltip ("Directly sends generated primitives to rasterizer.");
+        }
     }
 
     ImGui::SeparatorText ("Level of Detail");

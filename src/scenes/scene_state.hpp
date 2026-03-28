@@ -7,8 +7,11 @@
 
 namespace sdf_raster {
 
+enum class DrawMethod : uint8_t { None, Explicit, ImplicitCompute, ImplicitMesh };
+
 struct SceneState {
     Camera camera {};
+    DrawMethod draw_method = DrawMethod::None;
     std::string name {"N/A"};
     std::filesystem::path path {};
     int octree_depth {16};

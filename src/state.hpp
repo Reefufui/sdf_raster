@@ -16,8 +16,6 @@ struct Settings {
 
     std::filesystem::path scenes_directory {std::filesystem::current_path ()};
 
-    bool use_mesh_shading = true;
-
     bool color_leafs = true;
     bool frustum_view = false;
     bool disabled_cursor = true;

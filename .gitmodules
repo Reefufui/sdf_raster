@@ -19,3 +19,6 @@
 [submodule "submodules/imgui-filebrowser"]
 	path = submodules/imgui-filebrowser
 	url = https://github.com/AirGuanZ/imgui-filebrowser.git
+[submodule "submodules/tinyobjloader"]
+	path = submodules/tinyobjloader
+	url = https://github.com/tinyobjloader/tinyobjloader.git

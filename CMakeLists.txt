@@ -103,6 +103,13 @@ else ()
     message (STATUS "FreeType was not found and won't be used for ImGUI font rendering.")
 endif ()
 
+add_library (tinyobjloader STATIC
+    submodules/tinyobjloader/tiny_obj_loader.cc
+    submodules/tinyobjloader/tiny_obj_loader.h
+)
+target_include_directories (tinyobjloader PUBLIC submodules/tinyobjloader)
+add_library (tinyobjloader::tinyobjloader ALIAS tinyobjloader)
+
 if (CMAKE_BUILD_TYPE MATCHES Debug)
     target_compile_options (imgui PRIVATE -g -O0 -Wall -Wextra)
     target_link_options (imgui PRIVATE -g)
@@ -162,6 +169,7 @@ add_executable(${PROJECT_NAME}
 
     src/algorithms/scom2_traverse.cpp
 
+    src/scenes/obj/obj.cpp
     src/scenes/octree/octree.cpp
     src/scenes/scene_manager.cpp
     src/scenes/scom2/scom2.cpp
@@ -181,6 +189,7 @@ target_link_libraries (${PROJECT_NAME} PRIVATE
     LiteMath::LiteMath
     nlohmann_json::nlohmann_json
     spdlog::spdlog
+    tinyobjloader::tinyobjloader
     vk_utils::vk_utils
     volk::volk
     Vulkan::Vulkan

@@ -4,6 +4,7 @@
 #include "frustum_culling.hpp"
 #include "gui.hpp"
 #include "logger.hpp"
+#include "scenes/obj/obj.hpp"
 #include "scenes/octree/octree.hpp"
 #include "scenes/scom2/scom2.hpp"
 
@@ -1751,47 +1752,79 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
         return;
     }
 
-    SdfOctreeScene* octree_scene = dynamic_cast <SdfOctreeScene*> (scene);
-    if (!octree_scene) {
-        LOG_WARN ("[{}] Received a scene that is not of type SdfOctreeScene. Cannot render.", RENDERER_NAME);
-        if (SCom2TreeScene* scom2_scene = dynamic_cast <SCom2TreeScene*> (scene)) {
-            const std::filesystem::path path ("scom2.json");
-            LOG_INFO ("[{}] Received a scene that of type SCom2TreeScene. Dumping to {}.", RENDERER_NAME, path.string ());
-            scom2_scene->dump_as_json (path);
-        }
+    auto can_not_render_measures = [this] () {
         release_scene_resources ();
         this->visible_subtrees.clear ();
         this->subtrees.clear ();
-        return;
+    };
+
+    if (SdfOctreeScene* octree_scene = dynamic_cast <SdfOctreeScene*> (scene)) {
+        const SdfOctree& scene_data = octree_scene->get_octree_data ();
+        const SceneState& scene_state = octree_scene->get_state ();
+
+        vkDeviceWaitIdle (this->context->get_device());
+
+        cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
+
+        this->sdf_octree_ds = create_sdf_octree_descriptor_set (
+            this->context->get_device (),
+            this->context->get_physical_device (),
+            this->context->get_copy_helper (),
+            *descriptor_maker,
+            VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT,
+            scene_data,
+            scene_state.cpu_traversed,
+            this->context->get_total_frames ()
+        );
+
+	    this->cpu_traversed = scene_state.cpu_traversed;
+	    this->subtrees = get_octree_subtrees_payloads (scene_data, scene_state.cpu_traversed);
+	    this->init_subtree_roots_staging_buffer ();
+
+	    LOG_INFO ("[{}] Created gpu resources for sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
+	           , scene_state.name
+	           , scene_state.octree_depth
+	           , this->cpu_traversed
+	           , scene_state.octree_depth - this->cpu_traversed);
+    } else if (ObjScene* obj_scene = dynamic_cast <ObjScene*> (scene)) {
+        LOG_INFO ("[{}] Received a scene that of type ObjScene.", RENDERER_NAME);
+        can_not_render_measures ();
+
+        const auto& model_data = obj_scene->get_model_data ();
+        const auto& scene_state = obj_scene->get_state ();
+
+        if (model_data.vertices.empty ()) {
+            LOG_ERROR ("[{}] ObjScene '{}' has no vertices!", RENDERER_NAME, scene_state.name);
+            return;
+        }
+
+        // TODO: rebuild mesh_ds
+
+        for (uint32_t i = 0; i < this->context->get_total_frames (); ++i) {
+            this->context->get_copy_helper ()->UpdateBuffer (
+                this->mesh_ds.vertices_buffers [i], 0
+                , model_data.vertices.data (), model_data.vertices.size () * sizeof (Vertex)
+            );
+
+            this->context->get_copy_helper()->UpdateBuffer(
+                this->mesh_ds.indices_buffers [i], 0
+                , model_data.indices.data () , model_data.indices.size () * sizeof (uint32_t)
+            );
+        }
+
+        this->explicit_index_count = static_cast <uint32_t> (model_data.indices.size ());
+
+        LOG_INFO ("[{}] Created GPU resources for OBJ scene '{}'. Vertices: {}, Indices: {}"
+            , RENDERER_NAME, scene_state.name, model_data.vertices.size (), this->explicit_index_count);
+    } else if (SCom2TreeScene* scom2_scene = dynamic_cast <SCom2TreeScene*> (scene)) {
+        const std::filesystem::path path ("scom2.json");
+        LOG_INFO ("[{}] Received a scene that of type SCom2TreeScene. Dumping to {}.", RENDERER_NAME, path.string ());
+        scom2_scene->dump_as_json (path);
+        can_not_render_measures ();
+    } else {
+        LOG_ERROR ("[{}] Received a scene that is not of any renderable type. Cannot render.", RENDERER_NAME);
+        can_not_render_measures ();
     }
-
-    const SdfOctree& scene_data = octree_scene->get_octree_data ();
-    const SceneState& scene_state = octree_scene->get_state ();
-
-    vkDeviceWaitIdle (this->context->get_device());
-
-    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
-
-    this->sdf_octree_ds = create_sdf_octree_descriptor_set (
-        this->context->get_device (),
-        this->context->get_physical_device (),
-        this->context->get_copy_helper (),
-        *descriptor_maker,
-        VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT,
-        scene_data,
-        scene_state.cpu_traversed,
-        this->context->get_total_frames ()
-    );
-
-	this->cpu_traversed = scene_state.cpu_traversed;
-	this->subtrees = get_octree_subtrees_payloads (scene_data, scene_state.cpu_traversed);
-	this->init_subtree_roots_staging_buffer ();
-
-	LOG_INFO ("[{}] Created gpu resources for sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
-	       , scene_state.name
-	       , scene_state.octree_depth
-	       , this->cpu_traversed
-	       , scene_state.octree_depth - this->cpu_traversed);
 }
 
 void SDFRasterizer::sync_draw_method (SceneState& scene_state) {

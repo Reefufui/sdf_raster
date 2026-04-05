@@ -524,7 +524,7 @@ void SDFRasterizer::init_graphics_viewproj_pipeline () {
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
     VkPipelineMultisampleStateCreateInfo multisampling {};
@@ -1823,8 +1823,8 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
         LOG_INFO ("[{}] Received a scene that of type SCom2TreeScene. Dumping to {}. Converting to Mesh for rendering", RENDERER_NAME, path.string ());
         scom2_scene->dump_as_json (path);
 
-        // Mesh mesh = scom2_scene->generate_mesh ();
-        Mesh mesh = scom2_scene->generate_voxel_mesh ();
+        Mesh mesh = scom2_scene->generate_mesh ();
+        // Mesh mesh = scom2_scene->generate_voxel_mesh ();
         if (mesh.is_empty ()) {
             LOG_ERROR ("[{}] SCom2 mesh generation resulted in 0 vertices!", RENDERER_NAME);
             return;

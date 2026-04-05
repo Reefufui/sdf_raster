@@ -171,6 +171,21 @@ struct VoxelContext {
     float size;
 };
 
+float eval_sdf_local (const VoxelContext& ctx, LiteMath::float3 p) {
+    LiteMath::float3 local_p = (p - ctx.min_pos) / ctx.size;
+    float tx = local_p.x, ty = local_p.y, tz = local_p.z;
+
+    float c00 = ctx.sdf [0] * (1 - tx) + ctx.sdf [4] * tx;
+    float c01 = ctx.sdf [1] * (1 - tx) + ctx.sdf [5] * tx;
+    float c10 = ctx.sdf [2] * (1 - tx) + ctx.sdf [6] * tx;
+    float c11 = ctx.sdf [3] * (1 - tx) + ctx.sdf [7] * tx;
+
+    float c0 = c00 * (1 - ty) + c10 * ty;
+    float c1 = c01 * (1 - ty) + c11 * ty;
+
+    return c0 * (1 - tz) + c1 * tz;
+}
+
 void process_voxel (auto&& cb, const VoxelContext& ctx) {
     auto vertices = nlohmann::json::array ();
 
@@ -210,10 +225,22 @@ void process_voxel (auto&& cb, const VoxelContext& ctx) {
     for (int i = 0; triangle_indices [i] != -1; i += 3) {
         std::array <Vertex, 3> tri;
         for(int j = 0; j < 3; ++j) {
-            auto position = edge_vertices [triangle_indices [i + j]];
-            tri [j].position = { position.x, position.y, position.z, 1.f };
-            tri [j].normal = { 0.f, 0.f, 0.f, 0.f };
-            tri [j].color = LiteMath::to_float4 (LiteMath::normalize (LiteMath::abs (ctx.min_pos)), 1.f);
+            auto pos = edge_vertices [triangle_indices [i + j]];
+            tri [j].position = { pos.x, pos.y, pos.z, 1.f };
+
+            const float h = ctx.size * 0.01f;
+
+            float dx = eval_sdf_local (ctx, pos + LiteMath::float3 {h, 0, 0})
+                - eval_sdf_local (ctx, pos - LiteMath::float3 {h, 0, 0});
+            float dy = eval_sdf_local (ctx, pos + LiteMath::float3 {0, h, 0})
+                - eval_sdf_local (ctx, pos - LiteMath::float3 {0, h, 0});
+            float dz = eval_sdf_local (ctx, pos + LiteMath::float3 {0, 0, h})
+                - eval_sdf_local (ctx, pos - LiteMath::float3 {0, 0, h});
+
+            LiteMath::float3 norm = LiteMath::normalize (LiteMath::float3 {dx, dy, dz});
+            tri [j].normal = { norm.x, norm.y, norm.z, 0.0f };
+
+            tri [j].color = LiteMath::to_float4 (norm, 1.f);
         }
         cb (tri, ctx);
     }

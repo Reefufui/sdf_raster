@@ -180,9 +180,9 @@ void process_voxel (auto&& cb, const VoxelContext& ctx) {
 
     for (int i = 0; i < 8; ++i) {
         LiteMath::float3 corner_offset = {0.0f, 0.0f, 0.0f};
-        if ((i >> 0) & 1) corner_offset.x = ctx.size;
+        if ((i >> 2) & 1) corner_offset.x = ctx.size;
         if ((i >> 1) & 1) corner_offset.y = ctx.size;
-        if ((i >> 2) & 1) corner_offset.z = ctx.size;
+        if ((i >> 0) & 1) corner_offset.z = ctx.size;
         corners [i] = ctx.min_pos + corner_offset;
 
         if (ctx.sdf [i] < 0.f) {
@@ -257,7 +257,7 @@ void process_leaf (auto&& cb, const Header& header, const std::vector <uint32_t>
         if (vmin <= 0.0f && vmax >= 0.0f) {
             VoxelContext ctx;
             ctx.min_pos = LiteMath::float3 (-1, -1, -1) + d * p_f + 0.5f * d * LiteMath::float3 (((vox_idx & 4) >> 2), ((vox_idx & 2) >> 1), (vox_idx & 1));
-            ctx.size = d;
+            ctx.size = 0.5f * d;
             std::copy (std::begin (values), std::end (values), std::begin (ctx.sdf));
 
             process_voxel (cb, ctx);

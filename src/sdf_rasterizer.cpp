@@ -906,12 +906,12 @@ void SDFRasterizer::init_subtree_roots_staging_buffer () {
     VK_CHECK_RESULT (vkMapMemory (this->context->get_device (), this->subtrees_memory, 0, staging_buffer_size, 0, &this->subtrees_memory_mapped));
 }
 
-void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
+void SDFRasterizer::update (uint32_t frame_index, Settings& settings, SceneState& scene_state) {
     this->frame_index = frame_index;
 
     if (!settings.frustum_view && this->frustum_draw_buffer) {
         this->clear_color = {0.2f, 0.3f, 0.3f, 1.0f};
-        settings.scene_state.camera = this->frustum_draw_buffer->get_camera ();
+        scene_state.camera = this->frustum_draw_buffer->get_camera ();
         this->frustum_draw_buffer.reset ();
         LOG_INFO ("[{}] Frustum view mode: OFF.", RENDERER_NAME);
     } else if (settings.frustum_view && !this->frustum_draw_buffer) {
@@ -919,11 +919,11 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
         this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()
-            , settings.scene_state.camera);
+            , scene_state.camera);
         LOG_INFO ("[{}] Frustum view mode: ON.", RENDERER_NAME);
     }
 
-    this->sync_draw_method (settings.scene_state);
+    this->sync_draw_method (scene_state);
 
     this->stats.active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
     this->stats.active_roots_count = this->visible_subtrees.size ();
@@ -932,20 +932,20 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
     this->stats.lod = lod.lod;
     this->stats.distance = lod.distance;
 
-    this->push_constants.view_proj = settings.scene_state.camera.get_view_projection_matrix ();
-    this->push_constants.camera_pos = LiteMath::to_float4 (settings.scene_state.camera.get_position (), 1.0f);
-    this->push_constants.far_plane = settings.scene_state.camera.get_far_plane ();
-    this->push_constants.near_plane = settings.scene_state.camera.get_near_plane ();
+    this->push_constants.view_proj = scene_state.camera.get_view_projection_matrix ();
+    this->push_constants.camera_pos = LiteMath::to_float4 (scene_state.camera.get_position (), 1.0f);
+    this->push_constants.far_plane = scene_state.camera.get_far_plane ();
+    this->push_constants.near_plane = scene_state.camera.get_near_plane ();
     this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
-    this->push_constants.max_lod = settings.scene_state.max_lod;
+    this->push_constants.max_lod = scene_state.max_lod;
     this->push_constants.subtree_root_level = this->cpu_traversed;
-    this->push_constants.occlusion_culling_level = settings.scene_state.occlusion_culling_level;
-    this->push_constants.frustum_culling_level = settings.scene_state.frustum_culling_level;
+    this->push_constants.occlusion_culling_level = scene_state.occlusion_culling_level;
+    this->push_constants.frustum_culling_level = scene_state.frustum_culling_level;
     this->push_constants.color_leafs = settings.color_leafs;
 
     FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);
     if (!settings.frustum_view) {
-        this->update_frustum_buffer (settings.scene_state.camera);
+        this->update_frustum_buffer (scene_state.camera);
         *ptr = this->frustum;
         frustum_culling (this->subtrees, this->frustum, this->visible_subtrees);
         if (this->visible_subtrees.size ()) {
@@ -1922,11 +1922,11 @@ void SDFRasterizer::shutdown (Settings& settings) {
     cleanup_indirect_dispatch_descriptor_set (this->context->get_device (), this->indirect_dispatch_ds);
     cleanup_lod_descriptor_set (this->context->get_device (), this->lod_ds);
 
-    if (this->frustum_draw_buffer) {
-        settings.frustum_view = false;
-        settings.scene_state.camera = this->frustum_draw_buffer->get_camera ();
-        this->frustum_draw_buffer.reset ();
-    }
+    // if (this->frustum_draw_buffer) {
+    //     settings.frustum_view = false;
+    //     scene_state.camera = this->frustum_draw_buffer->get_camera ();
+    //     this->frustum_draw_buffer.reset ();
+    // }
     this->descriptor_maker.reset ();
     this->descriptor_maker_for_resizable.reset ();
 

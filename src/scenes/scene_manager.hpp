@@ -6,7 +6,6 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
-#include <future>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -57,48 +56,26 @@ public:
 
     void load_scene (const std::filesystem::path& path);
 
-    void set_current_scene (const std::filesystem::path& path);
+    Scene* get_scene ();
 
-    Scene* get_scene (const std::filesystem::path& path);
-
-    Scene* get_current_scene ();
-
-    std::optional <std::filesystem::path> get_current_scene_path ();
-
-    void unload_scene (const std::filesystem::path& path);
-
-    std::optional <SceneState> get_state (const std::filesystem::path& path) const;
-
-    std::optional <SceneState> get_current_state () const;
+    [[nodiscard]] bool is_loading_scene () const noexcept {
+        return is_loading.load (std::memory_order_acquire);
+    }
 
     void subscribe (SceneEventCallback callback);
 
 private:
-    [[nodiscard]] std::optional <SceneState> get_state_impl (const std::filesystem::path& path) const;
-
     void notify (SceneEventType type, const std::filesystem::path& path);
 
-    void worker_thread_loop ();
-
 private:
-    struct ManagedScene {
-        SceneState state;
+    std::variant <std::monostate, std::unique_ptr <Scene>> managed_scene;
+    std::atomic <bool> is_loading {false};
 
-        std::variant <
-            std::monostate
-            , std::future <std::unique_ptr <Scene>>
-            , std::unique_ptr <Scene>
-            > data;
-    };
-
-    std::map <std::filesystem::path, ManagedScene> scenes;
-    std::optional <std::filesystem::path> current_scene_path;
+    std::map <std::filesystem::path, SceneState> cached_scene_states;
     std::map <std::string, std::function <std::unique_ptr <Scene> ()>> factory_registry;
     std::vector <SceneEventCallback> subscribers;
-    mutable std::mutex mutex;
 
-    std::thread worker;
-    std::atomic <bool> is_running {false};
+    mutable std::mutex mutex;
 };
 
 } // sdf_raster

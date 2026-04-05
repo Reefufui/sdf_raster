@@ -151,8 +151,12 @@ bool ObjScene::load (const std::filesystem::path& path) {
     return true;
 }
 
-SceneState ObjScene::get_state () const {
+SceneState& ObjScene::get_state () {
     return this->state;
+}
+
+void ObjScene::set_state (const SceneState& scene_state) {
+    this->state = scene_state;
 }
 
 const ObjModel& ObjScene::get_model_data () const {

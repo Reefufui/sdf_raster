@@ -62,11 +62,11 @@ private:
 private:
     void init_style ();
 
-    void key_input (Settings& settings);
+    void key_input (Settings& settings, SceneState& scene_state);
     void menu_bar (Settings& settings);
     void file_dialog ();
-    void renderer_window (Settings& settings, const Stats& stats);
-    void status_bar (Settings& settings, const Stats& stats);
+    void renderer_window (Settings& settings, const Stats& stats, SceneState& scene_state);
+    void status_bar (Settings& settings, const Stats& stats, SceneState& scene_state);
 
 private:
     ImGui::FileBrowser file_browser;
@@ -246,9 +246,8 @@ void UI::menu_bar (Settings& settings) {
 
 namespace {
 
-void camera_input (Settings& settings) {
+void camera_input (Camera& camera) {
     ImGuiIO& io = ImGui::GetIO ();
-    Camera& camera = settings.scene_state.camera;
 
     LiteMath::float3 move {0.f, 0.f, 0.f};
     move.x += static_cast <float> (ImGui::IsKeyDown (ImGuiKey_W));
@@ -270,7 +269,7 @@ void camera_input (Settings& settings) {
 
 }
 
-void UI::key_input (Settings& settings) {
+void UI::key_input (Settings& settings, SceneState& scene_state) {
     ImGuiIO& io = ImGui::GetIO ();
 
     if (io.WantCaptureKeyboard) {
@@ -278,11 +277,11 @@ void UI::key_input (Settings& settings) {
     }
 
     if (settings.disabled_cursor) {
-        camera_input (settings);
+        camera_input (scene_state.camera);
     }
 
     if (ImGui::IsKeyPressed (ImGuiKey_R, false)) {
-        settings.scene_state.camera.reset ();
+        scene_state.camera.reset ();
     }
 
     if (ImGui::IsKeyPressed (ImGuiKey_V, false)) {
@@ -352,15 +351,15 @@ void UI::file_dialog () {
     }
 }
 
-void UI::renderer_window (Settings& settings, const Stats& stats) {
+void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& scene_state) {
     ImGui::Begin ("Rendering");
 
     ImGui::Text ("Screen size: %dx%d pixels", this->surface_extent.width, this->surface_extent.height);
 
     ImGui::SeparatorText ("Common");
 
-    if (settings.scene_state.draw_method == DrawMethod::ImplicitMesh || settings.scene_state.draw_method == DrawMethod::ImplicitCompute) {
-        bool use_mesh_shading = settings.scene_state.draw_method == DrawMethod::ImplicitMesh;
+    if (scene_state.draw_method == DrawMethod::ImplicitMesh || scene_state.draw_method == DrawMethod::ImplicitCompute) {
+        bool use_mesh_shading = scene_state.draw_method == DrawMethod::ImplicitMesh;
         ImGui::Checkbox ("use mesh shading", &use_mesh_shading);
         if (ImGui::IsItemHovered ()) {
             ImGui::SetTooltip ("Directly sends generated primitives to rasterizer.");
@@ -371,46 +370,46 @@ void UI::renderer_window (Settings& settings, const Stats& stats) {
 
     ImGui::Text ("distance: %.3f", stats.distance);
     ImGui::Text ("calculated LOD level: %d", stats.lod);
-    ImGui::InputInt ("max lod", &settings.scene_state.max_lod);
-    if (settings.scene_state.octree_depth) {
-        settings.scene_state.max_lod = LiteMath::clamp (settings.scene_state.max_lod, settings.scene_state.cpu_traversed, settings.scene_state.octree_depth);
+    ImGui::InputInt ("max lod", &scene_state.max_lod);
+    if (scene_state.octree_depth) {
+        scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.cpu_traversed, scene_state.octree_depth);
     } else {
-        settings.scene_state.max_lod = LiteMath::max (settings.scene_state.max_lod, settings.scene_state.cpu_traversed);
+        scene_state.max_lod = LiteMath::max (scene_state.max_lod, scene_state.cpu_traversed);
     }
 
     ImGui::SeparatorText ("Octree");
-    ImGui::Text ("octree depth: %d/%d", settings.scene_state.max_lod, settings.scene_state.octree_depth);
+    ImGui::Text ("octree depth: %d/%d", scene_state.max_lod, scene_state.octree_depth);
 
-    int levels_remaining = settings.scene_state.max_lod;
+    int levels_remaining = scene_state.max_lod;
 
-    ImGui::InputInt ("cpu traversed", &settings.scene_state.cpu_traversed);
+    ImGui::InputInt ("cpu traversed", &scene_state.cpu_traversed);
     if (ImGui::IsItemHovered ()) {
         ImGui::SetTooltip ("Levels to descend on cpu prior GPU.");
     }
-    settings.scene_state.cpu_traversed = LiteMath::clamp (settings.scene_state.cpu_traversed, 0, 5);
-    levels_remaining -= settings.scene_state.cpu_traversed;
+    scene_state.cpu_traversed = LiteMath::clamp (scene_state.cpu_traversed, 0, 5);
+    levels_remaining -= scene_state.cpu_traversed;
 
     ImGui::BeginDisabled ();
-    ImGui::InputInt ("gpu descend", &settings.scene_state.gpu_descend);
-    settings.scene_state.gpu_descend = LiteMath::clamp (settings.scene_state.gpu_descend, 0, LiteMath::min (5, levels_remaining));
-    levels_remaining -= settings.scene_state.gpu_descend;
+    ImGui::InputInt ("gpu descend", &scene_state.gpu_descend);
+    scene_state.gpu_descend = LiteMath::clamp (scene_state.gpu_descend, 0, LiteMath::min (5, levels_remaining));
+    levels_remaining -= scene_state.gpu_descend;
 
     ImGui::InputInt ("gpu dfs", &levels_remaining);
     ImGui::EndDisabled ();
 
     ImGui::SeparatorText ("Culling");
 
-    ImGui::InputInt ("frustum", &settings.scene_state.frustum_culling_level);
-    if (settings.scene_state.octree_depth) {
-        settings.scene_state.frustum_culling_level = LiteMath::clamp (settings.scene_state.frustum_culling_level, settings.scene_state.cpu_traversed, settings.scene_state.octree_depth);
-    } else if (settings.scene_state.cpu_traversed) {
-        settings.scene_state.frustum_culling_level = LiteMath::max (settings.scene_state.frustum_culling_level, settings.scene_state.cpu_traversed);
+    ImGui::InputInt ("frustum", &scene_state.frustum_culling_level);
+    if (scene_state.octree_depth) {
+        scene_state.frustum_culling_level = LiteMath::clamp (scene_state.frustum_culling_level, scene_state.cpu_traversed, scene_state.octree_depth);
+    } else if (scene_state.cpu_traversed) {
+        scene_state.frustum_culling_level = LiteMath::max (scene_state.frustum_culling_level, scene_state.cpu_traversed);
     }
     if (ImGui::IsItemHovered ()) {
         ImGui::SetTooltip ("Disables rendering of objects outside the camera's view frustum.");
     }
 
-    if (!this->previous_frame_settings.frustum_view && settings.frustum_view && !settings.scene_state.occlusion_culling_level) {
+    if (!this->previous_frame_settings.frustum_view && settings.frustum_view && !scene_state.occlusion_culling_level) {
         LOG_WARN ("[UI] Frustum view mode entered w/o occlusion culling. Toggling disabled: depth data missing.");
         this->lock_occlusion_culling = true;
     } else if (!settings.frustum_view) {
@@ -421,9 +420,9 @@ void UI::renderer_window (Settings& settings, const Stats& stats) {
         ImGui::BeginDisabled ();
     }
 
-    ImGui::InputInt ("occlusion", &settings.scene_state.occlusion_culling_level);
-    if (settings.scene_state.octree_depth) {
-        settings.scene_state.occlusion_culling_level = LiteMath::clamp (settings.scene_state.occlusion_culling_level, 0, settings.scene_state.octree_depth);
+    ImGui::InputInt ("occlusion", &scene_state.occlusion_culling_level);
+    if (scene_state.octree_depth) {
+        scene_state.occlusion_culling_level = LiteMath::clamp (scene_state.occlusion_culling_level, 0, scene_state.octree_depth);
     }
     if (ImGui::IsItemHovered (ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::BeginTooltip ();
@@ -444,7 +443,7 @@ void UI::renderer_window (Settings& settings, const Stats& stats) {
     ImGui::End ();
 }
 
-void UI::status_bar (Settings& settings, const Stats& stats) {
+void UI::status_bar (Settings& settings, const Stats& stats, SceneState& scene_state) {
     ImGuiIO& io = ImGui::GetIO ();
 
     struct StatusBarElement {
@@ -453,7 +452,7 @@ void UI::status_bar (Settings& settings, const Stats& stats) {
 
     std::vector <StatusBarElement> elements;
     elements.push_back (StatusBarElement {
-        .text = std::format ("Scene:{}", settings.scene_state.name)
+        .text = std::format ("Scene:{}", scene_state.name)
     });
     elements.push_back (StatusBarElement {
         .text = std::format ("Mode:{}", (settings.frustum_view) ? "frustum" : "camera")
@@ -525,25 +524,55 @@ void UI::update (Settings& settings, const Stats& stats) {
 
     ImGui::NewFrame ();
 
-    this->key_input (settings);
-
-    this->show_ui = settings.show_ui;
-    if (this->show_ui) {
+    if (this->scene_manager->is_loading_scene ()) {
         this->menu_bar (settings);
         this->file_dialog ();
 
-        if (settings.show_camera_window) {
-            camera_window (settings.scene_state.camera);
+        ImGui::SetNextWindowPos (ImGui::GetMainViewport ()->GetCenter (), ImGuiCond_Always, ImVec2 (0.5f, 0.5f));
+        if (ImGui::Begin ("Loading...", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text ("We are about to render!");
+            ImGui::End ();
         }
-
-        if (settings.show_renderer_window) {
-            this->renderer_window (settings, stats);
-        }
-
-        this->status_bar (settings, stats);
+        return;
     }
 
-    settings.scene_state.camera.update ();
+    Scene* current_scene = this->scene_manager->get_scene ();
+
+    if (current_scene) {
+        SceneState& scene_state = current_scene->get_state ();
+
+        this->key_input (settings, scene_state);
+        this->show_ui = settings.show_ui;
+
+        if (this->show_ui) {
+            this->menu_bar (settings);
+            this->file_dialog ();
+
+            if (settings.show_camera_window) {
+                camera_window (scene_state.camera);
+            }
+            if (settings.show_renderer_window) {
+                this->renderer_window (settings, stats, scene_state);
+            }
+            this->status_bar (settings, stats, scene_state);
+        }
+        scene_state.camera.update ();
+    } else {
+        if (settings.show_ui) {
+            this->menu_bar (settings);
+            this->file_dialog ();
+
+            ImGui::SetNextWindowPos (ImGui::GetMainViewport ()->GetCenter (), ImGuiCond_Always, ImVec2 (0.5f, 0.5f));
+            if (ImGui::Begin ("Welcome", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text ("No scene loaded. Press Ctrl+O to open a scene.");
+                if (ImGui::Button ("Open Scene...")) {
+                    this->file_browser.Open ();
+                }
+                ImGui::End ();
+            }
+        }
+    }
+
     this->previous_frame_settings = settings;
 }
 

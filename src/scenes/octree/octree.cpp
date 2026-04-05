@@ -70,8 +70,12 @@ bool SdfOctreeScene::load (const std::filesystem::path& path) {
     return true;
 }
 
-SceneState SdfOctreeScene::get_state () const {
+SceneState& SdfOctreeScene::get_state () {
     return this->state;
+}
+
+void SdfOctreeScene::set_state (const SceneState& scene_state) {
+    this->state = scene_state;
 }
 
 const SdfOctree& SdfOctreeScene::get_octree_data () const {

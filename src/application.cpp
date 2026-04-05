@@ -41,7 +41,7 @@ Application::~Application () {
     SessionState session_to_save;
     session_to_save.settings = this->settings;
     session_to_save.scene_states = this->scene_manager->get_all_states ();
-    session_to_save.current_scene_path = this->scene_manager->get_current_scene_path ();
+    session_to_save.current_scene_path = this->scene_manager->get_scene ()->get_state ().path;
 
     dump_session (session_to_save, "/tmp/sdf_raster.json");
     this->scene_manager.reset ();
@@ -85,7 +85,10 @@ void Application::run (bool /*single_frame*/) {
             gui::update (this->settings, this->renderer->get_stats ());
 
             this->renderer->process_commands (this->render_commands, this->render_command_mutex);
-            this->renderer->update (i, this->settings); // TODO: update everything through 'process_commands'
+            if (auto scene = this->scene_manager->get_scene ()) {
+                // TODO: update everything through 'process_commands'
+                this->renderer->update (i, this->settings, scene->get_state ());
+            }
 
             this->renderer->render (cmd_buff);
             gui::draw (this->vulkan_context->get_swapchain_image_index (), cmd_buff);
@@ -117,15 +120,6 @@ void Application::init_window () {
     glfwSetMouseButtonCallback (this->window, mouse_button_callback);
 
     this->settings.disabled_cursor = false;
-
-    int width, height;
-    glfwGetWindowSize (this->window, &width, &height);
-    LOG_INFO ("Window dimensions: {}x{}", width, height);
-
-    float f_width = static_cast <float> (width);
-    float f_height = static_cast <float> (height);
-
-    this->settings.scene_state.camera.set_aspect_ratio (f_width / f_height);
 }
 
 void Application::init_vulkan () {
@@ -139,8 +133,10 @@ void Application::init_vulkan () {
     this->vulkan_context->init (this->window, width, height);
 
     auto resize_camera = [&] () {
-        auto extent = this->vulkan_context->get_swapchain_extent ();
-        this->settings.scene_state.camera.set_aspect_ratio (static_cast <float> (extent.width) / static_cast <float> (extent.height));
+        const auto extent = this->vulkan_context->get_swapchain_extent ();
+        const float height = static_cast <float> (extent.height);
+        const float width = static_cast <float> (extent.width);
+        this->scene_manager->get_scene ()->get_state ().camera.set_aspect_ratio (width / height);
     };
 
     auto resize_gui = [&] () {
@@ -153,10 +149,6 @@ void Application::init_vulkan () {
 }
 
 void Application::init_renderer () {
-    if (this->settings.scene_state.draw_method == DrawMethod::ImplicitMesh && !this->vulkan_context->get_use_mesh_shading ()) {
-        LOG_WARN ("[Application] Turned off 'use_mesh_shading' settings: device doesn't support mesh shading.");
-        this->settings.scene_state.draw_method = DrawMethod::ImplicitCompute;
-    }
     this->renderer = std::make_unique <SDFRasterizer> (this->vulkan_context);
     this->renderer->init ();
 }
@@ -197,7 +189,6 @@ void Application::init_scene_manager (const SessionState& session) {
     this->scene_manager->restore_states (session.scene_states);
 
     if (session.current_scene_path.has_value ()) {
-        this->scene_manager->set_current_scene (*session.current_scene_path);
         this->scene_manager->load_scene (*session.current_scene_path);
     }
 }
@@ -248,8 +239,7 @@ void Application::on_scene_event (SceneEventType type, const std::filesystem::pa
 
     switch (type) {
         case SceneEventType::LOADED: {
-            this->scene_manager->set_current_scene (path);
-            Scene* scene_ptr = this->scene_manager->get_current_scene ();
+            Scene* scene_ptr = this->scene_manager->get_scene ();
 
             if (scene_ptr) {
                 RenderCommand command = [scene_ptr] (Renderer* renderer) {
@@ -263,10 +253,14 @@ void Application::on_scene_event (SceneEventType type, const std::filesystem::pa
                 LOG_ERROR ("[Application] Error: Scene was reported loaded, but 'get_scene()' returned null!");
             }
 
-            this->settings.scene_state = scene_ptr->get_state ();
+            auto resize_camera = [&] () {
+                const auto extent = this->vulkan_context->get_swapchain_extent ();
+                const float height = static_cast <float> (extent.height);
+                const float width = static_cast <float> (extent.width);
+                this->scene_manager->get_scene ()->get_state ().camera.set_aspect_ratio (width / height);
+            };
 
-            auto extent = this->vulkan_context->get_swapchain_extent ();
-            this->settings.scene_state.camera.set_aspect_ratio (static_cast <float> (extent.width) / static_cast <float> (extent.height));
+            resize_camera (); // TODO: class method
 
             break;
         }

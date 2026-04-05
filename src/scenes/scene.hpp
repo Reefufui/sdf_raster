@@ -10,7 +10,8 @@ class Scene {
 public:
     virtual ~Scene () = default;
     virtual bool load (const std::filesystem::path& path) = 0;
-    virtual SceneState get_state () const = 0;
+    virtual void set_state (const SceneState& scene_state) = 0;
+    virtual SceneState& get_state () = 0;
 };
 
 } // sdf_raster

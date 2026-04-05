@@ -71,8 +71,12 @@ bool SCom2TreeScene::load (const std::filesystem::path& path) {
     return true;
 }
 
-SceneState SCom2TreeScene::get_state () const {
+SceneState& SCom2TreeScene::get_state () {
     return this->state;
+}
+
+void SCom2TreeScene::set_state (const SceneState& scene_state) {
+    this->state = scene_state;
 }
 
 const SCom2Tree& SCom2TreeScene::get_octree_data () const {

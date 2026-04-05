@@ -7,6 +7,7 @@
 
 namespace sdf_raster {
 
+struct SceneState;
 struct SdfOctree;
 struct Settings;
 struct Stats;
@@ -19,7 +20,7 @@ public:
     virtual ~Renderer () = default;
 
     virtual void init () = 0;
-    virtual void update (uint32_t frame_index, Settings& settings) = 0;
+    virtual void update (uint32_t frame_index, Settings& settings, SceneState& scene_state) = 0;
     virtual void render (VkCommandBuffer cmd_buff) = 0;
     virtual void shutdown (Settings& settings) = 0;
     virtual void process_commands (std::queue <RenderCommand>& commands, std::mutex& mutex) = 0;

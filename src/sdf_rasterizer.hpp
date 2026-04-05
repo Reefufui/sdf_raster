@@ -32,7 +32,7 @@ public:
     ~SDFRasterizer ();
 
     void init () override;
-    void update (uint32_t frame_index, Settings& settings) override;
+    void update (uint32_t frame_index, Settings& settings, SceneState& scene_state) override;
     void render (VkCommandBuffer cmd_buff) override;
     void shutdown (Settings& settings) override;
     void process_commands (std::queue <RenderCommand>& commands, std::mutex& mutex) override;

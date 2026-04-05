@@ -12,8 +12,6 @@ struct Settings {
     int window_height = 1080;
     bool window_maximized = true;
 
-    SceneState scene_state; // TODO: remove
-
     std::filesystem::path scenes_directory {std::filesystem::current_path ()};
 
     bool color_leafs = true;

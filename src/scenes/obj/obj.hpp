@@ -29,7 +29,8 @@ public:
     ~ObjScene () override;
 
     bool load (const std::filesystem::path& path) override;
-    SceneState get_state () const override;
+    SceneState& get_state () override;
+    void set_state (const SceneState& scene_state) override;
 
     const ObjModel& get_model_data () const;
 

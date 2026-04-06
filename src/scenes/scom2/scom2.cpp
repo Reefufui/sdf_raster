@@ -3,6 +3,7 @@
 #include "logger.hpp"
 #include "marching_cubes_lookup_table.hpp"
 #include "scenes/scom2/defs.hpp"
+#include "scenes/scom2/rotation_lookup_tables.hpp"
 #include "scenes/scom2/utils.hpp"
 
 #include "shader_common.hpp"
@@ -240,25 +241,24 @@ void process_voxel (auto&& cb, const VoxelContext& ctx) {
             LiteMath::float3 norm = LiteMath::normalize (LiteMath::float3 {dx, dy, dz});
             tri [j].normal = { norm.x, norm.y, norm.z, 0.0f };
 
-            tri [j].color = LiteMath::to_float4 (norm, 1.f);
+            tri [j].color = LiteMath::to_float4 (norm * 0.5f + 0.5f, 1.f);
         }
         cb (tri, ctx);
     }
 }
 
-void process_leaf (auto&& cb, const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks, BrickPayload payload) {
-    LiteMath::uint3 p = LiteMath::uint3 (payload.p_size.x >> 16, payload.p_size.x & 0xFFFF, payload.p_size.y >> 16);
-    uint32_t level_sz = payload.p_size.y & 0xFFFF;
+void process_brick (auto&& cb, const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks, BrickPayload payload) {
+    const LiteMath::uint3 p = LiteMath::uint3 (payload.p_size.x >> 16, payload.p_size.x & 0xFFFF, payload.p_size.y >> 16);
+    const uint32_t level_sz = payload.p_size.y & 0xFFFF;
 
     const float d = 2.0f / float (level_sz);
-    LiteMath::float3 p_f = LiteMath::float3 (p);
-    float max_val = get_max_sdf_val (float (level_sz));
+    const LiteMath::float3 p_f = LiteMath::float3 (p);
+    const float max_val = get_max_sdf_val (float (level_sz));
 
     uint32_t link_data = nodes [payload.child_link];
     SdfDAGDataEdge de = unpack_data_edge (header, max_val, link_data, link_data);
     uint32_t offset = header.bricks_step * de.data_offset;
-    assert (payload.rotation == 0); // TODO: rotations
-    // uint32_t rotation_index = 0; // TODO:
+    uint32_t rotation_index = rotation_add [payload.rotation * 48 + de.rotation_id];
     float add = de.add;
 
     for (uint32_t vox_idx = 0; vox_idx < 8; ++vox_idx) {
@@ -266,13 +266,11 @@ void process_leaf (auto&& cb, const Header& header, const std::vector <uint32_t>
         float vmax = std::numeric_limits <float>::max ();
         float values [8] = {};
 
-        LiteMath::uint3 vox_p = LiteMath::uint3 (((vox_idx & 4) >> 2), ((vox_idx & 2) >> 1), (vox_idx & 1));
+        LiteMath::int3 vox_p = LiteMath::int3 (((vox_idx & 4) >> 2), ((vox_idx & 2) >> 1), (vox_idx & 1));
 
         for (int i = 0; i < 8; ++i) {
-            LiteMath::uint4 value_p = LiteMath::to_uint4 (vox_p, 0) + LiteMath::uint4 (((i & 4) >> 2), ((i & 2) >> 1), (i & 1), 1);
-            LiteMath::uint4 rot_0_modifier = LiteMath::uint4 (header.v_size * header.v_size, header.v_size, 1, 0);
-            uint32_t vId0 = uint32_t (dot (rot_0_modifier, value_p));
-
+            LiteMath::int4 value_p = LiteMath::to_int4 (vox_p, 0) + LiteMath::int4 (((i & 4) >> 2), ((i & 2) >> 1), (i & 1), 1);
+            uint32_t vId0 = static_cast <uint32_t> (dot (rotation_modifiers [rotation_index], value_p));
             const uint32_t p_val = bricks [offset + vId0 / header.values_per_uint];
             const uint32_t p_off = (vId0 % header.values_per_uint) * header.bits_per_value;
             float val = max_val * (2.0f * ((p_val >> p_off) & header.value_mask) / float(header.value_mask) - 1) + add;
@@ -317,8 +315,8 @@ void traverse_scom2_core (const Header& header, const std::vector <uint32_t>& no
         assert (child >= 0 && child < 8);
 
         const LiteMath::uint3 voxel_pos = LiteMath::uint3 ((child & 4) >> 2, (child & 2) >> 1, child & 1); // (0,0,0)..(1,1,1)
-        assert (cur.transform == 0); // TODO: transform
-        const uint32_t child_n = child; // TODO: transform
+        const uint32_t child_n = static_cast <uint32_t> (dot (rotation_modifiers [2 * 48 + cur.transform]
+            , LiteMath::int4 (static_cast <int> (voxel_pos.x), static_cast <int> (voxel_pos.y), static_cast <int> (voxel_pos.z), 1)));
         const uint32_t child_n_mask = 1u << (2 * child_n);
 
         const uint32_t children_types_mask = (cur.info >> header.children_types_shift) & header.children_types_mask;
@@ -328,26 +326,24 @@ void traverse_scom2_core (const Header& header, const std::vector <uint32_t>& no
         const uint32_t child_is_leaf = cur.info & (1u << (header.children_types_shift + 2 * child_n));
         const uint32_t rot_id = cur.info >> header.children_active_bits_shift;
 
-        assert (rot_id == 0); // TODO: rotations
-
         d = 1.0f / float (cur.p_size.y & 0xFFFF);
 
         std::string indent (top * 4, ' ');
 
         if (child_has_data == 0) {
-            LOG_TRACE ("{}Child {}: No data", indent, child);
+            LOG_TRACE ("{}Child {}: No data", indent, child_n);
         } else if (child_is_leaf > 0) {
             LiteMath::float3 pf2 = LiteMath::float3 (
-                float (cur.p_size.x >> 16)    + (((child & 4) > 0) ? 1.0f : 0.5f)
-                , float (cur.p_size.x & 0xFFFF) + (((child & 2) > 0) ? 1.0f : 0.5f)
-                , float (cur.p_size.y >> 16)    + (((child & 1) > 0) ? 1.0f : 0.5f));
-            LOG_TRACE ("{}Leaf {}: pos={}", indent, child, pf2 * d);
+                float (cur.p_size.x >> 16)    + (((child_n & 4) > 0) ? 1.0f : 0.5f)
+                , float (cur.p_size.x & 0xFFFF) + (((child_n & 2) > 0) ? 1.0f : 0.5f)
+                , float (cur.p_size.y >> 16)    + (((child_n & 1) > 0) ? 1.0f : 0.5f));
+            LOG_TRACE ("{}Leaf {}: pos={}", indent, child_n, pf2 * d);
         } else {
-            LOG_TRACE ("{}Node {}: Entering... (d={})", indent, child, d);
+            LOG_TRACE ("{}Node {}: Entering... (d={})", indent, child_n, d);
         }
 
         if (child_has_data == 0) {
-            const uint32_t next_child = child + 1; // TODO: rotations?
+            const uint32_t next_child = child + 1;
             if (next_child >= 8) {
                 cur = stack [top--];
             } else {
@@ -357,8 +353,8 @@ void traverse_scom2_core (const Header& header, const std::vector <uint32_t>& no
             BrickPayload payload;
             payload.p_size = (cur.p_size << 1) | LiteMath::uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
             payload.child_link = child_link;
-            payload.rotation = 0; // TODO: rotations
-            process_leaf (cb, header, nodes, bricks, payload);
+            payload.rotation = rot_id;
+            process_brick (cb, header, nodes, bricks, payload);
 
             const uint32_t next_child = child + 1;
             if (next_child >= 8) {
@@ -381,10 +377,10 @@ void traverse_scom2_core (const Header& header, const std::vector <uint32_t>& no
             uint32_t node_data = nodes [ce.child_offset];
             NodeHeadUnpacked node = unpack_node_head (header, node_data, node_data);
 
-            // uint32_t rotIdx = m_RotAddTable[rotId * ROT_COUNT + ce.rotation_id];
+            uint32_t rot_idx = rotation_add [rot_id * 48 + ce.rotation_id];
             cur.links_offset = ce.child_offset + header.links_offset + (node.base_type == SCOM2_CHILD_EMPTY ? 0 : 1);
-            // cur.transform = m_RotAddTable[cur.transform * ROT_COUNT + ce.rotation_id];
-            cur.info = (0 /* rot_idx */ << 24) | (node.children_types << 8);
+            cur.transform = rot_idx;
+            cur.info = (rot_idx << 24) | (node.children_types << 8);
             cur.p_size = (cur.p_size << 1) | LiteMath::uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
         }
     }

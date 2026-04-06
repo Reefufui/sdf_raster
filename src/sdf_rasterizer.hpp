@@ -155,7 +155,7 @@ private:
     Stats stats {};
     int cpu_traversed {};
     std::string scene_name;
-    LiteMath::float4 clear_color {0.2f, 0.3f, 0.3f, 1.0f};
+    LiteMath::float4 clear_color {0.25f, 0.25f, 0.25f, 1.0f};
 
     uint32_t explicit_index_count {};
 

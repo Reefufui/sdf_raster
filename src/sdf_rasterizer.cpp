@@ -523,7 +523,7 @@ void SDFRasterizer::init_graphics_viewproj_pipeline () {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -910,12 +910,12 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings, SceneState
     this->frame_index = frame_index;
 
     if (!settings.frustum_view && this->frustum_draw_buffer) {
-        this->clear_color = {0.2f, 0.3f, 0.3f, 1.0f};
+        this->clear_color = this->clear_color * 2.f;
         scene_state.camera = this->frustum_draw_buffer->get_camera ();
         this->frustum_draw_buffer.reset ();
         LOG_INFO ("[{}] Frustum view mode: OFF.", RENDERER_NAME);
     } else if (settings.frustum_view && !this->frustum_draw_buffer) {
-        this->clear_color = {0.0f, 0.1f, 0.1f, 1.0f};
+        this->clear_color = this->clear_color * 0.5f;
         this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()

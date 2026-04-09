@@ -190,7 +190,6 @@ float eval_sdf_local (const VoxelContext& ctx, LiteMath::float3 p) {
 void process_voxel (auto&& cb, const VoxelContext& ctx) {
     auto vertices = nlohmann::json::array ();
 
-    const LiteMath::float3 voxel_size_modifier {ctx.size};
     int cube_index = 0;
     LiteMath::float3 corners [8];
 
@@ -241,7 +240,7 @@ void process_voxel (auto&& cb, const VoxelContext& ctx) {
             LiteMath::float3 norm = LiteMath::normalize (LiteMath::float3 {dx, dy, dz});
             tri [j].normal = { norm.x, norm.y, norm.z, 0.0f };
 
-            tri [j].color = LiteMath::to_float4 (norm * 0.5f + 0.5f, 1.f);
+            tri [j].color = LiteMath::float4 (1.f, 1.f, 1.f, 1.f);
         }
         cb (tri, ctx);
     }

@@ -52,6 +52,8 @@ private:
     void init_compute_geometry_pipeline ();
     void init_graphics_identity_pipeline ();
     void init_graphics_viewproj_pipeline ();
+    void init_gbuffer_pipeline ();
+    void init_lighting_pipeline ();
     void init_mesh_shading_pipeline ();
 
     void register_resizable ();
@@ -101,9 +103,11 @@ private:
     VkPipeline graphics_frustum_pipeline {VK_NULL_HANDLE};
     VkPipeline graphics_identity_pipeline {VK_NULL_HANDLE};
     VkPipeline graphics_viewproj_pipeline {VK_NULL_HANDLE};
+    VkPipeline graphics_gbuffer_pipeline {VK_NULL_HANDLE};
     VkPipelineLayout graphics_frustum_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout graphics_identity_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout graphics_viewproj_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout graphics_gbuffer_pipeline_layout {VK_NULL_HANDLE};
 
     VkPipeline compute_hz_buffer_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_active_leafs_pipeline {VK_NULL_HANDLE};

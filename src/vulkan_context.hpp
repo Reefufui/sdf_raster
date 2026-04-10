@@ -64,6 +64,7 @@ private:
     void get_device_queues ();
     void create_swapchain (uint32_t width, uint32_t height);
     VkRenderPass create_render_pass (VkAttachmentLoadOp load_op);
+    VkRenderPass create_deferred_render_pass ();
     void create_frame_resources ();
     void create_depth_buffers ();
 

@@ -17,7 +17,7 @@ struct DeferredShadingConfig {
 
 class DeferredShading {
 public:
-    DeferredShading (VkDevice device, VkPhysicalDevice physical_device
+    DeferredShading (VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue queue
         , const DeferredShadingConfig& config, const std::vector <VkImageView>& swapchain_views);
     ~DeferredShading ();
 

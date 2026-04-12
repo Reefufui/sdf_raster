@@ -60,7 +60,7 @@ bool SCom2TreeScene::load (const std::filesystem::path& path) {
 
     this->state = SceneState {
         .camera = Camera (),
-        .draw_method = DrawMethod::Explicit,
+        .draw_method = DrawMethod::ExplicitDeferred,
         .name = path.stem ().string (),
         .path = path,
         .octree_depth = depth,
@@ -240,7 +240,8 @@ void process_voxel (auto&& cb, const VoxelContext& ctx) {
             LiteMath::float3 norm = LiteMath::normalize (LiteMath::float3 {dx, dy, dz});
             tri [j].normal = { norm.x, norm.y, norm.z, 0.0f };
 
-            tri [j].color = LiteMath::float4 (1.f, 1.f, 1.f, 1.f);
+            // tri [j].color = LiteMath::float4 (1.f, 1.f, 1.f, 1.f);
+            tri [j].color = LiteMath::to_float4 ((norm / 2.f) + 0.5f, 1.f);
         }
         cb (tri, ctx);
     }

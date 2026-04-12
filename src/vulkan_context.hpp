@@ -50,6 +50,14 @@ public:
     inline VkFormat get_depth_format () const { return this->depth_format; }
     inline bool get_use_mesh_shading () const { return this->use_mesh_shading; }
 
+    inline std::vector <VkImageView> get_swapchain_image_views () {
+        std::vector <VkImageView> swapchain_image_views (this->swapchain.GetImageCount ());
+        for (size_t i = 0; i < swapchain_image_views.size (); i++) {
+            swapchain_image_views [i] = this->get_swapchain_image_view (i);
+        }
+        return swapchain_image_views;
+    }
+
     VkCommandBuffer begin_frame (uint32_t frame_idx);
     void end_frame (VkCommandBuffer command_buffer, uint32_t frame_idx);
     inline uint32_t get_total_frames () { return this->max_frames_in_flight; }

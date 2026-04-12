@@ -7,7 +7,7 @@
 
 namespace sdf_raster {
 
-enum class DrawMethod : uint8_t { None, Explicit, ImplicitCompute, ImplicitMesh };
+enum class DrawMethod : uint8_t { None, Explicit, ExplicitDeferred, ImplicitCompute, ImplicitMesh };
 
 struct SceneState {
     Camera camera {};

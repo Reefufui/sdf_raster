@@ -249,6 +249,11 @@ void VulkanContext::create_device () {
     void* pNext_query_chain = nullptr;
     void* pNext_create_chain = nullptr;
 
+    VkPhysicalDeviceVulkan11Features vulkan11_features_query {};
+    vulkan11_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    vulkan11_features_query.pNext = pNext_query_chain;
+    pNext_query_chain = &vulkan11_features_query;
+
     VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features_query {};
     timeline_semaphore_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
     timeline_semaphore_features_query.pNext = pNext_query_chain;
@@ -295,6 +300,14 @@ void VulkanContext::create_device () {
 
     if (!device_features_2.features.wideLines) {
         LOG_WARN ("[VulkanContext] Physical device does NOT support wideLines. Defaulting to lineWidth = 1.0.");
+    }
+
+    VkPhysicalDeviceVulkan11Features vulkan11_features_enable {};
+    if (vulkan11_features_query.shaderDrawParameters) {
+        vulkan11_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        vulkan11_features_enable.shaderDrawParameters = VK_TRUE; 
+        vulkan11_features_enable.pNext = pNext_create_chain;
+        pNext_create_chain = &vulkan11_features_enable;
     }
 
     VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features_enable {};

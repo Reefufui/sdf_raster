@@ -154,11 +154,6 @@ void Application::init_renderer () {
 }
 
 void Application::init_gui () {
-    std::vector <VkImageView> swapchain_image_views (this->vulkan_context->get_swapchain_image_count ());
-    for (size_t i = 0; i < swapchain_image_views.size (); i++) {
-        swapchain_image_views [i] = this->vulkan_context->get_swapchain_image_view (i);
-    }
-
     // TODO: pass vulkan_context to gui. init it the same way as renderer
     gui::InitInfo init_info {
         .device = this->vulkan_context->get_device (),
@@ -167,7 +162,7 @@ void Application::init_gui () {
         .physical_device = this->vulkan_context->get_physical_device (),
         .graphics_queue = this->vulkan_context->get_graphics_queue (),
         .graphics_queue_family_index = this->vulkan_context->get_graphics_queue_family_index (),
-        .swapchain_image_views = swapchain_image_views,
+        .swapchain_image_views = this->vulkan_context->get_swapchain_image_views (),
         .surface_extent = this->vulkan_context->get_swapchain_extent (),
         .surface_format = this->vulkan_context->get_swapchain_image_format (),
         .depth_format = this->vulkan_context->get_depth_format (),

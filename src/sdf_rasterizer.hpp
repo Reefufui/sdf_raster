@@ -9,6 +9,7 @@
 #include <GLFW/glfw3.h>
 
 #include "camera.hpp"
+#include "deferred_shading.hpp"
 #include "indirect_dispatch.hpp"
 #include "lod.hpp"
 #include "marching_cubes_lookup_table.hpp"
@@ -52,8 +53,8 @@ private:
     void init_compute_geometry_pipeline ();
     void init_graphics_identity_pipeline ();
     void init_graphics_viewproj_pipeline ();
-    void init_gbuffer_pipeline ();
-    void init_lighting_pipeline ();
+    void init_graphics_lighting_pipeline ();
+    void init_graphics_gbuffer_pipeline ();
     void init_mesh_shading_pipeline ();
 
     void register_resizable ();
@@ -101,13 +102,15 @@ private:
     VkPipeline mesh_pipeline {VK_NULL_HANDLE};
 
     VkPipeline graphics_frustum_pipeline {VK_NULL_HANDLE};
-    VkPipeline graphics_identity_pipeline {VK_NULL_HANDLE};
-    VkPipeline graphics_viewproj_pipeline {VK_NULL_HANDLE};
     VkPipeline graphics_gbuffer_pipeline {VK_NULL_HANDLE};
+    VkPipeline graphics_identity_pipeline {VK_NULL_HANDLE};
+    VkPipeline graphics_lighting_pipeline {VK_NULL_HANDLE};
+    VkPipeline graphics_viewproj_pipeline {VK_NULL_HANDLE};
     VkPipelineLayout graphics_frustum_pipeline_layout {VK_NULL_HANDLE};
-    VkPipelineLayout graphics_identity_pipeline_layout {VK_NULL_HANDLE};
-    VkPipelineLayout graphics_viewproj_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout graphics_gbuffer_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout graphics_identity_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout graphics_lighting_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout graphics_viewproj_pipeline_layout {VK_NULL_HANDLE};
 
     VkPipeline compute_hz_buffer_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_active_leafs_pipeline {VK_NULL_HANDLE};
@@ -124,6 +127,8 @@ private:
     VkPipelineLayout compute_prefix_sum_pass2_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_prefix_sum_pass3_pipeline_layout {VK_NULL_HANDLE};
 
+    std::unique_ptr <DeferredShading> deferred_shading;
+
     std::vector <NodeContext> subtrees {};
     std::vector <NodeContext> visible_subtrees {};
     VkBuffer subtrees_buffer {VK_NULL_HANDLE};
@@ -131,6 +136,7 @@ private:
     void* subtrees_memory_mapped = nullptr;
 
     void raster_explicit (VkCommandBuffer cmd_buff);
+    void raster_explicit_deferred (VkCommandBuffer cmd_buff);
     void raster_implicit_via_compute_shading (VkCommandBuffer cmd_buff);
     void raster_implicit_via_mesh_shading (VkCommandBuffer cmd_buff);
     using RenderMethodPtr = void (SDFRasterizer::*)(VkCommandBuffer);
@@ -143,11 +149,12 @@ private:
         bool needs_mesh_shading;
     };
 
-    static inline constexpr std::array <MethodTrait, 4> draw_strategies = {{
-          { DrawMethod::None,            &SDFRasterizer::raster_explicit, "None (Idle)", false}
-        , { DrawMethod::Explicit,        &SDFRasterizer::raster_explicit, "Explicit", false}
+    static inline constexpr std::array <MethodTrait, 5> draw_strategies = {{
+          { DrawMethod::None, &SDFRasterizer::raster_explicit, "None (Idle)", false}
+        , { DrawMethod::Explicit, &SDFRasterizer::raster_explicit, "Explicit", false}
+        , { DrawMethod::ExplicitDeferred, &SDFRasterizer::raster_explicit_deferred, "Explicit Deferred", false}
         , { DrawMethod::ImplicitCompute, &SDFRasterizer::raster_implicit_via_compute_shading, "Compute", false}
-        , { DrawMethod::ImplicitMesh,    &SDFRasterizer::raster_implicit_via_mesh_shading, "Mesh", true }
+        , { DrawMethod::ImplicitMesh, &SDFRasterizer::raster_implicit_via_mesh_shading, "Mesh", true }
     }};
 
     DrawMethod last_applied_method = DrawMethod::None;

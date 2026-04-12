@@ -1,37 +1,76 @@
+// deferred_lighting.frag.slang
 #include "shader_common.hpp"
 
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 
-[[vk::input_attachment_index (0)]] SubpassInput input_position;
-[[vk::input_attachment_index (1)]] SubpassInput input_normal;
-[[vk::input_attachment_index (2)]] SubpassInput input_albedo;
+[[vk::binding (0, 0)]] Sampler2D tex_position;
+[[vk::binding (1, 0)]] Sampler2D tex_normal;
+[[vk::binding (2, 0)]] Sampler2D tex_albedo;
+[[vk::binding (3, 0)]] Sampler2D tex_depth;
 
 [shader ("fragment")]
-float4 main () : SV_Target {
-    const float3 position = input_position.SubpassLoad ().xyz;
-    const float3 normal   = input_normal.SubpassLoad ().xyz;
-    const float4 albedo   = input_albedo.SubpassLoad ();
+float4 main (float4 sv_pos : SV_Position) : SV_Target {
+    uint width, height, mipLevels;
+    tex_depth.GetDimensions (0, width, height, mipLevels);
+    const float2 uv = sv_pos.xy / float2 (width, height);
+    const float2 texel_size = 1.0f / float2 (width, height);
 
-    float4 output;
+    float depth = tex_depth.Sample (uv).r;
+    float3 normal = tex_normal.Sample (uv).xyz;
+    float3 position = tex_position.Sample (uv).xyz;
+    float4 albedo = tex_albedo.Sample (uv);
 
-    const float4 light_position = float4 (10.0f, 10.0f, 10.0f, 1.0f);
-    const float4 light_color = float4 (1.0f, 1.0f, 1.0f, 1.0f);
-    const float4 ambient_intensity = float4 (0.1f, 0.1f, 0.1f, 1.0f);
-    const float  diffuse_intensity_factor = 1.0f;
-    const float  specular_intensity_factor = 0.5f;
-    const float  shininess = 32.0f;
+    const float depthThreshold = 0.0001f; 
+    
+    float bestNeighborDepth = 1.0f;
+    int2  bestOffset = int2 (0, 0);
+    bool  isHole = false;
 
-    const float3 light_dir = normalize (light_position.xyz - position.xyz);
-    const float3 view_dir = normalize (pc.camera_pos.xyz - position.xyz);
-    const float4 ambient_term = albedo * ambient_intensity;
-    const float diffuse_factor = saturate (dot (normal, light_dir));
-    const float4 diffuse_term = light_color * albedo * diffuse_factor * diffuse_intensity_factor;
+    [unroll]
+    for (int y = -2; y <= 2; y++) {
+        [unroll]
+        for (int x = -2; x <= 2; x++) {
+            if (x == 0 && y == 0) continue;
 
-    const float3 R = reflect (-light_dir, normal);
+            float2 sample_uv = uv + float2 (x, y) * texel_size;
+            float d = tex_depth.Sample (sample_uv).r;
+            
+            if (d < depth - depthThreshold) {
+                isHole = true;
+                if (d < bestNeighborDepth) {
+                    bestNeighborDepth = d;
+                    bestOffset = int2 (x, y);
+                }
+            }
+        }
+    }
 
-    const float specular_factor = pow (saturate (dot (R, view_dir)), shininess);
-    const float4 specular_term = light_color * specular_factor * specular_intensity_factor;
+    if (isHole) {
+        normal      = tex_normal.Sample (uv, bestOffset).xyz;
+        position    = tex_position.Sample (uv, bestOffset).xyz;
+        albedo      = tex_albedo.Sample (uv, bestOffset);
+        depth = bestNeighborDepth;
+    }
 
-    return ambient_term + diffuse_term + specular_term;
+    if (depth >= 1.0f) {
+        return albedo;
+    }
+
+    const float3 lightPos = float3 (5.0f, 5.0f, 5.0f);
+    const float3 lightCol = float3 (1.0f, 1.0f, 1.0f);
+    
+    float3 light_dir = normalize (lightPos - position);
+    float3 view_dir  = normalize (pc.camera_pos.xyz - position);
+    float3 half_dir  = normalize (light_dir + view_dir);
+
+    float diff = saturate (dot (normal, light_dir));
+    float3 diffuse_term = albedo.rgb * diff * lightCol;
+
+    float spec = pow (saturate (dot (normal, half_dir)), 64.0f);
+    float3 specular_term = float3 (0.4f) * spec * lightCol;
+
+    float3 ambient_term = albedo.rgb * 0.1f;
+
+    return float4 (ambient_term + diffuse_term + specular_term, 1.0f);
 }
 

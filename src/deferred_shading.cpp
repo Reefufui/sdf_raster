@@ -110,25 +110,28 @@ VkRenderPass create_lighting_render_pass (VkDevice device, VkFormat swapchain_fo
     return rp;
 }
 
-std::vector <vk_utils::VulkanImageMem> create_gbuffer (VkDevice device, VkPhysicalDevice physical_device
+std::vector <vk_utils::VulkanImageMem> create_gbuffer_images (VkDevice device, VkPhysicalDevice physical_device
     , VkExtent2D extent, std::vector <VkFormat> gbuffer_formats, VkFormat depth_format) {
-    std::vector <vk_utils::VulkanImageMem> gbuffer_images;
+    std::vector <vk_utils::VulkanImageMem> color_images;
+    std::vector <vk_utils::VulkanImageMem> depth_images;
 
     for (auto format : gbuffer_formats) {
-        gbuffer_images.push_back (
+        color_images.push_back (
             vk_utils::createImg (device, extent.width, extent.height, format
                 , VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 1)
         );
     }
 
-    gbuffer_images.push_back (
+    depth_images.push_back (
         vk_utils::createImg (device, extent.width, extent.height, depth_format
             , VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 1)
     );
 
-    vk_utils::allocateImgsBindCreateView (device, physical_device, gbuffer_images);
+    vk_utils::allocateImgsBindCreateView (device, physical_device, color_images);
+    vk_utils::allocateImgsBindCreateView (device, physical_device, depth_images);
 
-    return gbuffer_images;
+    color_images.push_back (std::move (depth_images [0]));
+    return color_images;
 }
 
 VkFramebuffer create_gbuffer_framebuffer (VkDevice device
@@ -182,8 +185,9 @@ std::pair <VkDescriptorSet, VkDescriptorSetLayout> init_gbuffer_descriptor_set (
     desc_maker->BindBegin (VK_SHADER_STAGE_FRAGMENT_BIT);
 
     for (size_t loc = 0; loc < gbuffer_images.size (); ++loc) {
-        desc_maker->BindImage (loc, gbuffer_images [loc].view, sampler
-            , VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        VkImageLayout layout = (loc == gbuffer_images.size () - 1)
+            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        desc_maker->BindImage (loc, gbuffer_images [loc].view, sampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, layout);
     }
 
     std::pair <VkDescriptorSet, VkDescriptorSetLayout> result;
@@ -191,19 +195,44 @@ std::pair <VkDescriptorSet, VkDescriptorSetLayout> init_gbuffer_descriptor_set (
     return result;
 }
 
+void warmup_gbuffer_images (VkDevice device, VkCommandPool command_pool, VkQueue queue, std::vector <vk_utils::VulkanImageMem>& gbuffer_images) {
+    VkCommandBuffer cmd = vk_utils::createCommandBuffer (device, command_pool);
+
+    VkCommandBufferBeginInfo begin_info {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+    };
+    vkBeginCommandBuffer (cmd, &begin_info);
+
+    for (auto& img : gbuffer_images) {
+        VkImageLayout target_layout = (img.aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT)
+            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL 
+            : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        vk_utils::setImageLayout (cmd, img.image, img.aspectMask, VK_IMAGE_LAYOUT_UNDEFINED, target_layout);
+    }
+
+    vkEndCommandBuffer (cmd);
+
+    vk_utils::executeCommandBufferNow (cmd, queue, device);
 }
 
-DeferredShading::DeferredShading (VkDevice device, VkPhysicalDevice physical_device
+}
+
+DeferredShading::DeferredShading (VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue queue
     , const DeferredShadingConfig& config, const std::vector <VkImageView>& swapchain_views) : device (device) {
     this->gbuffer_pass = create_gbuffer_render_pass (device, config.gbuffer_formats, config.depth_format);
     this->lighting_pass = create_lighting_render_pass (device, config.swapchain_format);
 
     this->gbuffer_cascades.resize (config.num_inflight_frames);
     for (uint32_t i = 0; i < config.num_inflight_frames; ++i) {
-        this->gbuffer_cascades [i].images = create_gbuffer (device, physical_device
+        auto& gbuffer_images = this->gbuffer_cascades [i].images;
+        auto& framebuffer = this->gbuffer_cascades [i].framebuffer;
+
+        gbuffer_images = create_gbuffer_images (device, physical_device
             , config.extent, config.gbuffer_formats, config.depth_format);
-        this->gbuffer_cascades [i].framebuffer = create_gbuffer_framebuffer (device
-            , this->gbuffer_pass, config.extent, this->gbuffer_cascades [i].images);
+        framebuffer = create_gbuffer_framebuffer (device, this->gbuffer_pass, config.extent, gbuffer_images);
+        warmup_gbuffer_images (device, command_pool, queue, gbuffer_images);
     }
 
     this->lighting_framebuffers.resize (swapchain_views.size ());
@@ -229,12 +258,25 @@ DeferredShading::DeferredShading (VkDevice device, VkPhysicalDevice physical_dev
 DeferredShading::~DeferredShading () {
     if (this->device == VK_NULL_HANDLE) return;
 
+    this->desc_maker.reset ();
+
     for (auto& cascade : this->gbuffer_cascades) {
         if (cascade.framebuffer != VK_NULL_HANDLE) {
             vkDestroyFramebuffer (this->device, cascade.framebuffer, nullptr);
         }
+
+        if (!cascade.images.empty () && cascade.images [0].mem != VK_NULL_HANDLE) {
+            vkFreeMemory (device, cascade.images [0].mem, nullptr);
+        }
+
+        if (!cascade.images.empty () && cascade.images.back ().mem != VK_NULL_HANDLE) {
+            // NOTE: depth was allocated sepparately
+            vkFreeMemory (device, cascade.images.back ().mem, nullptr);
+        }
+
         for (auto& img : cascade.images) {
-            vk_utils::deleteImg (this->device, &img);
+            img.mem = VK_NULL_HANDLE; // NOTE: free'd manualy
+            vk_utils::deleteImg (device, &img);
         }
     }
     this->gbuffer_cascades.clear ();
@@ -245,8 +287,6 @@ DeferredShading::~DeferredShading () {
         }
     }
     this->lighting_framebuffers.clear ();
-
-    this->desc_maker.reset ();
 
     if (this->sampler != VK_NULL_HANDLE) vkDestroySampler (this->device, this->sampler, nullptr);
     if (this->gbuffer_pass != VK_NULL_HANDLE) vkDestroyRenderPass (this->device, this->gbuffer_pass, nullptr);

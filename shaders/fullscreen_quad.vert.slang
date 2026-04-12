@@ -1,3 +1,5 @@
+//fullscreen_quad.vert.slang
+
 struct VertexOutput {
     float4 position : SV_Position;
 };

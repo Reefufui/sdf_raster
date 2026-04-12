@@ -46,6 +46,20 @@ void SDFRasterizer::init () {
     this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
     this->descriptor_maker_for_resizable = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
 
+    this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
+        , this->context->get_physical_device ()
+        , this->context->get_transfer_command_pool_reset ()
+        , this->context->get_transfer_queue ()
+        , DeferredShadingConfig {
+            .extent = this->context->get_swapchain_extent (),
+            .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
+            .depth_format = this->context->get_depth_format (),
+            .swapchain_format = this->context->get_swapchain_image_format (),
+            .num_inflight_frames = this->context->get_total_frames (),
+            .filter = VK_FILTER_LINEAR // TODO: try NEAREST
+        }
+        , this->context->get_swapchain_image_views ());
+
     this->init_push_constants ();
     this->init_descriptor_sets ();
     this->init_compute_hz_buffer_pipeline ();
@@ -58,6 +72,8 @@ void SDFRasterizer::init () {
     this->init_graphics_identity_pipeline ();
     this->init_graphics_viewproj_pipeline ();
     this->init_graphics_frustum_pipeline ();
+    this->init_graphics_lighting_pipeline ();
+    this->init_graphics_gbuffer_pipeline ();
     this->register_resizable ();
 
     if (this->context->get_use_mesh_shading ()) {
@@ -94,6 +110,27 @@ void SDFRasterizer::register_resizable () {
     };
 
     this->context->register_resizable (resize_hz_buffer);
+
+    auto resize_g_buffer = [&] () {
+        this->deferred_shading.reset ();
+
+        this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_transfer_command_pool_reset ()
+            , this->context->get_transfer_queue ()
+            , DeferredShadingConfig {
+                .extent = this->context->get_swapchain_extent (),
+                .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
+                .depth_format = this->context->get_depth_format (),
+                .swapchain_format = this->context->get_swapchain_image_format (),
+                .num_inflight_frames = this->context->get_total_frames (),
+                .filter = VK_FILTER_LINEAR // TODO: try NEAREST
+            }
+            , this->context->get_swapchain_image_views ());
+    };
+
+    this->context->register_resizable (resize_hz_buffer);
+    this->context->register_resizable (resize_g_buffer);
 }
 
 void SDFRasterizer::init_push_constants () {
@@ -592,7 +629,7 @@ void SDFRasterizer::init_graphics_viewproj_pipeline () {
     shader_modules.clear ();
 }
 
-void SDFRasterizer::init_gbuffer_pipeline () {
+void SDFRasterizer::init_graphics_gbuffer_pipeline () {
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
@@ -612,13 +649,10 @@ void SDFRasterizer::init_gbuffer_pipeline () {
     pushConstantRange.size = sizeof (PushConstantsData);
     pushConstantRange.offset = 0;
 
-    std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
-    descriptor_set_layouts.push_back (this->mesh_ds.descriptor_set_layout);
-
     VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = descriptor_set_layouts.size ();
-    pipelineLayoutInfo.pSetLayouts = descriptor_set_layouts.data ();
+    pipelineLayoutInfo.setLayoutCount = 0;
+    pipelineLayoutInfo.pSetLayouts = nullptr;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -704,15 +738,17 @@ void SDFRasterizer::init_gbuffer_pipeline () {
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachment {};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
+    std::array <VkPipelineColorBlendAttachmentState, 3> blend_attachments {};
+    for (auto& att : blend_attachments) {
+        att.colorWriteMask = 0xf; // RGBA
+        att.blendEnable = VK_FALSE;
+    }
 
     VkPipelineColorBlendStateCreateInfo colorBlending {};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = 3;
+    colorBlending.pAttachments = blend_attachments.data ();
 
     std::vector <VkDynamicState> dynamicStates = {
         VK_DYNAMIC_STATE_VIEWPORT,
@@ -742,7 +778,7 @@ void SDFRasterizer::init_gbuffer_pipeline () {
     if (this->context->get_render_pass () == VK_NULL_HANDLE) {
         throw std::runtime_error ("Render Pass is not initialized!");
     }
-    pipelineInfo.renderPass = this->context->get_render_pass ();
+    pipelineInfo.renderPass = this->deferred_shading->get_gbuffer_pass ();
     pipelineInfo.subpass = 0;
 
     VK_CHECK_RESULT (vkCreateGraphicsPipelines (this->context->get_device ()
@@ -760,61 +796,115 @@ void SDFRasterizer::init_gbuffer_pipeline () {
     shader_modules.clear ();
 }
 
-void SDFRasterizer::init_lighting_pipeline () {
-    /*
+void SDFRasterizer::init_graphics_lighting_pipeline () {
     const size_t shaders_count = 2;
-    std::vector<VkShaderModule> shader_modules(shaders_count);
-    std::vector<VkPipelineShaderStageCreateInfo> shader_stages(shaders_count);
+    std::vector <VkShaderModule> shader_modules (shaders_count);
+    std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
 
-    shader_stages[0] = vk_utils::loadShader(this->context->get_device(), "shaders/fullscreen.vert.slang.spv", VK_SHADER_STAGE_VERTEX_BIT, shader_modules);
-    shader_stages[1] = vk_utils::loadShader(this->context->get_device(), "shaders/deferred_lighting.frag.slang.spv", VK_SHADER_STAGE_FRAGMENT_BIT, shader_modules);
+    shader_stages [0] = vk_utils::loadShader (this->context->get_device ()
+        , "shaders/fullscreen_quad.vert.slang.spv"
+        , VK_SHADER_STAGE_VERTEX_BIT
+        , shader_modules);
+    shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
+        , "shaders/deferred_lighting.frag.slang.spv"
+        , VK_SHADER_STAGE_FRAGMENT_BIT
+        , shader_modules);
 
-    // 1. Layout: Добавляем дескрипторы для Input Attachments (Pos, Norm, Albedo)
-    // Вам нужно будет создать gbuffer_ds_layout отдельно
-    std::vector<VkDescriptorSetLayout> layouts = { this->gbuffer_ds_layout }; 
-    
-    VkPushConstantRange push_range { VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstantsData) };
+    VkPushConstantRange pushConstantRange {
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .size = sizeof (PushConstantsData),
+        .offset = 0
+    };
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = layouts.data();
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &push_range;
-    VK_CHECK_RESULT(vkCreatePipelineLayout(this->context->get_device(), &pipelineLayoutInfo, nullptr, &this->lighting_pipeline_layout));
+    VkDescriptorSetLayout gbuffer_layout = this->deferred_shading->get_layout ();
 
-    // 2. Vertex Input: ПУСТОЙ (вершины генерируются в шейдере через SV_VertexID)
-    VkPipelineVertexInputStateCreateInfo vertex_layout { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+    VkPipelineLayoutCreateInfo layout_ci {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &gbuffer_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstantRange,
+    };
+    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &layout_ci, nullptr, &this->graphics_lighting_pipeline_layout));
 
-    // 3. Блендинг: 1 аттачмент (Swapchain)
-    VkPipelineColorBlendAttachmentState colorBlendAttachment {};
-    colorBlendAttachment.colorWriteMask = 0xf;
-    colorBlendAttachment.blendEnable = VK_FALSE;
+    VkPipelineVertexInputStateCreateInfo vertex_layout {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 0,
+        .vertexAttributeDescriptionCount = 0
+    };
 
-    VkPipelineColorBlendStateCreateInfo colorBlending { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+    };
 
-    // 4. Глубина: ТЕСТ ВКЛЮЧЕН, ЗАПИСЬ ВЫКЛЮЧЕНА
-    // (Это позволит не считать свет для пустых пикселей фона)
-    VkPipelineDepthStencilStateCreateInfo depthStencil { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
-    depthStencil.depthTestEnable = VK_TRUE; 
-    depthStencil.depthWriteEnable = VK_FALSE; 
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    auto extent = this->context->get_swapchain_extent ();
+    VkViewport viewport = {0.0f, 0.0f, static_cast <float> (extent.width), static_cast <float> (extent.height), 0.0f, 1.0f};
+    VkRect2D scissor = {{0, 0}, extent};
 
-    VkGraphicsPipelineCreateInfo pipelineInfo { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shader_stages.data();
-    pipelineInfo.pVertexInputState = &vertex_layout;  // Без атрибутов
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.layout = this->lighting_pipeline_layout;
-    pipelineInfo.renderPass = this->context->get_render_pass();
-    pipelineInfo.subpass = 1; // ВТОРОЙ сабпасс
+    VkPipelineViewportStateCreateInfo viewportState {};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
 
-    VK_CHECK_RESULT(vkCreateGraphicsPipelines(this->context->get_device(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &this->lighting_pipeline));
+    VkPipelineRasterizationStateCreateInfo rasterizer {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .lineWidth = 1.0f,
+        .cullMode = VK_CULL_MODE_NONE
+    };
 
-    for (auto m : shader_modules) vkDestroyShaderModule(this->context->get_device(), m, nullptr);
-    */
+    VkPipelineMultisampleStateCreateInfo multisampling {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
+    };
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_FALSE,
+        .depthWriteEnable = VK_FALSE,
+    };
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment {
+        .colorWriteMask = 0xf,
+        .blendEnable = VK_FALSE
+    };
+
+    VkPipelineColorBlendStateCreateInfo colorBlending {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &colorBlendAttachment
+    };
+
+    std::vector <VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamicState {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = static_cast <uint32_t> (dynamicStates.size ()),
+        .pDynamicStates = dynamicStates.data ()
+    };
+
+    VkGraphicsPipelineCreateInfo pipeline_ci {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = static_cast <uint32_t> (shader_stages.size ()),
+        .pStages = shader_stages.data (),
+        .pVertexInputState = &vertex_layout,
+        .pInputAssemblyState = &inputAssembly,
+        .pViewportState = &viewportState,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState = &multisampling,
+        .pDepthStencilState = &depthStencil,
+        .pColorBlendState = &colorBlending,
+        .pDynamicState = &dynamicState,
+        .layout = this->graphics_lighting_pipeline_layout,
+        .renderPass = this->deferred_shading->get_lighting_pass (),
+        .subpass = 0
+    };
+
+    VK_CHECK_RESULT (vkCreateGraphicsPipelines (this->context->get_device(), VK_NULL_HANDLE, 1, &pipeline_ci, nullptr, &this->graphics_lighting_pipeline));
+
+    for (VkShaderModule module : shader_modules) vkDestroyShaderModule (this->context->get_device (), module, nullptr);
 }
 
 void SDFRasterizer::init_mesh_shading_pipeline () {
@@ -1841,6 +1931,85 @@ void SDFRasterizer::raster_explicit (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
+void SDFRasterizer::raster_explicit_deferred (VkCommandBuffer cmd_buff) {
+    const auto extent = this->context->get_swapchain_extent ();
+    const uint32_t fif_idx = this->frame_index;
+    const uint32_t swap_idx = this->context->get_swapchain_image_index ();
+
+    VkViewport viewport {
+        .x = 0.0f, .y = 0.0f,
+        .width = static_cast <float> (extent.width), .height = static_cast <float> (extent.height),
+        .minDepth = 0.0f, .maxDepth = 1.0f
+    };
+    VkRect2D scissor {{0, 0}, extent};
+
+    std::array <VkClearValue, 4> gbuffer_clears {};
+    gbuffer_clears [0].color = {{0.f, 0.f, 0.f, 0.f}}; // Position
+    gbuffer_clears [1].color = {{0.f, 0.f, 0.f, 0.f}}; // Normal
+    gbuffer_clears [2].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.f}}; // Albedo
+    gbuffer_clears [3].depthStencil = {1.0f, 0}; // Depth
+
+    VkRenderPassBeginInfo gbuffer_pass_info {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = this->deferred_shading->get_gbuffer_pass (),
+        .framebuffer = this->deferred_shading->get_gbuffer_fb (fif_idx),
+        .renderArea = {{0, 0}, extent},
+        .clearValueCount = static_cast <uint32_t> (gbuffer_clears.size ()),
+        .pClearValues = gbuffer_clears.data ()
+    };
+
+    vkCmdBeginRenderPass (cmd_buff, &gbuffer_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
+    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+    
+    if (this->explicit_index_count > 0) {
+        vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_gbuffer_pipeline);
+        
+        vkCmdPushConstants (cmd_buff, this->graphics_gbuffer_pipeline_layout
+            , VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+
+        VkBuffer v_buffers [] = { this->mesh_ds.vertices_buffers [fif_idx] };
+        VkDeviceSize offsets [] = { 0 };
+        vkCmdBindVertexBuffers (cmd_buff, 0, 1, v_buffers, offsets);
+        vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds.indices_buffers [fif_idx], 0, VK_INDEX_TYPE_UINT32);
+        
+        vkCmdDrawIndexed (cmd_buff, this->explicit_index_count, 1, 0, 0, 0);
+    }
+
+    vkCmdEndRenderPass (cmd_buff);
+
+    VkClearValue swap_clear {};
+    swap_clear.color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.f}};
+
+    VkRenderPassBeginInfo lighting_pass_info {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = this->deferred_shading->get_lighting_pass (),
+        .framebuffer = this->deferred_shading->get_lighting_fb (swap_idx),
+        .renderArea = {{0, 0}, extent},
+        .clearValueCount = 1,
+        .pClearValues = &swap_clear
+    };
+
+    vkCmdBeginRenderPass (cmd_buff, &lighting_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
+    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_lighting_pipeline);
+
+    VkDescriptorSet gbuffer_ds = this->deferred_shading->get_descriptor_set (fif_idx);
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS
+        , this->graphics_lighting_pipeline_layout, 0, 1, &gbuffer_ds, 0, nullptr);
+
+    vkCmdPushConstants (cmd_buff, this->graphics_lighting_pipeline_layout
+        , VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+
+    vkCmdDraw (cmd_buff, 3, 1, 0, 0); // NOTE: Fullscreen Triangle
+
+    vkCmdEndRenderPass (cmd_buff);
+}
+
 void SDFRasterizer::raster_implicit_via_mesh_shading (VkCommandBuffer cmd_buff) {
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
@@ -1920,6 +2089,7 @@ void SDFRasterizer::raster_implicit_via_compute_shading (VkCommandBuffer cmd_buf
 void SDFRasterizer::render (VkCommandBuffer cmd_buff) {
     assert (this->initialized);
 
+    /*
     if (this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image != VK_NULL_HANDLE) {
         this->copy_depth (cmd_buff);
         this->compute_hz_buffer (cmd_buff);
@@ -1927,17 +2097,20 @@ void SDFRasterizer::render (VkCommandBuffer cmd_buff) {
         LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
         this->push_constants.occlusion_culling_level = false;
     }
+    */
 
     assert (this->draw);
     std::invoke (this->draw, this, cmd_buff);
 
-    this->hz_buffer_barrier (cmd_buff);
+    // this->hz_buffer_barrier (cmd_buff);
 
     if (this->frustum_draw_buffer) {
         this->draw_frustum (cmd_buff);
     } else {
+        /*
         this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image = this->context->get_depth_buffer ().image;
         this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj = this->push_constants.view_proj;
+        */
     }
 }
 
@@ -2144,6 +2317,8 @@ void SDFRasterizer::shutdown (Settings& settings) {
     cleanup_indirect_dispatch_descriptor_set (this->context->get_device (), this->indirect_dispatch_ds);
     cleanup_lod_descriptor_set (this->context->get_device (), this->lod_ds);
 
+    this->deferred_shading.reset ();
+
     // if (this->frustum_draw_buffer) {
     //     settings.frustum_view = false;
     //     scene_state.camera = this->frustum_draw_buffer->get_camera ();
@@ -2161,6 +2336,8 @@ void SDFRasterizer::shutdown (Settings& settings) {
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prepare_indirect_pipeline, this->compute_prepare_indirect_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_identity_pipeline, this->graphics_identity_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_viewproj_pipeline, this->graphics_viewproj_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_gbuffer_pipeline, this->graphics_gbuffer_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_lighting_pipeline, this->graphics_lighting_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->mesh_pipeline, this->mesh_pipeline_layout);
 
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_frustum_pipeline, this->graphics_frustum_pipeline_layout);

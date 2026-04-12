@@ -6,8 +6,6 @@
 
 [shader("fragment")]
 float4 main (Vertex input : FragmentInput) : SV_Target {
-    float4 output;
-
     const float4 light_position = float4 (10.0f, 10.0f, 10.0f, 1.0f);
     const float4 light_color = float4 (1.0f, 1.0f, 1.0f, 1.0f);
 

@@ -1,3 +1,5 @@
+// gbuffer.frag.slang
+
 #include "shader_common.hpp"
 
 struct GBufferOutput {

@@ -2089,7 +2089,6 @@ void SDFRasterizer::raster_implicit_via_compute_shading (VkCommandBuffer cmd_buf
 void SDFRasterizer::render (VkCommandBuffer cmd_buff) {
     assert (this->initialized);
 
-    /*
     if (this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image != VK_NULL_HANDLE) {
         this->copy_depth (cmd_buff);
         this->compute_hz_buffer (cmd_buff);
@@ -2097,20 +2096,17 @@ void SDFRasterizer::render (VkCommandBuffer cmd_buff) {
         LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
         this->push_constants.occlusion_culling_level = false;
     }
-    */
 
     assert (this->draw);
     std::invoke (this->draw, this, cmd_buff);
 
-    // this->hz_buffer_barrier (cmd_buff);
+    this->hz_buffer_barrier (cmd_buff);
 
     if (this->frustum_draw_buffer) {
         this->draw_frustum (cmd_buff);
     } else {
-        /*
         this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image = this->context->get_depth_buffer ().image;
         this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj = this->push_constants.view_proj;
-        */
     }
 }
 

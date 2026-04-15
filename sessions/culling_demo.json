@@ -1,0 +1,41 @@
+{
+    "current_scene_path": "/home/andrei_tri/dev/sdf_raster/debug-build/assets/culling_demo.octree",
+    "scene_states": {
+        "/home/andrei_tri/dev/sdf_raster/debug-build/assets/culling_demo.octree": {
+            "camera": {
+                "aspect_ratio": 1.9047619104385376,
+                "far_plane": 100.0,
+                "fov_y": 45.5,
+                "mouse_sensitivity": 0.10000000149011612,
+                "movement_speed": 0.25,
+                "near_plane": 0.009999999776482582,
+                "pitch_angle": -0.6999993324279785,
+                "position": [
+                    0.45956888794898987,
+                    -0.949999988079071,
+                    0.3949141502380371
+                ],
+                "yaw_angle": -79.80005645751953
+            },
+            "cpu_traversed": 0,
+            "draw_method": 3,
+            "frustum_culling_level": 0,
+            "gpu_descend": 5,
+            "max_lod": 10,
+            "name": "culling_demo",
+            "occlusion_culling_level": 0,
+            "octree_depth": 10,
+            "path": "/home/andrei_tri/dev/sdf_raster/debug-build/assets/culling_demo.octree"
+        }
+    },
+    "settings": {
+        "color_leafs": false,
+        "scenes_directory": "/home/andrei_tri/dev/sdf_raster/debug-build",
+        "show_camera_window": true,
+        "show_renderer_window": true,
+        "show_ui": true,
+        "window_height": 1008,
+        "window_maximized": true,
+        "window_width": 1920
+    }
+}

@@ -812,8 +812,8 @@ void SDFRasterizer::init_graphics_lighting_pipeline () {
 
     VkPushConstantRange pushConstantRange {
         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-        .size = sizeof (PushConstantsData),
-        .offset = 0
+        .offset = 0,
+        .size = sizeof (PushConstantsData)
     };
 
     VkDescriptorSetLayout gbuffer_layout = this->deferred_shading->get_layout ();
@@ -852,8 +852,8 @@ void SDFRasterizer::init_graphics_lighting_pipeline () {
     VkPipelineRasterizationStateCreateInfo rasterizer {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
-        .lineWidth = 1.0f,
-        .cullMode = VK_CULL_MODE_NONE
+        .cullMode = VK_CULL_MODE_NONE,
+        .lineWidth = 1.0f
     };
 
     VkPipelineMultisampleStateCreateInfo multisampling {
@@ -868,8 +868,8 @@ void SDFRasterizer::init_graphics_lighting_pipeline () {
     };
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment {
-        .colorWriteMask = 0xf,
-        .blendEnable = VK_FALSE
+        .blendEnable = VK_FALSE,
+        .colorWriteMask = 0xf
     };
 
     VkPipelineColorBlendStateCreateInfo colorBlending {
@@ -2297,7 +2297,7 @@ void SDFRasterizer::cleanup_subtree_roots_staging_buffer () {
     }
 }
 
-void SDFRasterizer::shutdown (Settings& settings) {
+void SDFRasterizer::shutdown (Settings& /*settings*/) {
     vkDeviceWaitIdle (this->context->get_device ());
 
     if (!this->context || !this->context->is_initialized ()) {

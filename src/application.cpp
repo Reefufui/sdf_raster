@@ -136,7 +136,10 @@ void Application::init_vulkan () {
         const auto extent = this->vulkan_context->get_swapchain_extent ();
         const float height = static_cast <float> (extent.height);
         const float width = static_cast <float> (extent.width);
-        this->scene_manager->get_scene ()->get_state ().camera.set_aspect_ratio (width / height);
+        auto scene = this->scene_manager->get_scene ();
+        if (scene) {
+            scene->get_state ().camera.set_aspect_ratio (width / height);
+        }
     };
 
     auto resize_gui = [&] () {

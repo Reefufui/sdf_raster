@@ -312,7 +312,7 @@ void traverse_scom2_core (const Header& header, const std::vector <uint32_t>& no
 
     while (top >= 0) {
         const uint32_t child = cur.info & 0x7;
-        assert (child >= 0 && child < 8);
+        assert (child < 8);
 
         const LiteMath::uint3 voxel_pos = LiteMath::uint3 ((child & 4) >> 2, (child & 2) >> 1, child & 1); // (0,0,0)..(1,1,1)
         const uint32_t child_n = static_cast <uint32_t> (dot (rotation_modifiers [2 * 48 + cur.transform]

@@ -80,10 +80,10 @@ VkRenderPass create_lighting_render_pass (VkDevice device, VkFormat swapchain_fo
 
     VkSubpassDescription subpass {
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .inputAttachmentCount = 0,
+        .pInputAttachments = nullptr, // NOTE: pInputAttachments is unused as we pass gbuffer as input through descriptors.
         .colorAttachmentCount = 1,
         .pColorAttachments = &color_ref,
-        .inputAttachmentCount = 0,
-        .pInputAttachments = nullptr // NOTE: pInputAttachments is unused as we pass gbuffer as input through descriptors.
     };
 
     VkSubpassDependency gbuffer_dependency {

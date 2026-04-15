@@ -145,7 +145,7 @@ void UI::create_imgui_framebuffers () {
     }
 }
 
-void UI::init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <SceneManager> scene_manager, const InitInfo& info, Settings& settings) {
+void UI::init (std::shared_ptr <VulkanContext> /*vulkan_context*/, std::shared_ptr <SceneManager> scene_manager, const InitInfo& info, Settings& settings) {
     assert (scene_manager);
     this->scene_manager = scene_manager;
 

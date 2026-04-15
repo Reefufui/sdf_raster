@@ -2,6 +2,7 @@
 #include "shader_common.hpp"
 
 #include <fstream>
+#include <stack>
 
 namespace {
 

@@ -23,7 +23,7 @@ float4 main (float4 sv_pos : SV_Position) : SV_Target {
     const float depthThreshold = 0.0001f; 
     
     float bestNeighborDepth = 1.0f;
-    int2  bestOffset = int2 (0, 0);
+    int2  best_offset = int2 (0, 0);
     bool  isHole = false;
 
     [unroll]
@@ -34,21 +34,22 @@ float4 main (float4 sv_pos : SV_Position) : SV_Target {
 
             float2 sample_uv = uv + float2 (x, y) * texel_size;
             float d = tex_depth.Sample (sample_uv).r;
-            
+
             if (d < depth - depthThreshold) {
                 isHole = true;
                 if (d < bestNeighborDepth) {
                     bestNeighborDepth = d;
-                    bestOffset = int2 (x, y);
+                    best_offset = int2 (x, y);
                 }
             }
         }
     }
 
     if (isHole) {
-        normal      = tex_normal.Sample (uv, bestOffset).xyz;
-        position    = tex_position.Sample (uv, bestOffset).xyz;
-        albedo      = tex_albedo.Sample (uv, bestOffset);
+        float2 offset_uv = uv + float2 (best_offset) * texel_size;
+        normal = tex_normal.Sample (offset_uv).xyz;
+        position = tex_position.Sample (offset_uv).xyz;
+        albedo = tex_albedo.Sample (offset_uv);
         depth = bestNeighborDepth;
     }
 

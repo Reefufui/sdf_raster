@@ -1,0 +1,41 @@
+{
+    "current_scene_path": "/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/sphere.scom2",
+    "scene_states": {
+        "/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/sphere.scom2": {
+            "camera": {
+                "aspect_ratio": 1.685055136680603,
+                "far_plane": 10.0,
+                "fov_y": 45.5,
+                "mouse_sensitivity": 0.10000000149011612,
+                "movement_speed": 4.0,
+                "near_plane": 0.009999999776482582,
+                "pitch_angle": -31.100069046020508,
+                "position": [
+                    2.3476412296295166,
+                    1.6476563215255737,
+                    1.2351973056793213
+                ],
+                "yaw_angle": -152.20033264160156
+            },
+            "cpu_traversed": 3,
+            "draw_method": 2,
+            "frustum_culling_level": 4,
+            "gpu_descend": 1,
+            "max_lod": 4,
+            "name": "sphere",
+            "occlusion_culling_level": 4,
+            "octree_depth": 4,
+            "path": "/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/sphere.scom2"
+        }
+    },
+    "settings": {
+        "color_leafs": true,
+        "scenes_directory": "/Users/andreytrifonov/Development/sdf_raster/debug-build",
+        "show_camera_window": true,
+        "show_renderer_window": false,
+        "show_ui": true,
+        "window_height": 997,
+        "window_maximized": true,
+        "window_width": 1680
+    }
+}

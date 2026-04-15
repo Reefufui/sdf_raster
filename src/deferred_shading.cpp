@@ -209,7 +209,31 @@ void warmup_gbuffer_images (VkDevice device, VkCommandPool command_pool, VkQueue
             ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL 
             : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        vk_utils::setImageLayout (cmd, img.image, img.aspectMask, VK_IMAGE_LAYOUT_UNDEFINED, target_layout);
+        VkImageMemoryBarrier barrier = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = 0,
+            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = target_layout,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = img.image,
+            .subresourceRange = VkImageSubresourceRange {
+                .aspectMask = img.aspectMask,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        };
+
+        vkCmdPipelineBarrier (cmd
+            , VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+            , VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+            , 0
+            , 0, nullptr
+            , 0, nullptr
+            , 1, &barrier);
     }
 
     vkEndCommandBuffer (cmd);

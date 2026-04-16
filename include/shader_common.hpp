@@ -8,12 +8,14 @@
 
 #ifdef __cplusplus
 
+#include <array>
 #include <LiteMath.h>
 
+using uint2 = LiteMath::uint2;
 using float3 = LiteMath::float3;
 using float4 = LiteMath::float4;
 using float4x4 = LiteMath::float4x4;
-using uint = unsigned int;
+using uint = unsigned int; // TODO: check if uint32_t works
 
 #else
 
@@ -77,6 +79,77 @@ struct PushConstantsData {
     alignas (4)  uint occlusion_culling_level;
     alignas (4)  uint frustum_culling_level;
     alignas (4)  uint color_leafs;
+};
+
+struct SComTreeHeader {
+    uint brick_size;
+    uint v_size;
+    uint bits_per_value;
+    uint values_per_uint;
+    uint value_mask;
+    uint bitmask_len;
+    uint dimension;
+
+    uint child_rot_shift;
+    uint child_rot_mask;
+    uint child_add_shift;
+    uint child_add_mask;
+    uint child_offset_mask;
+    uint child_offset_off;
+    uint node_offset_mask;
+    uint uints_per_link;
+    uint unique_brick_prefix;
+    uint unique_brick_offset_mask;
+
+    uint children_types_shift;
+    uint children_types_mask;
+    uint base_reference_shift;
+    uint children_active_bits_shift;
+    uint children_active_bits_mask;
+    uint references_offset;
+    uint reference_bits;
+    uint reference_mask;
+    uint references_per_uint;
+    uint links_offset;
+    uint max_surface_count;
+    uint max_surface_count_per_leaf;
+
+    uint bricks_step;
+    uint bricks_arr_offset;
+    uint nodes_arr_offset;
+    uint root_node_off;
+
+    uint has_channels;
+    uint has_surfaces;
+    uint has_multi_nodes;
+
+    int tex_id_off;
+    int mat_id_off;
+    int all_float_tex_id_off;
+    int all_int_mat_id_off;
+
+    float max_val;
+    uint max_depth;
+    float user_params [7];
+
+    //to allow further extensions without breaking binary compatibility
+    uint _pad0;
+    uint _pad1;
+    uint _pad2;
+    uint _pad3;
+    uint _pad4;
+};
+
+struct SComTreeStackElement {
+    alignas (4) uint links_offset;
+    alignas (4) uint transform;
+    alignas (4) uint info;
+    alignas (8) uint2 p_size;
+};
+
+struct SComTreeBrickPayload {
+    alignas (8) uint2 p_size; // 16bit : x | 16bit : y | 16bit: z | 16bit : size
+    alignas (4) uint rot_link; // 6bit : rotation | 26bit: link
 };
 
 struct SdfOctreeNode {

@@ -13,7 +13,7 @@ namespace sdf_raster {
 struct SCom2Tree {
     std::string name;
 
-    Header header;
+    Header header; // TODO: switch to SComTreeHeader from "shader_common.hpp"
     std::vector <uint32_t> nodes;
     std::vector <uint32_t> bricks;
 };

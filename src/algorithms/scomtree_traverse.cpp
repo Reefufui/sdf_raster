@@ -1,4 +1,4 @@
-// #include "scom2_traverse.hpp"
+// #include "scomtree_traverse.hpp"
 //
 // #include <iostream>
 // #include <string>
@@ -216,20 +216,20 @@
 //     tree[21] = TYPE_LEAF | val_secret_off;  // secret
 // }
 //
-// void dump_sdf_scom2_text (const scom2::SCom2Tree& scom2, const std::string& path_to_dump) {
+// void dump_sdf_scomtree_text (const scomtree::SComTreeTree& scomtree, const std::string& path_to_dump) {
 //     std::ofstream dump_file (path_to_dump);
 //     if (!dump_file.is_open ()) {
-//         LOG_ERROR ("could not open file {} for dumping scom2", path_to_dump);
+//         LOG_ERROR ("could not open file {} for dumping scomtree", path_to_dump);
 //         return;
 //     }
 //
-//     dump_file << "SDF SCom2 Dump:" << std::endl;
+//     dump_file << "SDF SComTree Dump:" << std::endl;
 //     dump_file << "----------------------------------------" << std::endl;
 //
 //     // TODO
 //
 //     dump_file.close ();
-//     LOG_INFO ("SDF SCom2 successfully dumped to '{}'", path_to_dump);
+//     LOG_INFO ("SDF SComTree successfully dumped to '{}'", path_to_dump);
 // }
 //
 // } // sdf_raster

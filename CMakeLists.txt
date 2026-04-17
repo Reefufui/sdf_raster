@@ -164,17 +164,17 @@ add_executable(${PROJECT_NAME}
     src/occlusion_culling.cpp
     src/sdf_octree.cpp
     src/sdf_rasterizer.cpp
-    src/sdf_scom2.cpp
+    src/sdf_scomtree.cpp
     src/state.cpp
     src/vulkan_context.cpp
 
-    src/algorithms/scom2_traverse.cpp
+    src/algorithms/scomtree_traverse.cpp
 
     src/scenes/obj/obj.cpp
     src/scenes/octree/octree.cpp
     src/scenes/scene_manager.cpp
-    src/scenes/scom2/scom2.cpp
-    src/scenes/scom2/utils.cpp
+    src/scenes/scomtree/scomtree.cpp
+    src/scenes/scomtree/utils.cpp
 )
 
 target_include_directories (${PROJECT_NAME} PRIVATE

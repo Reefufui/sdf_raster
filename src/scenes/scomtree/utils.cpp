@@ -1,6 +1,6 @@
-#include "scenes/scom2/utils.hpp"
+#include "scenes/scomtree/utils.hpp"
 
-#include "scenes/scom2/defs.hpp"
+#include "scenes/scomtree/defs.hpp"
 
 namespace sdf_raster {
 

@@ -6,7 +6,7 @@
 #include "logger.hpp"
 #include "scenes/obj/obj.hpp"
 #include "scenes/octree/octree.hpp"
-#include "scenes/scom2/scom2.hpp"
+#include "scenes/scomtree/scomtree.hpp"
 
 #include <spdlog/stopwatch.h>
 #include <vk_buffers.h>
@@ -2207,17 +2207,17 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
 
         LOG_INFO ("[{}] Created GPU resources for OBJ scene '{}'. Vertices: {}, Indices: {}"
             , RENDERER_NAME, scene_state.name, model_data.vertices.size (), this->explicit_index_count);
-    } else if (SCom2TreeScene* scom2_scene = dynamic_cast <SCom2TreeScene*> (scene)) {
+    } else if (SComTreeScene* scomtree_scene = dynamic_cast <SComTreeScene*> (scene)) {
         scene_resources_cleanup ();
 
-        const std::filesystem::path path ("scom2.json");
-        LOG_INFO ("[{}] Received a scene that of type SCom2TreeScene. Dumping to {}. Converting to Mesh for rendering", RENDERER_NAME, path.string ());
-        scom2_scene->dump_as_json (path);
+        const std::filesystem::path path ("scomtree.json");
+        LOG_INFO ("[{}] Received a scene that of type SComTreeScene. Dumping to {}. Converting to Mesh for rendering", RENDERER_NAME, path.string ());
+        scomtree_scene->dump_as_json (path);
 
-        Mesh mesh = scom2_scene->generate_mesh ();
-        // Mesh mesh = scom2_scene->generate_voxel_mesh ();
+        Mesh mesh = scomtree_scene->generate_mesh ();
+        // Mesh mesh = scomtree_scene->generate_voxel_mesh ();
         if (mesh.is_empty ()) {
-            LOG_ERROR ("[{}] SCom2 mesh generation resulted in 0 vertices!", RENDERER_NAME);
+            LOG_ERROR ("[{}] SComTree mesh generation resulted in 0 vertices!", RENDERER_NAME);
             return;
         }
 
@@ -2237,7 +2237,7 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
 
         this->explicit_index_count = static_cast <uint32_t> (indices.size ());
 
-        LOG_INFO ("[{}] SCom2 converted: {} vertices, {} indices. Rendering mode: Explicit."
+        LOG_INFO ("[{}] SComTree converted: {} vertices, {} indices. Rendering mode: Explicit."
              , RENDERER_NAME, verts.size (), this->explicit_index_count);
     } else {
         LOG_ERROR ("[{}] Received a scene that is not of any renderable type. Cannot render.", RENDERER_NAME);

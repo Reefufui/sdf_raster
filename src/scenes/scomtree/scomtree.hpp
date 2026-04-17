@@ -3,14 +3,14 @@
 #include "mesh.hpp"
 #include "scenes/scene_state.hpp"
 #include "scenes/scene.hpp"
-#include "scenes/scom2/header.hpp"
+#include "scenes/scomtree/header.hpp"
 
 #include <cstdint>
 #include <vector>
 
 namespace sdf_raster {
 
-struct SCom2Tree {
+struct SComTree {
     std::string name;
 
     Header header; // TODO: switch to SComTreeHeader from "shader_common.hpp"
@@ -18,7 +18,7 @@ struct SCom2Tree {
     std::vector <uint32_t> bricks;
 };
 
-class SCom2TreeScene : public Scene {
+class SComTreeScene : public Scene {
 public:
     bool load (const std::filesystem::path& path) override;
 
@@ -26,9 +26,9 @@ public:
 
     void set_state (const SceneState& scene_state) override;
 
-    ~SCom2TreeScene () override;
+    ~SComTreeScene () override;
 
-    const SCom2Tree& get_octree_data () const;
+    const SComTree& get_octree_data () const;
 
     void dump_as_json (const std::filesystem::path& path) const;
 
@@ -38,7 +38,7 @@ public:
 
 private:
     SceneState state;
-    SCom2Tree data;
+    SComTree data;
 };
 
 } // sdf_raster

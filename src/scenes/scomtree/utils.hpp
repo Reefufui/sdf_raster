@@ -1,6 +1,6 @@
 #pragma once
 
-#include "scenes/scom2/header.hpp"
+#include "scenes/scomtree/header.hpp"
 
 #include <cstdint>
 

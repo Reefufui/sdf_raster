@@ -10,7 +10,7 @@
 #include "marching_cubes.hpp"
 #include "scenes/obj/obj.hpp"
 #include "scenes/octree/octree.hpp"
-#include "scenes/scom2/scom2.hpp"
+#include "scenes/scomtree/scomtree.hpp"
 #include "sdf_octree.hpp"
 
 namespace sdf_raster {
@@ -177,7 +177,7 @@ void Application::init_gui () {
 void Application::init_scene_manager (const SessionState& session) {
     this->scene_manager = std::make_unique <SceneManager> ();
     this->scene_manager->register_scene_type <ObjScene> (".obj");
-    this->scene_manager->register_scene_type <SCom2TreeScene> (".scom2");
+    this->scene_manager->register_scene_type <SComTreeScene> (".scomtree");
     this->scene_manager->register_scene_type <SdfOctreeScene> (".octree");
 
     this->scene_manager->subscribe ([this] (SceneEventType type, const std::filesystem::path& path) {

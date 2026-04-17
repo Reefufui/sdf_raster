@@ -6,31 +6,31 @@
 #include "vk_buffers.h"
 
 #include "logger.hpp"
-#include "sdf_scom2.hpp"
-#include "scenes/scom2/defs.hpp"
+#include "sdf_scomtree.hpp"
+#include "scenes/scomtree/defs.hpp"
 
 namespace sdf_raster {
 
-float sample_sdf (const SCom2Tree& /*scene*/, const LiteMath::float3& /*p*/) {
+float sample_sdf (const SComTree& /*scene*/, const LiteMath::float3& /*p*/) {
     // TODO
     assert (false);
     return 0.f;
 }
 
-SCom2TreeDescriptorSetInfo create_sdf_scom2_descriptor_set (
+SComTreeTreeDescriptorSetInfo create_sdf_scomtree_descriptor_set (
     VkDevice /*device*/
     , VkPhysicalDevice /*physical_device*/
     , std::shared_ptr <vk_utils::ICopyEngine> /*copy_helper*/
     , vk_utils::DescriptorMaker& /*ds_maker*/
     , VkShaderStageFlags /*shader_stage_flags*/
-    , const SCom2Tree& /*scom2*/
+    , const SComTree& /*scomtree*/
     , const size_t /*subtree_root_level*/
     , size_t /*max_frames_in_flight*/) {
-    SCom2TreeDescriptorSetInfo info = {};
+    SComTreeTreeDescriptorSetInfo info = {};
     return info;
 }
 
-void cleanup_sdf_scom2_descriptor_set (VkDevice device, SCom2TreeDescriptorSetInfo& info) {
+void cleanup_sdf_scomtree_descriptor_set (VkDevice device, SComTreeTreeDescriptorSetInfo& info) {
     if (info.nodes_buffer != VK_NULL_HANDLE) {
         vkDestroyBuffer (device, info.nodes_buffer, nullptr);
         info.nodes_buffer = VK_NULL_HANDLE;
@@ -51,19 +51,19 @@ void cleanup_sdf_scom2_descriptor_set (VkDevice device, SCom2TreeDescriptorSetIn
     info = {};
 }
 
-std::vector <NodeContext> get_scom2_subtrees_payloads (const SCom2Tree& /*scene*/, int /*max_level_to_descend*/) {
+std::vector <NodeContext> get_scomtree_subtrees_payloads (const SComTree& /*scene*/, int /*max_level_to_descend*/) {
     // TODO
     assert (false);
     return {};
 }
 
-std::vector <NodeContext> get_scom2_subtrees_payloads_parallel (const SCom2Tree& /*scene*/, int /*max_level_to_descend*/) {
+std::vector <NodeContext> get_scomtree_subtrees_payloads_parallel (const SComTree& /*scene*/, int /*max_level_to_descend*/) {
     // TODO
     assert (false);
     return {};
 }
 
-int get_scom2_max_depth (const SCom2Tree& /*scene*/) {
+int get_scomtree_max_depth (const SComTree& /*scene*/) {
     // TODO
     assert (false);
     return 0;

@@ -1,10 +1,10 @@
-#include "scenes/scom2/scom2.hpp"
+#include "scenes/scomtree/scomtree.hpp"
 
 #include "logger.hpp"
 #include "marching_cubes_lookup_table.hpp"
-#include "scenes/scom2/defs.hpp"
-#include "scenes/scom2/rotation_lookup_tables.hpp"
-#include "scenes/scom2/utils.hpp"
+#include "scenes/scomtree/defs.hpp"
+#include "scenes/scomtree/rotation_lookup_tables.hpp"
+#include "scenes/scomtree/utils.hpp"
 
 #include "shader_common.hpp"
 
@@ -12,7 +12,7 @@
 
 namespace sdf_raster {
 
-bool SCom2TreeScene::load (const std::filesystem::path& path) {
+bool SComTreeScene::load (const std::filesystem::path& path) {
     std::ifstream fs (path, std::ios::binary);
 
     uint32_t magic_number = 0;
@@ -26,7 +26,7 @@ bool SCom2TreeScene::load (const std::filesystem::path& path) {
 
     if (magic_number != SCOM2_MAGIC_NUMBER) {
         fs.close ();
-        LOG_ERROR ("Legacy scom2 is not supported.");
+        LOG_ERROR ("Legacy scomtree is not supported.");
         return false;
     }
 
@@ -34,7 +34,7 @@ bool SCom2TreeScene::load (const std::filesystem::path& path) {
 
     if (version != SCOM2_VERSION) {
         fs.close ();
-        LOG_ERROR ("SCom2 version mismatch (save is version {}, current version is {})", version, SCOM2_VERSION);
+        LOG_ERROR ("SComTree version mismatch (save is version {}, current version is {})", version, SCOM2_VERSION);
         return false;
     }
 
@@ -51,7 +51,7 @@ bool SCom2TreeScene::load (const std::filesystem::path& path) {
     fs.read ((char *)this->data.bricks.data (), num_bricks * sizeof (uint32_t));
 
     if (vc_count || pc_count) {
-        LOG_WARN ("Data channels in scom2 are not supported by application. Ignoring them.");
+        LOG_WARN ("Data channels in scomtree are not supported by application. Ignoring them.");
     }
 
     fs.close ();
@@ -72,15 +72,15 @@ bool SCom2TreeScene::load (const std::filesystem::path& path) {
     return true;
 }
 
-SceneState& SCom2TreeScene::get_state () {
+SceneState& SComTreeScene::get_state () {
     return this->state;
 }
 
-void SCom2TreeScene::set_state (const SceneState& scene_state) {
+void SComTreeScene::set_state (const SceneState& scene_state) {
     this->state = scene_state;
 }
 
-const SCom2Tree& SCom2TreeScene::get_octree_data () const {
+const SComTree& SComTreeScene::get_octree_data () const {
     return this->data;
 }
 
@@ -290,7 +290,7 @@ void process_brick (auto&& cb, const Header& header, const std::vector <uint32_t
     }
 }
 
-void traverse_scom2_core (const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks, auto&& cb) {
+void traverse_scomtree_core (const Header& header, const std::vector <uint32_t>& nodes, const std::vector <uint32_t>& bricks, auto&& cb) {
     nlohmann::json result;
     nlohmann::json active_leafs = nlohmann::json::array ();
 
@@ -403,11 +403,11 @@ nlohmann::json dump_active_leafs (const Header& h, const auto& n, const auto& b)
         active_leafs.push_back (leaf_data);
     };
 
-    traverse_scom2_core (h, n, b, json_cb);
+    traverse_scomtree_core (h, n, b, json_cb);
     return active_leafs;
 }
 
-void to_json (nlohmann::json& j, const SCom2Tree& tree) {
+void to_json (nlohmann::json& j, const SComTree& tree) {
     j = nlohmann::json {
         {"name", tree.name}
         , {"header", tree.header}
@@ -415,7 +415,7 @@ void to_json (nlohmann::json& j, const SCom2Tree& tree) {
     };
 }
 
-void SCom2TreeScene::dump_as_json (const std::filesystem::path& path) const {
+void SComTreeScene::dump_as_json (const std::filesystem::path& path) const {
     try {
         nlohmann::json j = this->data;
 
@@ -427,22 +427,22 @@ void SCom2TreeScene::dump_as_json (const std::filesystem::path& path) const {
         file << j.dump (4);
 
         file.close ();
-        LOG_INFO ("[SCom2TreeScene] Dump successful.");
+        LOG_INFO ("[SComTreeScene] Dump successful.");
 
     } catch (const nlohmann::json::exception& e) {
-        LOG_ERROR ("[SCom2TreeScene] JSON dump error: {}", e.what ());
+        LOG_ERROR ("[SComTreeScene] JSON dump error: {}", e.what ());
     } catch (const std::exception& e) {
-        LOG_ERROR ("[SCom2TreeScene] An unexpected error occurred during dump: {}", e.what ());
+        LOG_ERROR ("[SComTreeScene] An unexpected error occurred during dump: {}", e.what ());
     }
 }
 
-Mesh SCom2TreeScene::generate_mesh () const {
+Mesh SComTreeScene::generate_mesh () const {
     Mesh mesh;
     auto mesh_cb = [&](auto tri, const VoxelContext& /*ctx*/) {
         mesh.add_triangle (tri [0], tri [1], tri [2]);
     };
 
-    traverse_scom2_core (this->data.header, this->data.nodes, this->data.bricks, mesh_cb);
+    traverse_scomtree_core (this->data.header, this->data.nodes, this->data.bricks, mesh_cb);
 
     return mesh;
 }
@@ -478,7 +478,7 @@ void add_voxel_to_mesh (Mesh& mesh, LiteMath::float3 min_p, float size) {
 
 }
 
-Mesh SCom2TreeScene::generate_voxel_mesh () const {
+Mesh SComTreeScene::generate_voxel_mesh () const {
     Mesh mesh;
 
     auto voxel_cb = [&] (auto /*tri*/, const VoxelContext& ctx) {
@@ -489,11 +489,11 @@ Mesh SCom2TreeScene::generate_voxel_mesh () const {
         }
     };
 
-    traverse_scom2_core (this->data.header, this->data.nodes, this->data.bricks, voxel_cb);
+    traverse_scomtree_core (this->data.header, this->data.nodes, this->data.bricks, voxel_cb);
     return mesh;
 }
 
-SCom2TreeScene::~SCom2TreeScene () {
+SComTreeScene::~SComTreeScene () {
     this->data.nodes.clear ();
     this->data.bricks.clear ();
 }

@@ -1,7 +1,7 @@
 {
-    "current_scene_path": "/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/sphere.scom2",
+    "current_scene_path": "/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/sphere.scomtree",
     "scene_states": {
-        "/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/sphere.scom2": {
+        "/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/sphere.scomtree": {
             "camera": {
                 "aspect_ratio": 1.685055136680603,
                 "far_plane": 10.0,
@@ -25,7 +25,7 @@
             "name": "sphere",
             "occlusion_culling_level": 4,
             "octree_depth": 4,
-            "path": "/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/sphere.scom2"
+            "path": "/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/sphere.scomtree"
         }
     },
     "settings": {

@@ -31,6 +31,8 @@ struct VkDrawIndexedIndirectCommand {
 
 static const uint MAX_LEAF_VERTS = 12;
 static const uint MAX_LEAF_PRIMS = 4;
+static const uint MAX_BRICK_VERTS = 98;
+static const uint MAX_BRICK_PRIMS = 32;
 
 struct IndirectDispatch {
     uint x;

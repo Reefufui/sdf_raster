@@ -73,5 +73,9 @@ float4 main (float4 sv_pos : SV_Position) : SV_Target {
     float3 ambient_term = albedo.rgb * 0.1f;
 
     return float4 (ambient_term + diffuse_term + specular_term, 1.0f);
+    // return float4 (normal, 1.0f);
+    // float3 depth_vec = (float3 (depth, depth, depth) - .97f) * 35.f;
+    // return float4 (depth_vec, 1.0f);
+    // return albedo;
 }
 

@@ -119,6 +119,7 @@ void generate_geometry (uint active_leaf_index) {
         }
 
         const uint2 corner_indices = edge_corners [i];
+        // float3 position = (corners [corner_indices.x] + corners [corner_indices.y]) / 2.f;
         float3 position = interpolate (corners [corner_indices.x]
                      , corners [corner_indices.y]
                      , leaf_node.values [corner_indices.x]

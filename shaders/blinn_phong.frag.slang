@@ -26,6 +26,7 @@ float4 main (Vertex input : FragmentInput) : SV_Target {
     float specular_factor = pow (saturate (dot (R, view_dir)), shininess);
     float4 specular_term = light_color * specular_factor * specular_intensity_factor;
 
-    return ambient_term + diffuse_term + specular_term;
+    // return ambient_term + diffuse_term + specular_term;
+    return ambient_term + diffuse_term;
 }
 

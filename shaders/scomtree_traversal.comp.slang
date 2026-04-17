@@ -9,11 +9,11 @@
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 
 [[vk::binding (0, 0)]] ConstantBuffer <SComTreeHeader> g_scomtree_header;
-[[vk::binding (1, 0)]] StructuredBuffer <SComTreeStackElement> g_roots;
-[[vk::binding (2, 0)]] StructuredBuffer <uint> g_scomtree_nodes;
-[[vk::binding (3, 0)]] StructuredBuffer <uint> g_scomtree_bricks;
-[[vk::binding (4, 0)]] StructuredBuffer <int4> g_rotation_modifiers; // NOTE: 3 * 48
-[[vk::binding (5, 0)]] StructuredBuffer <uint> g_rotation_add; // NOTE: 2304
+[[vk::binding (1, 0)]] StructuredBuffer <uint> g_scomtree_nodes;
+[[vk::binding (2, 0)]] StructuredBuffer <uint> g_scomtree_bricks;
+[[vk::binding (3, 0)]] StructuredBuffer <int4> g_rotation_modifiers; // NOTE: 3 * 48
+[[vk::binding (4, 0)]] StructuredBuffer <uint> g_rotation_add; // NOTE: 2304
+[[vk::binding (5, 0)]] StructuredBuffer <SComTreeStackElement> g_roots;
 
 [[vk::binding (0, 1)]] RWStructuredBuffer <uint> g_active_leaf_counter;
 [[vk::binding (1, 1)]] RWStructuredBuffer <SComTreeBrickPayload> g_active_leafs;

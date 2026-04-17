@@ -4,10 +4,11 @@
 
 #include <filesystem>
 #include <string>
+#include <format>
 
 namespace sdf_raster {
 
-enum class DrawMethod : uint8_t { None, Explicit, ExplicitDeferred, ImplicitCompute, ImplicitMesh };
+enum class DrawMethod : uint8_t { None, Explicit, ExplicitDeferred, OctreeCompute, OctreeMesh, SComTreeCompute, SComTreeMesh };
 
 struct SceneState {
     Camera camera {};
@@ -23,4 +24,21 @@ struct SceneState {
 };
 
 } // sdf_raster
+
+template <>
+struct std::formatter <sdf_raster::DrawMethod> : std::formatter <std::string_view> {
+    auto format (sdf_raster::DrawMethod m, std::format_context& ctx) const {
+        std::string_view name = "Unknown";
+        switch (m) {
+            case sdf_raster::DrawMethod::None:             name = "None"; break;
+            case sdf_raster::DrawMethod::Explicit:         name = "Explicit Mesh via Forward Rendering"; break;
+            case sdf_raster::DrawMethod::ExplicitDeferred: name = "Explicit Mesh via Deferred Rendering"; break;
+            case sdf_raster::DrawMethod::OctreeCompute:    name = "SDF-Octree via Compute Shaders"; break;
+            case sdf_raster::DrawMethod::OctreeMesh:       name = "SDF-Octree via Mesh Shaders"; break;
+            case sdf_raster::DrawMethod::SComTreeCompute:  name = "SComTree via Compute Shaders"; break;
+            case sdf_raster::DrawMethod::SComTreeMesh:     name = "SComTree via Mesh Shaders"; break;
+        }
+        return std::formatter <std::string_view>::format (name, ctx);
+    }
+};
 

@@ -23,7 +23,11 @@ struct SComTreeTreeDescriptorSetInfo {
     std::vector <VkDescriptorSet> descriptor_sets;
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
+    VkBuffer header_buffer = VK_NULL_HANDLE;
     VkBuffer nodes_buffer = VK_NULL_HANDLE;
+    VkBuffer bricks_buffer = VK_NULL_HANDLE;
+    VkBuffer rotation_modifiers_buffer = VK_NULL_HANDLE;
+    VkBuffer rotation_add_buffer = VK_NULL_HANDLE;
     std::vector <VkBuffer> subtree_root_buffers;
 
     VkDeviceMemory memory = VK_NULL_HANDLE;

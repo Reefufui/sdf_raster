@@ -37,49 +37,10 @@ void SDFRasterizer::init () {
         throw std::runtime_error ("VulkanContext is not initialized before renderer init.");
     }
 
-    vk_utils::DescriptorTypesVec ds_type_vec {};
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000);
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000);
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000);
+    this->init_push_constants (); // TODO: init in set_scene ?
+    this->init_graphics_frustum_pipeline (); // TODO: init when asked to?
 
-    this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
-    this->descriptor_maker_for_resizable = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
-
-    this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
-        , this->context->get_physical_device ()
-        , this->context->get_transfer_command_pool_reset ()
-        , this->context->get_transfer_queue ()
-        , DeferredShadingConfig {
-            .extent = this->context->get_swapchain_extent (),
-            .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
-            .depth_format = this->context->get_depth_format (),
-            .swapchain_format = this->context->get_swapchain_image_format (),
-            .num_inflight_frames = this->context->get_total_frames (),
-            .filter = VK_FILTER_LINEAR // TODO: try NEAREST
-        }
-        , this->context->get_swapchain_image_views ());
-
-    this->init_push_constants ();
-    this->init_descriptor_sets ();
-    this->init_compute_hz_buffer_pipeline ();
-    this->init_compute_active_leafs_pipeline ();
-    this->init_compute_prepare_indirect_pipeline ();
-    this->init_compute_prefix_sum_pass1_pipeline ();
-    this->init_compute_prefix_sum_pass2_pipeline ();
-    this->init_compute_prefix_sum_pass3_pipeline ();
-    this->init_compute_geometry_pipeline ();
-    this->init_graphics_identity_pipeline ();
-    this->init_graphics_viewproj_pipeline ();
-    this->init_graphics_frustum_pipeline ();
-    this->init_graphics_lighting_pipeline ();
-    this->init_graphics_gbuffer_pipeline ();
-    this->register_resizable ();
-
-    if (this->context->get_use_mesh_shading ()) {
-        this->init_mesh_shading_pipeline ();
-    }
-
+    // this->register_resizable (); // TODO: re-register in set_scene
     this->initialized = true;
 }
 
@@ -147,76 +108,6 @@ void SDFRasterizer::init_push_constants () {
     this->push_constants.active_leafs_max_count = 999999; // TODO: settings
 }
 
-void SDFRasterizer::init_descriptor_sets () {
-    this->sdf_octree_ds.descriptor_set_layout = vk_utils::createDescriptorSetLayout (this->context->get_device ()
-        , {{ 0, { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } }, { 1, { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } }}
-        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
-
-	this->mesh_ds = create_mesh_descriptor_set (this->context->get_device ()
-	    , this->context->get_physical_device ()
-	    , this->context->get_copy_helper ()
-	    , *descriptor_maker
-	    , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-	    , this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS
-	    , this->context->get_total_frames ());
-
-	this->marching_cubes_lookup_table_ds = create_lookup_table_descriptor_set (this->context->get_device ()
-	    , this->context->get_physical_device ()
-	    , this->context->get_copy_helper ()
-	    , *descriptor_maker
-	    , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
-
-	this->active_leafs_ds = create_active_leafs_descriptor_set (this->context->get_device ()
-	    , this->context->get_physical_device ()
-	    , this->context->get_copy_helper ()
-	    , *descriptor_maker
-	    , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-	    , this->push_constants.active_leafs_max_count
-	    , this->context->get_total_frames ());
-
-    this->draw_indexed_indirect_command_ds = create_draw_indexed_indirect_command_descriptor_set (this->context->get_device ()
-        , this->context->get_physical_device ()
-        , *descriptor_maker
-        , VK_SHADER_STAGE_COMPUTE_BIT
-        , this->context->get_total_frames ());
-
-    this->hz_buffer_ds = create_hz_buffer_descriptor_set (this->context->get_device ()
-        , this->context->get_physical_device ()
-        , *(this->descriptor_maker_for_resizable)
-        , VK_SHADER_STAGE_COMPUTE_BIT
-        , this->context->get_swapchain_extent ()
-        , this->context->get_total_frames ());
-
-    change_hz_buffer_layout_to_shader_read_only_optimal (this->context->get_device ()
-        , this->context->get_transfer_command_pool_reset ()
-        , this->context->get_transfer_queue ()
-        , this->hz_buffer_ds);
-
-    LOG_INFO ("[{}] Created {} HZ-buffers for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
-        , this->context->get_total_frames ()
-        , this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height
-        , this->hz_buffer_ds.frame_resources [0].hz_buffer.mipLvls);
-
-    this->frustum_ds = create_frustum_descriptor_set (this->context->get_device ()
-        , this->context->get_physical_device ()
-        , *descriptor_maker
-        , VK_SHADER_STAGE_COMPUTE_BIT
-        , this->context->get_total_frames ());
-
-    this->indirect_dispatch_ds = create_indirect_dispatch_descriptor_set (this->context->get_device ()
-        , this->context->get_physical_device ()
-        , *descriptor_maker
-        , VK_SHADER_STAGE_COMPUTE_BIT
-        , this->context->get_total_frames ());
-
-    this->lod_ds = create_lod_descriptor_set (this->context->get_device ()
-	    , this->context->get_physical_device ()
-	    , *descriptor_maker
-	    , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-	    , 1 // TODO: edit to match max models count in scene
-	    , this->context->get_total_frames ());
-}
-
 void SDFRasterizer::init_compute_hz_buffer_pipeline () {
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/mip_max_pooling.comp.slang.spv");
@@ -247,39 +138,6 @@ void SDFRasterizer::init_compute_prepare_indirect_pipeline () {
             , this->indirect_dispatch_ds.descriptor_set_layout
         }, sizeof (uint32_t));
     this->compute_prepare_indirect_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
-}
-
-void SDFRasterizer::init_compute_prefix_sum_pass1_pipeline () {
-    /*
-    vk_utils::ComputePipelineMaker compute_pipeline_maker;
-    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/prefix_sum_pass1.slang.spv");
-    this->compute_prefix_sum_pass1_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
-            this->active_leafs_ds.descriptor_set_layout
-        }, sizeof (PushConstantsData));
-    this->compute_prefix_sum_pass1_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
-    */
-}
-
-void SDFRasterizer::init_compute_prefix_sum_pass2_pipeline () {
-    /*
-    vk_utils::ComputePipelineMaker compute_pipeline_maker;
-    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/prefix_sum_pass2.slang.spv");
-    this->compute_prefix_sum_pass2_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
-            this->active_leafs_ds.descriptor_set_layout
-        }, sizeof (PushConstantsData));
-    this->compute_prefix_sum_pass2_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
-    */
-}
-
-void SDFRasterizer::init_compute_prefix_sum_pass3_pipeline () {
-    /*
-    vk_utils::ComputePipelineMaker compute_pipeline_maker;
-    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/prefix_sum_pass3.slang.spv");
-    this->compute_prefix_sum_pass3_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
-            this->active_leafs_ds.descriptor_set_layout
-        }, sizeof (PushConstantsData));
-    this->compute_prefix_sum_pass3_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
-    */
 }
 
 void SDFRasterizer::init_compute_geometry_pipeline () {
@@ -1582,20 +1440,12 @@ void SDFRasterizer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
     );
 }
 
-void SDFRasterizer::compute_active_leafs (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::compute_active_leafs (VkCommandBuffer cmd_buff, std::vector <VkDescriptorSet> ds) {
     if (this->visible_subtrees.empty ()) {
         return;
     }
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
-
-    std::array <VkDescriptorSet, 5> ds = {
-        this->sdf_octree_ds.descriptor_sets [this->frame_index],
-        this->active_leafs_ds.descriptor_sets [this->frame_index],
-        this->frustum_ds.descriptor_sets [this->frame_index],
-        this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set,
-        this->lod_ds.descriptor_sets [this->frame_index]
-    };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline_layout,
         0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
@@ -1702,29 +1552,6 @@ void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgro
         , 0, nullptr
         , 0, nullptr
         );
-}
-
-void SDFRasterizer::prefix_sum_pass1 (VkCommandBuffer cmd_buff) {
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prefix_sum_pass1_pipeline);
-
-    std::array <VkDescriptorSet, 1> ds = {
-        this->active_leafs_ds.descriptor_sets [this->frame_index]
-    };
-
-    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prefix_sum_pass1_pipeline_layout,
-                             0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
-
-    vkCmdPushConstants (cmd_buff, this->compute_active_leafs_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
-
-    // vkCmdDispatch (cmd_buff, static_cast <uint32_t> (this->subtrees.size ()), 1, 1);
-}
-
-void SDFRasterizer::prefix_sum_pass2 (VkCommandBuffer) {
-    // TODO
-}
-
-void SDFRasterizer::prefix_sum_pass3 (VkCommandBuffer) {
-    // TODO
 }
 
 void SDFRasterizer::compute_geometry (VkCommandBuffer cmd_buff) {
@@ -2010,10 +1837,17 @@ void SDFRasterizer::raster_explicit_deferred (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void SDFRasterizer::raster_implicit_via_mesh_shading (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
-    this->compute_active_leafs (cmd_buff);
+
+    std::vector <VkDescriptorSet> compute_active_leafs_ds (5);
+    compute_active_leafs_ds [0] = this->sdf_octree_ds.descriptor_sets [this->frame_index];
+    compute_active_leafs_ds [1] = this->active_leafs_ds.descriptor_sets [this->frame_index];
+    compute_active_leafs_ds [2] = this->frustum_ds.descriptor_sets [this->frame_index];
+    compute_active_leafs_ds [3] = this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set;
+    compute_active_leafs_ds [4] = this->lod_ds.descriptor_sets [this->frame_index];
+    this->compute_active_leafs (cmd_buff, compute_active_leafs_ds);
 
     this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_MESH_WORKGROUP});
 
@@ -2074,13 +1908,39 @@ void SDFRasterizer::raster_implicit_via_mesh_shading (VkCommandBuffer cmd_buff) 
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void SDFRasterizer::raster_implicit_via_compute_shading (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
-    this->compute_active_leafs (cmd_buff);
+
+    std::vector <VkDescriptorSet> compute_active_leafs_ds (5);
+    compute_active_leafs_ds [0] = this->sdf_octree_ds.descriptor_sets [this->frame_index];
+    compute_active_leafs_ds [1] = this->active_leafs_ds.descriptor_sets [this->frame_index];
+    compute_active_leafs_ds [2] = this->frustum_ds.descriptor_sets [this->frame_index];
+    compute_active_leafs_ds [3] = this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set;
+    compute_active_leafs_ds [4] = this->lod_ds.descriptor_sets [this->frame_index];
+    this->compute_active_leafs (cmd_buff, compute_active_leafs_ds);
 
     this->clear_geometry (cmd_buff);
     this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_COMPUTE_WORKGROUP});
+    this->compute_geometry (cmd_buff);
+    this->geometry_barrier (cmd_buff);
+    this->draw_geometry (cmd_buff);
+}
+
+void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
+    this->copy_subtrees (cmd_buff);
+    this->reset_active_leafs_counter (cmd_buff);
+
+    std::vector <VkDescriptorSet> compute_active_leafs_ds (5);
+    compute_active_leafs_ds [0] = this->sdf_scomtree_ds.descriptor_sets [this->frame_index];
+    compute_active_leafs_ds [1] = this->active_leafs_ds.descriptor_sets [this->frame_index];
+    compute_active_leafs_ds [2] = this->frustum_ds.descriptor_sets [this->frame_index];
+    compute_active_leafs_ds [3] = this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set;
+    compute_active_leafs_ds [4] = this->lod_ds.descriptor_sets [this->frame_index];
+    this->compute_active_leafs (cmd_buff, compute_active_leafs_ds);
+
+    this->clear_geometry (cmd_buff);
+    this->prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
     this->compute_geometry (cmd_buff);
     this->geometry_barrier (cmd_buff);
     this->draw_geometry (cmd_buff);
@@ -2136,27 +1996,153 @@ void SDFRasterizer::process_commands (std::queue <RenderCommand>& commands, std:
     }
 }
 
-void SDFRasterizer::recreate_scene_resources (Scene* scene) {
+void SDFRasterizer::unset_scene () {
+	this->cpu_traversed = 0;
+	this->subtrees.clear ();
+    this->visible_subtrees.clear ();
+    this->cleanup_subtree_roots_staging_buffer ();
+
+    this->cleanup_subtree_roots_staging_buffer ();
+
+    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
+    cleanup_sdf_scomtree_descriptor_set (this->context->get_device (), this->sdf_scomtree_ds);
+    cleanup_mesh_descriptor_set (this->context->get_device (), this->mesh_ds);
+    cleanup_lookup_table_descriptor_set (this->context->get_device (), this->marching_cubes_lookup_table_ds);
+    cleanup_active_leafs_descriptor_set (this->context->get_device (), this->active_leafs_ds);
+    cleanup_frustum_descriptor_set (this->context->get_device (), this->frustum_ds);
+    cleanup_draw_indexed_indirect_command_descriptor_set (this->context->get_device (), this->draw_indexed_indirect_command_ds);
+    cleanup_hz_buffer_descriptor_set (this->context->get_device (), this->hz_buffer_ds);
+    cleanup_indirect_dispatch_descriptor_set (this->context->get_device (), this->indirect_dispatch_ds);
+    cleanup_lod_descriptor_set (this->context->get_device (), this->lod_ds);
+
+    this->deferred_shading.reset ();
+    this->descriptor_maker.reset ();
+
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_active_leafs_pipeline, this->compute_active_leafs_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_geometry_pipeline, this->compute_geometry_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_hz_buffer_pipeline, this->compute_hz_buffer_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prepare_indirect_pipeline, this->compute_prepare_indirect_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_identity_pipeline, this->graphics_identity_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_viewproj_pipeline, this->graphics_viewproj_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_gbuffer_pipeline, this->graphics_gbuffer_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_lighting_pipeline, this->graphics_lighting_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->mesh_pipeline, this->mesh_pipeline_layout);
+}
+
+void SDFRasterizer::set_scene (Scene* scene) {
+    vkDeviceWaitIdle (this->context->get_device());
+
+    this->unset_scene ();
+
     if (!scene) {
-        LOG_WARN("[{}] recreate_scene_resources called with a null scene. Clearing resources.", RENDERER_NAME);
-        release_scene_resources ();
+        LOG_WARN ("[{}] 'set_scene' called with a null scene. Resources cleared.", RENDERER_NAME);
         return;
     }
 
-    auto scene_resources_cleanup = [this] () {
-        release_scene_resources ();
-        this->visible_subtrees.clear ();
-        this->subtrees.clear ();
-    };
+    vk_utils::DescriptorTypesVec ds_type_vec {};
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000);
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000);
+    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000);
+
+    this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
+    this->descriptor_maker_for_resizable = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
+
+    const auto method = scene->get_state ().draw_method;
+
+    if (method == DrawMethod::ExplicitDeferred) {
+        this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_transfer_command_pool_reset ()
+            , this->context->get_transfer_queue ()
+            , DeferredShadingConfig {
+                .extent = this->context->get_swapchain_extent (),
+                .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
+                .depth_format = this->context->get_depth_format (),
+                .swapchain_format = this->context->get_swapchain_image_format (),
+                .num_inflight_frames = this->context->get_total_frames (),
+                .filter = VK_FILTER_LINEAR // TODO: try NEAREST
+            }
+            , this->context->get_swapchain_image_views ());
+    }
+
+    if (method == DrawMethod::Explicit || method == DrawMethod::ExplicitDeferred || method == DrawMethod::OctreeCompute || method == DrawMethod::SComTreeCompute) {
+	    this->mesh_ds = create_mesh_descriptor_set (this->context->get_device ()
+	        , this->context->get_physical_device ()
+	        , this->context->get_copy_helper ()
+	        , *descriptor_maker
+	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+	        , this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS
+	        , this->context->get_total_frames ());
+    }
+
+    if (method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh || method == DrawMethod::SComTreeCompute) {
+	    this->marching_cubes_lookup_table_ds = create_lookup_table_descriptor_set (this->context->get_device ()
+	        , this->context->get_physical_device ()
+	        , this->context->get_copy_helper ()
+	        , *descriptor_maker
+	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
+
+        this->hz_buffer_ds = create_hz_buffer_descriptor_set (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , *(this->descriptor_maker_for_resizable)
+            , VK_SHADER_STAGE_COMPUTE_BIT
+            , this->context->get_swapchain_extent ()
+            , this->context->get_total_frames ());
+
+        change_hz_buffer_layout_to_shader_read_only_optimal (this->context->get_device ()
+            , this->context->get_transfer_command_pool_reset ()
+            , this->context->get_transfer_queue ()
+            , this->hz_buffer_ds);
+
+        LOG_INFO ("[{}] Created {} HZ-buffers for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
+            , this->context->get_total_frames ()
+            , this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height
+            , this->hz_buffer_ds.frame_resources [0].hz_buffer.mipLvls);
+
+        this->frustum_ds = create_frustum_descriptor_set (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , *descriptor_maker
+            , VK_SHADER_STAGE_COMPUTE_BIT
+            , this->context->get_total_frames ());
+
+        this->indirect_dispatch_ds = create_indirect_dispatch_descriptor_set (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , *descriptor_maker
+            , VK_SHADER_STAGE_COMPUTE_BIT
+            , this->context->get_total_frames ());
+
+        this->lod_ds = create_lod_descriptor_set (this->context->get_device ()
+	        , this->context->get_physical_device ()
+	        , *descriptor_maker
+	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+	        , 1 // TODO: edit to match max models count in scene
+	        , this->context->get_total_frames ());
+    }
+
+    if (method == DrawMethod::OctreeCompute || method == DrawMethod::SComTreeCompute) {
+        VkDeviceSize active_leaf_size = (method == DrawMethod::OctreeCompute) ? sizeof (NodeContext) : sizeof (SComTreeBrickPayload);
+
+	    this->active_leafs_ds = create_active_leafs_descriptor_set (this->context->get_device ()
+	        , this->context->get_physical_device ()
+	        , this->context->get_copy_helper ()
+	        , *descriptor_maker
+	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+	        , this->push_constants.active_leafs_max_count * active_leaf_size
+	        , this->context->get_total_frames ());
+
+        this->draw_indexed_indirect_command_ds = create_draw_indexed_indirect_command_descriptor_set (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , *descriptor_maker
+            , VK_SHADER_STAGE_COMPUTE_BIT
+            , this->context->get_total_frames ());
+    }
 
     if (SdfOctreeScene* octree_scene = dynamic_cast <SdfOctreeScene*> (scene)) {
         const SdfOctree& scene_data = octree_scene->get_octree_data ();
         const SceneState& scene_state = octree_scene->get_state ();
 
-        vkDeviceWaitIdle (this->context->get_device());
-
-        cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
-
+        // TODO: scene_ds
         this->sdf_octree_ds = create_sdf_octree_descriptor_set (
             this->context->get_device (),
             this->context->get_physical_device (),
@@ -2178,8 +2164,8 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
 	           , this->cpu_traversed
 	           , scene_state.octree_depth - this->cpu_traversed);
     } else if (ObjScene* obj_scene = dynamic_cast <ObjScene*> (scene)) {
+        /*
         LOG_INFO ("[{}] Received a scene that of type ObjScene.", RENDERER_NAME);
-        scene_resources_cleanup ();
 
         const auto& model_data = obj_scene->get_model_data ();
         const auto& scene_state = obj_scene->get_state ();
@@ -2207,8 +2193,25 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
 
         LOG_INFO ("[{}] Created GPU resources for OBJ scene '{}'. Vertices: {}, Indices: {}"
             , RENDERER_NAME, scene_state.name, model_data.vertices.size (), this->explicit_index_count);
+        */
     } else if (SComTreeScene* scomtree_scene = dynamic_cast <SComTreeScene*> (scene)) {
-        scene_resources_cleanup ();
+        /*
+        const SComTree& scene_data = scomtree_scene->get_octree_data ();
+        const SceneState& scene_state = scomtree_scene->get_state ();
+
+        cleanup_sdf_scomtree_descriptor_set (this->context->get_device (), this->sdf_scomtree_ds);
+
+        this->sdf_scomtree_ds = create_sdf_scomtree_descriptor_set (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_copy_helper ()
+            , *descriptor_maker
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+            , scene_data
+            , scene_state.cpu_traversed
+            , this->context->get_total_frames ()
+        );
+
+	    this->cpu_traversed = scene_state.cpu_traversed;
 
         const std::filesystem::path path ("scomtree.json");
         LOG_INFO ("[{}] Received a scene that of type SComTreeScene. Dumping to {}. Converting to Mesh for rendering", RENDERER_NAME, path.string ());
@@ -2239,9 +2242,37 @@ void SDFRasterizer::recreate_scene_resources (Scene* scene) {
 
         LOG_INFO ("[{}] SComTree converted: {} vertices, {} indices. Rendering mode: Explicit."
              , RENDERER_NAME, verts.size (), this->explicit_index_count);
+             */
     } else {
         LOG_ERROR ("[{}] Received a scene that is not of any renderable type. Cannot render.", RENDERER_NAME);
-        scene_resources_cleanup ();
+        this->unset_scene ();
+        return;
+    }
+    
+    if (method == DrawMethod::OctreeCompute
+        || method == DrawMethod::OctreeMesh
+        || method == DrawMethod::SComTreeCompute
+       ) {
+        this->init_compute_hz_buffer_pipeline (); // NOTE: OctreeMesh || OctreeCompute
+        this->init_compute_active_leafs_pipeline (); // NOTE: OctreeMesh || OctreeCompute
+        this->init_compute_prepare_indirect_pipeline ();
+        this->init_compute_geometry_pipeline ();
+        this->init_graphics_identity_pipeline ();
+    }
+
+    if (method == DrawMethod::Explicit
+        || method == DrawMethod::ExplicitDeferred
+       ) {
+        this->init_graphics_viewproj_pipeline ();
+    }
+
+    if (method == DrawMethod::ExplicitDeferred) {
+        this->init_graphics_lighting_pipeline ();
+        this->init_graphics_gbuffer_pipeline ();
+    }
+
+    if (method == DrawMethod::OctreeMesh) {
+        this->init_mesh_shading_pipeline ();
     }
 }
 
@@ -2257,7 +2288,7 @@ void SDFRasterizer::sync_draw_method (SceneState& scene_state) {
 
     if (strategy.needs_mesh_shading && !this->context->get_use_mesh_shading ()) [[unlikely]] {
         LOG_WARN ("[{}] Hardware fallback: {} -> Compute", RENDERER_NAME, strategy.name);
-        current_enum = DrawMethod::ImplicitCompute;
+        current_enum = DrawMethod::OctreeCompute;
         return;
     }
 
@@ -2269,15 +2300,6 @@ void SDFRasterizer::sync_draw_method (SceneState& scene_state) {
             this->explicit_index_count = 0;
         }
     }
-}
-
-void SDFRasterizer::release_scene_resources () {
-    vkDeviceWaitIdle (this->context->get_device());
-	this->cpu_traversed = 0;
-	this->subtrees.clear ();
-    this->visible_subtrees.clear ();
-    this->cleanup_subtree_roots_staging_buffer ();
-    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
 }
 
 void SDFRasterizer::cleanup_subtree_roots_staging_buffer () {
@@ -2301,40 +2323,13 @@ void SDFRasterizer::shutdown (Settings& /*settings*/) {
         return;
     }
 
-    this->cleanup_subtree_roots_staging_buffer ();
+    this->unset_scene ();
 
-    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
-    cleanup_mesh_descriptor_set (this->context->get_device (), this->mesh_ds);
-    cleanup_lookup_table_descriptor_set (this->context->get_device (), this->marching_cubes_lookup_table_ds);
-    cleanup_active_leafs_descriptor_set (this->context->get_device (), this->active_leafs_ds);
-    cleanup_frustum_descriptor_set (this->context->get_device (), this->frustum_ds);
-    cleanup_draw_indexed_indirect_command_descriptor_set (this->context->get_device (), this->draw_indexed_indirect_command_ds);
-    cleanup_hz_buffer_descriptor_set (this->context->get_device (), this->hz_buffer_ds);
-    cleanup_indirect_dispatch_descriptor_set (this->context->get_device (), this->indirect_dispatch_ds);
-    cleanup_lod_descriptor_set (this->context->get_device (), this->lod_ds);
-
-    this->deferred_shading.reset ();
-
-    // if (this->frustum_draw_buffer) {
+    if (this->frustum_draw_buffer) {
     //     settings.frustum_view = false;
     //     scene_state.camera = this->frustum_draw_buffer->get_camera ();
-    //     this->frustum_draw_buffer.reset ();
-    // }
-    this->descriptor_maker.reset ();
-    this->descriptor_maker_for_resizable.reset ();
-
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_active_leafs_pipeline, this->compute_active_leafs_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_geometry_pipeline, this->compute_geometry_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_hz_buffer_pipeline, this->compute_hz_buffer_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass1_pipeline, this->compute_prefix_sum_pass1_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass2_pipeline, this->compute_prefix_sum_pass2_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prefix_sum_pass3_pipeline, this->compute_prefix_sum_pass3_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prepare_indirect_pipeline, this->compute_prepare_indirect_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_identity_pipeline, this->graphics_identity_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_viewproj_pipeline, this->graphics_viewproj_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_gbuffer_pipeline, this->graphics_gbuffer_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_lighting_pipeline, this->graphics_lighting_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->mesh_pipeline, this->mesh_pipeline_layout);
+        this->frustum_draw_buffer.reset ();
+    }
 
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_frustum_pipeline, this->graphics_frustum_pipeline_layout);
 

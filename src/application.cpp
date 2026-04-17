@@ -242,7 +242,7 @@ void Application::on_scene_event (SceneEventType type, const std::filesystem::pa
             if (scene_ptr) {
                 RenderCommand command = [scene_ptr] (Renderer* renderer) {
                     if (SDFRasterizer* sdf_rasterizer = dynamic_cast <SDFRasterizer*> (renderer)) {
-                        sdf_rasterizer->recreate_scene_resources (scene_ptr);
+                        sdf_rasterizer->set_scene (scene_ptr);
                     }
                 };
                 std::lock_guard lock (this->render_command_mutex);

@@ -10,11 +10,11 @@
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 
 [[vk::binding (0, 0)]] ConstantBuffer <SComTreeHeader> g_scomtree_header;
-[[vk::binding (1, 0)]] StructuredBuffer <SComTreeStackElement> g_roots;
-[[vk::binding (2, 0)]] StructuredBuffer <uint> g_scomtree_nodes;
-[[vk::binding (3, 0)]] StructuredBuffer <uint> g_scomtree_bricks;
-[[vk::binding (4, 0)]] StructuredBuffer <int4> g_rotation_modifiers; // NOTE: 3 * 48
-[[vk::binding (5, 0)]] StructuredBuffer <uint> g_rotation_add; // NOTE: 2304
+[[vk::binding (1, 0)]] StructuredBuffer <uint> g_scomtree_nodes;
+[[vk::binding (2, 0)]] StructuredBuffer <uint> g_scomtree_bricks;
+[[vk::binding (3, 0)]] StructuredBuffer <int4> g_rotation_modifiers; // NOTE: 3 * 48
+[[vk::binding (4, 0)]] StructuredBuffer <uint> g_rotation_add; // NOTE: 2304
+[[vk::binding (5, 0)]] StructuredBuffer <SComTreeStackElement> g_roots;
 
 [[vk::binding (0, 1)]] RWStructuredBuffer <Vertex> g_vertices;
 [[vk::binding (1, 1)]] RWStructuredBuffer <uint> g_indices;
@@ -205,7 +205,7 @@ void generate_geometry (uint active_leaf_index) {
 }
 
 [shader ("compute")]
-[numthreads (VOXELS_PER_COMPUTE_WORKGROUP, 1, 1)]
+[numthreads (BRICKS_PER_COMPUTE_WORKGROUP, 1, 1)]
 void main (uint3 thread_id : SV_DispatchThreadID) {
 	if (thread_id.x >= g_active_leaf_counter [0]) return;
 	generate_geometry (thread_id.x);

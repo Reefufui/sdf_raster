@@ -63,6 +63,7 @@ private:
     void init_style ();
 
     void key_input (Settings& settings, SceneState& scene_state);
+    void handle_global_shortcuts ();
     void menu_bar (Settings& settings);
     void file_dialog ();
     void renderer_window (Settings& settings, const Stats& stats, SceneState& scene_state);
@@ -220,6 +221,12 @@ void UI::init (std::shared_ptr <VulkanContext> /*vulkan_context*/, std::shared_p
     this->file_browser.SetTypeFilters (this->scene_manager->get_registered_extensions ());
 }
 
+void UI::handle_global_shortcuts () {
+    if (ImGui::Shortcut (ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal)) {
+        this->file_browser.Open ();
+    }
+}
+
 void UI::menu_bar (Settings& settings) {
     if (ImGui::BeginMainMenuBar ()) {
         if (ImGui::BeginMenu ("File")) {
@@ -358,8 +365,8 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
 
     ImGui::SeparatorText ("Common");
 
-    if (scene_state.draw_method == DrawMethod::ImplicitMesh || scene_state.draw_method == DrawMethod::ImplicitCompute) {
-        bool use_mesh_shading = scene_state.draw_method == DrawMethod::ImplicitMesh;
+    if (scene_state.draw_method == DrawMethod::OctreeMesh || scene_state.draw_method == DrawMethod::OctreeCompute) {
+        bool use_mesh_shading = scene_state.draw_method == DrawMethod::OctreeMesh;
         ImGui::Checkbox ("use mesh shading", &use_mesh_shading);
         if (ImGui::IsItemHovered ()) {
             ImGui::SetTooltip ("Directly sends generated primitives to rasterizer.");
@@ -455,19 +462,22 @@ void UI::status_bar (Settings& settings, const Stats& stats, SceneState& scene_s
         .text = std::format ("Scene:{}", scene_state.name)
     });
     elements.push_back (StatusBarElement {
+        .text = std::format ("Method:{}", scene_state.draw_method)
+    });
+    elements.push_back (StatusBarElement {
         .text = std::format ("Mode:{}", (settings.frustum_view) ? "frustum" : "camera")
     });
     elements.push_back (StatusBarElement {
         .text = std::format ("Cursor:{}", (settings.disabled_cursor) ? "disabled" : "normal")
     });
     elements.push_back (StatusBarElement {
-        .text = std::format ("FPS:{:.1f}", io.Framerate)
-    });
-    elements.push_back (StatusBarElement {
         .text = std::format ("Roots:{:06}", stats.active_roots_count)
     });
     elements.push_back (StatusBarElement {
         .text = std::format ("Leafs:{:06}", stats.active_leafs_count)
+    });
+    elements.push_back (StatusBarElement {
+        .text = std::format ("FPS:{:.1f}", io.Framerate)
     });
 
     ImGuiViewport* viewport = ImGui::GetMainViewport ();
@@ -545,6 +555,7 @@ void UI::update (Settings& settings, const Stats& stats) {
         this->show_ui = settings.show_ui;
 
         if (this->show_ui) {
+            this->handle_global_shortcuts ();
             this->menu_bar (settings);
             this->file_dialog ();
 
@@ -559,6 +570,7 @@ void UI::update (Settings& settings, const Stats& stats) {
         scene_state.camera.update ();
     } else {
         if (settings.show_ui) {
+            this->handle_global_shortcuts ();
             this->menu_bar (settings);
             this->file_dialog ();
 

@@ -59,7 +59,7 @@ bool SdfOctreeScene::load (const std::filesystem::path& path) {
 
     this->state = SceneState {
         .camera = Camera (),
-        .draw_method = DrawMethod::ImplicitCompute,
+        .draw_method = DrawMethod::OctreeCompute,
         .name = path.stem ().string (),
         .path = path,
         .octree_depth = depth,

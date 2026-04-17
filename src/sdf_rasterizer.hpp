@@ -1,13 +1,6 @@
 #pragma once
 
-#include <functional>
-#include <memory>
-#include <mutex>
-#include <string>
-#include <vector>
-
-#include <GLFW/glfw3.h>
-
+#include "active_leafs.hpp"
 #include "camera.hpp"
 #include "deferred_shading.hpp"
 #include "indirect_dispatch.hpp"
@@ -18,12 +11,20 @@
 #include "renderer.hpp"
 #include "scenes/scene.hpp"
 #include "sdf_octree.hpp"
+#include "sdf_scomtree.hpp"
 #include "shader_common.hpp"
 #include "state.hpp"
 #include "vk_descriptor_sets.h"
 #include "vulkan_context.hpp"
 
+#include <GLFW/glfw3.h>
+
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace sdf_raster {
 
@@ -37,19 +38,16 @@ public:
     void render (VkCommandBuffer cmd_buff) override;
     void shutdown (Settings& settings) override;
     void process_commands (std::queue <RenderCommand>& commands, std::mutex& mutex) override;
-    void recreate_scene_resources (Scene* scene);
-    void release_scene_resources ();
+    void set_scene (Scene* scene);
     const Stats& get_stats () override;
 
 private:
     void init_push_constants ();
-    void init_descriptor_sets ();
+    void unset_scene ();
+
     void init_compute_hz_buffer_pipeline ();
     void init_compute_prepare_indirect_pipeline ();
     void init_compute_active_leafs_pipeline ();
-    void init_compute_prefix_sum_pass1_pipeline ();
-    void init_compute_prefix_sum_pass2_pipeline ();
-    void init_compute_prefix_sum_pass3_pipeline ();
     void init_compute_geometry_pipeline ();
     void init_graphics_identity_pipeline ();
     void init_graphics_viewproj_pipeline ();
@@ -68,13 +66,10 @@ private:
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
     void clear_geometry (VkCommandBuffer cmd_buff);
     void compute_hz_buffer (VkCommandBuffer cmd_buff);
-    void compute_active_leafs (VkCommandBuffer cmd_buff);
+    void compute_active_leafs (VkCommandBuffer cmd_buff, std::vector <VkDescriptorSet> ds);
     void hz_buffer_barrier (VkCommandBuffer cmd_buff);
     void prepare_draw_indirect (VkCommandBuffer cmd_buff);
     void prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size);
-    void prefix_sum_pass1 (VkCommandBuffer cmd_buff);
-    void prefix_sum_pass2 (VkCommandBuffer cmd_buff);
-    void prefix_sum_pass3 (VkCommandBuffer cmd_buff);
     void compute_geometry (VkCommandBuffer cmd_buff);
     void geometry_barrier (VkCommandBuffer cmd_buff);
     void draw_geometry (VkCommandBuffer cmd_buff);
@@ -88,6 +83,7 @@ private:
 
     std::shared_ptr <vk_utils::DescriptorMaker> descriptor_maker {nullptr};
     std::shared_ptr <vk_utils::DescriptorMaker> descriptor_maker_for_resizable {nullptr};
+    SComTreeTreeDescriptorSetInfo sdf_scomtree_ds {};
     SdfOctreeDescriptorSetInfo sdf_octree_ds {};
     MeshDescriptorSetInfo mesh_ds {};
     MarchingCubesLookupTableDescriptorSetInfo marching_cubes_lookup_table_ds {};
@@ -116,16 +112,10 @@ private:
     VkPipeline compute_active_leafs_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_prepare_indirect_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_geometry_pipeline {VK_NULL_HANDLE};
-    VkPipeline compute_prefix_sum_pass1_pipeline {VK_NULL_HANDLE};
-    VkPipeline compute_prefix_sum_pass2_pipeline {VK_NULL_HANDLE};
-    VkPipeline compute_prefix_sum_pass3_pipeline {VK_NULL_HANDLE};
     VkPipelineLayout compute_hz_buffer_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_active_leafs_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_prepare_indirect_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_geometry_pipeline_layout {VK_NULL_HANDLE};
-    VkPipelineLayout compute_prefix_sum_pass1_pipeline_layout {VK_NULL_HANDLE};
-    VkPipelineLayout compute_prefix_sum_pass2_pipeline_layout {VK_NULL_HANDLE};
-    VkPipelineLayout compute_prefix_sum_pass3_pipeline_layout {VK_NULL_HANDLE};
 
     std::unique_ptr <DeferredShading> deferred_shading;
 
@@ -137,8 +127,9 @@ private:
 
     void raster_explicit (VkCommandBuffer cmd_buff);
     void raster_explicit_deferred (VkCommandBuffer cmd_buff);
-    void raster_implicit_via_compute_shading (VkCommandBuffer cmd_buff);
-    void raster_implicit_via_mesh_shading (VkCommandBuffer cmd_buff);
+    void raster_octree_via_compute_shading (VkCommandBuffer cmd_buff);
+    void raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff);
+    void raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff);
     using RenderMethodPtr = void (SDFRasterizer::*)(VkCommandBuffer);
     RenderMethodPtr draw = &SDFRasterizer::raster_explicit;
 
@@ -149,12 +140,13 @@ private:
         bool needs_mesh_shading;
     };
 
-    static inline constexpr std::array <MethodTrait, 5> draw_strategies = {{
+    static inline constexpr std::array <MethodTrait, 6> draw_strategies = {{
           { DrawMethod::None, &SDFRasterizer::raster_explicit, "None (Idle)", false}
         , { DrawMethod::Explicit, &SDFRasterizer::raster_explicit, "Explicit", false}
         , { DrawMethod::ExplicitDeferred, &SDFRasterizer::raster_explicit_deferred, "Explicit Deferred", false}
-        , { DrawMethod::ImplicitCompute, &SDFRasterizer::raster_implicit_via_compute_shading, "Compute", false}
-        , { DrawMethod::ImplicitMesh, &SDFRasterizer::raster_implicit_via_mesh_shading, "Mesh", true }
+        , { DrawMethod::OctreeCompute, &SDFRasterizer::raster_octree_via_compute_shading, "SDF-Octree via compute shaders", false}
+        , { DrawMethod::OctreeMesh, &SDFRasterizer::raster_octree_via_mesh_shading, "Mesh", true }
+        , { DrawMethod::SComTreeCompute, &SDFRasterizer::raster_scomtree_via_compute_shading, "SComTree via compute shaders", true }
     }};
 
     DrawMethod last_applied_method = DrawMethod::None;

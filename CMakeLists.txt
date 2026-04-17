@@ -149,6 +149,7 @@ target_link_libraries (LiteImage PUBLIC LiteMath)
 add_library (LiteMath::LiteImage ALIAS LiteImage)
 
 add_executable(${PROJECT_NAME}
+    src/active_leafs.cpp
     src/application.cpp
     src/camera.cpp
     src/deferred_shading.cpp

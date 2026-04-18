@@ -48,12 +48,14 @@ private:
     void init_compute_hz_buffer_pipeline ();
     void init_compute_prepare_indirect_pipeline ();
     void init_compute_active_leafs_pipeline ();
-    void init_compute_geometry_pipeline ();
+    void init_marching_cubes_octree_pipeline ();
+    void init_marching_cubes_scomtree_pipeline ();
     void init_graphics_identity_pipeline ();
     void init_graphics_viewproj_pipeline ();
     void init_graphics_lighting_pipeline ();
     void init_graphics_gbuffer_pipeline ();
-    void init_mesh_shading_pipeline ();
+    void init_mesh_shading_octree_pipeline ();
+    void init_mesh_shading_scomtree_pipeline ();
 
     void register_resizable ();
 
@@ -66,11 +68,13 @@ private:
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
     void clear_geometry (VkCommandBuffer cmd_buff);
     void compute_hz_buffer (VkCommandBuffer cmd_buff);
-    void compute_active_leafs (VkCommandBuffer cmd_buff, std::vector <VkDescriptorSet> ds);
+    void traverse_octree (VkCommandBuffer cmd_buff);
+    void traverse_scomtree (VkCommandBuffer cmd_buff);
     void hz_buffer_barrier (VkCommandBuffer cmd_buff);
     void prepare_draw_indirect (VkCommandBuffer cmd_buff);
     void prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size);
-    void compute_geometry (VkCommandBuffer cmd_buff);
+    void marching_cubes_octree (VkCommandBuffer cmd_buff);
+    void marching_cubes_scomtree (VkCommandBuffer cmd_buff);
     void geometry_barrier (VkCommandBuffer cmd_buff);
     void draw_geometry (VkCommandBuffer cmd_buff);
     void draw_frustum (VkCommandBuffer cmd_buff);
@@ -81,21 +85,21 @@ private:
 
     std::shared_ptr <VulkanContext> context {nullptr};
 
-    std::shared_ptr <vk_utils::DescriptorMaker> descriptor_maker {nullptr};
-    std::shared_ptr <vk_utils::DescriptorMaker> descriptor_maker_for_resizable {nullptr};
-    SComTreeTreeDescriptorSetInfo sdf_scomtree_ds {};
-    SdfOctreeDescriptorSetInfo sdf_octree_ds {};
-    MeshDescriptorSetInfo mesh_ds {};
-    MarchingCubesLookupTableDescriptorSetInfo marching_cubes_lookup_table_ds {};
-    ActiveLeafsDescriptorSetInfo active_leafs_ds {};
-    DrawIndexedIndirectCommandDescriptorSetInfo draw_indexed_indirect_command_ds {};
-    HZBufferDescriptorSetInfo hz_buffer_ds {};
-    FrustumDescriptorSetInfo frustum_ds {};
-    IndirectDispatchDescriptorSetInfo indirect_dispatch_ds {};
-    LODDescriptorSetInfo lod_ds {};
+    std::unique_ptr <SComTreeTreeDescriptorSetInfo> sdf_scomtree_ds {};
+    std::unique_ptr <SdfOctreeDescriptorSetInfo> sdf_octree_ds {};
+    std::unique_ptr <MeshDescriptorSetInfo> mesh_ds {};
+    std::unique_ptr <MarchingCubesLookupTableDescriptorSetInfo> marching_cubes_lookup_table_ds {};
+    std::unique_ptr <ActiveLeafsDescriptorSetInfo> active_leafs_ds {};
+    std::unique_ptr <IndirectDescriptorSetInfo> draw_indexed_indirect_command_ds {};
+    std::unique_ptr <HZBufferDescriptorSetInfo> hz_buffer_ds {};
+    std::unique_ptr <FrustumDescriptorSetInfo> frustum_ds {};
+    std::unique_ptr <IndirectDescriptorSetInfo> indirect_dispatch_ds {};
+    std::unique_ptr <LODDescriptorSetInfo> lod_ds {};
 
-    VkPipelineLayout mesh_pipeline_layout {VK_NULL_HANDLE};
-    VkPipeline mesh_pipeline {VK_NULL_HANDLE};
+    VkPipeline mesh_shading_octree_pipeline {VK_NULL_HANDLE};
+    VkPipeline mesh_shading_scomtree_pipeline {VK_NULL_HANDLE};
+    VkPipelineLayout mesh_shading_octree_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout mesh_shading_scomtree_pipeline_layout {VK_NULL_HANDLE};
 
     VkPipeline graphics_frustum_pipeline {VK_NULL_HANDLE};
     VkPipeline graphics_gbuffer_pipeline {VK_NULL_HANDLE};
@@ -109,13 +113,17 @@ private:
     VkPipelineLayout graphics_viewproj_pipeline_layout {VK_NULL_HANDLE};
 
     VkPipeline compute_hz_buffer_pipeline {VK_NULL_HANDLE};
-    VkPipeline compute_active_leafs_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_prepare_indirect_pipeline {VK_NULL_HANDLE};
-    VkPipeline compute_geometry_pipeline {VK_NULL_HANDLE};
+    VkPipeline marching_cubes_octree_pipeline {VK_NULL_HANDLE};
+    VkPipeline marching_cubes_scomtree_pipeline {VK_NULL_HANDLE};
+    VkPipeline traverse_octree_pipeline {VK_NULL_HANDLE};
+    VkPipeline traverse_scomtree_pipeline {VK_NULL_HANDLE};
     VkPipelineLayout compute_hz_buffer_pipeline_layout {VK_NULL_HANDLE};
-    VkPipelineLayout compute_active_leafs_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout compute_prepare_indirect_pipeline_layout {VK_NULL_HANDLE};
-    VkPipelineLayout compute_geometry_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout marching_cubes_octree_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout marching_cubes_scomtree_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout traverse_octree_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout traverse_scomtree_pipeline_layout {VK_NULL_HANDLE};
 
     std::unique_ptr <DeferredShading> deferred_shading;
 

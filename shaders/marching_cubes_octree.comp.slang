@@ -1,4 +1,4 @@
-// marching_cubes.slang
+// marching_cubes_octree.comp.slang
 
 #include "shader_common.hpp"
 

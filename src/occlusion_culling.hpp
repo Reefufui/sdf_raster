@@ -1,16 +1,29 @@
 #pragma once
 
+#include <LiteMath.h>
+#include <vk_copy.h>
+#include <vk_descriptor_sets.h>
+#include <vk_images.h>
+
 #include <memory>
 #include <vector>
 
-#include "LiteMath.h"
-#include "vk_copy.h"
-#include "vk_descriptor_sets.h"
-#include "vk_images.h"
-
 namespace sdf_raster {
 
-struct HZBufferDescriptorSetInfo {
+class HZBufferDescriptorSetInfo {
+public:
+    HZBufferDescriptorSetInfo (VkDevice device
+        , VkPhysicalDevice physical_device
+        , VkCommandPool command_pool
+        , VkQueue queue
+        , VkShaderStageFlags shader_stage_flags
+        , VkExtent2D swapchain_extent
+        , size_t max_frames_in_flight);
+    ~HZBufferDescriptorSetInfo ();
+
+    VkDescriptorSetLayout get_gen_layout () const { return this->gen_descriptor_set_layout; }
+    VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
+
     struct FrameResources {
         VkImage prev_depth_image = VK_NULL_HANDLE;
         LiteMath::float4x4 prev_view_proj;
@@ -23,26 +36,23 @@ struct HZBufferDescriptorSetInfo {
 
         VkBuffer transition_buffer = VK_NULL_HANDLE;
     };
-    std::vector <FrameResources> frame_resources;
+    FrameResources& frame_resources_ref (uint32_t fif_index) { return this->frame_resources [fif_index]; }
+    const VkExtent2D& get_extent () const { return this->extent; }
 
+private:
+    VkDevice device = VK_NULL_HANDLE;
+
+    std::shared_ptr <vk_utils::ICopyEngine> copy_helper;
+
+    std::unique_ptr <vk_utils::DescriptorMaker> desc_maker; 
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
     VkDescriptorSetLayout gen_descriptor_set_layout = VK_NULL_HANDLE;
+
+    std::vector <FrameResources> frame_resources;
     VkDeviceMemory transition_memory = VK_NULL_HANDLE;
     VkExtent2D extent;
     VkSampler sampler;
 };
-
-HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
-        VkDevice device
-        , VkPhysicalDevice physical_device
-        , vk_utils::DescriptorMaker& ds_maker
-        , VkShaderStageFlags shader_stage_flags
-        , VkExtent2D swapchain_extent
-        , size_t max_frames_in_flight);
-
-void change_hz_buffer_layout_to_shader_read_only_optimal (VkDevice device, VkCommandPool pool, VkQueue queue, HZBufferDescriptorSetInfo& info);
-
-void cleanup_hz_buffer_descriptor_set (VkDevice device, HZBufferDescriptorSetInfo& info);
 
 }
 

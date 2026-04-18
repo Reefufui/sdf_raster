@@ -38,6 +38,12 @@ void SDFRasterizer::init () {
     }
 
     this->init_push_constants (); // TODO: init in set_scene ?
+
+    this->frustum_ds = std::make_unique <FrustumDescriptorSetInfo> (this->context->get_device ()
+        , this->context->get_physical_device ()
+        , VK_SHADER_STAGE_COMPUTE_BIT
+        , this->context->get_total_frames ());
+
     this->init_graphics_frustum_pipeline (); // TODO: init when asked to?
 
     // this->register_resizable (); // TODO: re-register in set_scene
@@ -45,8 +51,9 @@ void SDFRasterizer::init () {
 }
 
 void SDFRasterizer::register_resizable () {
+    /*
     auto resize_hz_buffer = [&] () {
-        cleanup_hz_buffer_descriptor_set (this->context->get_device (), this->hz_buffer_ds);
+        this->hz_buffer_ds.reset ();
 
         VK_CHECK_RESULT (vkResetDescriptorPool (this->context->get_device ()
             , this->descriptor_maker_for_resizable->GetPool ()
@@ -58,11 +65,6 @@ void SDFRasterizer::register_resizable () {
             , VK_SHADER_STAGE_COMPUTE_BIT
             , this->context->get_swapchain_extent ()
             , this->context->get_total_frames ());
-
-        change_hz_buffer_layout_to_shader_read_only_optimal (this->context->get_device ()
-            , this->context->get_transfer_command_pool_reset ()
-            , this->context->get_transfer_queue ()
-            , this->hz_buffer_ds);
 
         LOG_INFO ("[{}] Created {} HZ-buffers for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
             , this->context->get_total_frames ()
@@ -92,6 +94,7 @@ void SDFRasterizer::register_resizable () {
 
     this->context->register_resizable (resize_hz_buffer);
     this->context->register_resizable (resize_g_buffer);
+    */
 }
 
 void SDFRasterizer::init_push_constants () {
@@ -109,52 +112,100 @@ void SDFRasterizer::init_push_constants () {
 }
 
 void SDFRasterizer::init_compute_hz_buffer_pipeline () {
+    assert (this->context && "required for 'traverse_octree_pipeline'");
+    assert (this->hz_buffer_ds && "required for 'compute_hz_buffer_pipeline'");
+
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/mip_max_pooling.comp.slang.spv");
     this->compute_hz_buffer_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
-        this->hz_buffer_ds.gen_descriptor_set_layout
+        this->hz_buffer_ds->get_gen_layout ()
         }, 0);
     this->compute_hz_buffer_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
 void SDFRasterizer::init_compute_active_leafs_pipeline () {
+    assert (this->context && "required for 'traverse_octree_pipeline'");
+    assert (this->sdf_octree_ds && "required for 'traverse_octree_pipeline'");
+    assert (this->active_leafs_ds && "required for 'traverse_octree_pipeline'");
+    assert (this->frustum_ds && "required for 'traverse_octree_pipeline'");
+    assert (this->hz_buffer_ds && "required for 'traverse_octree_pipeline'");
+    assert (this->lod_ds && "required for 'traverse_octree_pipeline'");
+
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/octree_traversal.comp.slang.spv");
-    this->compute_active_leafs_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
-            this->sdf_octree_ds.descriptor_set_layout
-            , this->active_leafs_ds.descriptor_set_layout
-            , this->frustum_ds.descriptor_set_layout
-            , this->hz_buffer_ds.descriptor_set_layout
-            , this->lod_ds.descriptor_set_layout
+    this->traverse_octree_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
+            this->sdf_octree_ds->get_layout ()
+            , this->active_leafs_ds->get_layout ()
+            , this->frustum_ds->get_layout ()
+            , this->hz_buffer_ds->get_layout ()
+            , this->lod_ds->get_layout ()
         }, sizeof (PushConstantsData));
-    this->compute_active_leafs_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
+    this->traverse_octree_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
 void SDFRasterizer::init_compute_prepare_indirect_pipeline () {
+    assert (this->context && "required for 'compute_prepare_indirect_pipeline'");
+    assert (this->active_leafs_ds && "required for 'compute_prepare_indirect_pipeline'");
+    assert (this->indirect_dispatch_ds && "required for 'compute_prepare_indirect_pipeline'");
+
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/linear_indirect_prep.comp.slang.spv");
     this->compute_prepare_indirect_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
-            this->active_leafs_ds.descriptor_set_layout
-            , this->indirect_dispatch_ds.descriptor_set_layout
+            this->active_leafs_ds->get_layout ()
+            , this->indirect_dispatch_ds->get_layout ()
         }, sizeof (uint32_t));
     this->compute_prepare_indirect_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
-void SDFRasterizer::init_compute_geometry_pipeline () {
+void SDFRasterizer::init_marching_cubes_octree_pipeline () {
+    assert (this->context && "required for 'marching_cubes_octree_pipeline'");
+    assert (this->sdf_octree_ds && "required for 'marching_cubes_octree_pipeline'");
+    assert (this->mesh_ds && "required for 'marching_cubes_octree_pipeline'");
+    assert (this->marching_cubes_lookup_table_ds && "required for 'marching_cubes_octree_pipeline'");
+    assert (this->active_leafs_ds && "required for 'marching_cubes_octree_pipeline'");
+    assert (this->draw_indexed_indirect_command_ds && "required for 'marching_cubes_octree_pipeline'");
+    assert (this->lod_ds && "required for 'marching_cubes_octree_pipeline'");
+
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
-    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/marching_cubes.comp.slang.spv");
-    this->compute_geometry_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
-            this->sdf_octree_ds.descriptor_set_layout
-            , this->mesh_ds.descriptor_set_layout
-            , this->marching_cubes_lookup_table_ds.descriptor_set_layout
-            , this->active_leafs_ds.descriptor_set_layout
-            , this->draw_indexed_indirect_command_ds.descriptor_set_layout
-            , this->lod_ds.descriptor_set_layout
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/marching_cubes_octree.comp.slang.spv");
+    this->marching_cubes_octree_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device (), {
+            this->sdf_octree_ds->get_layout ()
+            , this->mesh_ds->get_layout ()
+            , this->marching_cubes_lookup_table_ds->get_layout ()
+            , this->active_leafs_ds->get_layout ()
+            , this->draw_indexed_indirect_command_ds->get_layout ()
+            , this->lod_ds->get_layout ()
         }, sizeof (PushConstantsData));
-    this->compute_geometry_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
+    this->marching_cubes_octree_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
+}
+
+void SDFRasterizer::init_marching_cubes_scomtree_pipeline () {
+    assert (this->context && "required for 'marching_cubes_scomtree_pipeline'");
+    assert (this->sdf_scomtree_ds && "required for 'marching_cubes_scomtree_pipeline'");
+    assert (this->mesh_ds && "required for 'marching_cubes_scomtree_pipeline'");
+    assert (this->marching_cubes_lookup_table_ds && "required for 'marching_cubes_scomtree_pipeline'");
+    assert (this->active_leafs_ds && "required for 'marching_cubes_scomtree_pipeline'");
+    assert (this->draw_indexed_indirect_command_ds && "required for 'marching_cubes_scomtree_pipeline'");
+    assert (this->lod_ds && "required for 'marching_cubes_scomtree_pipeline'");
+
+    vk_utils::ComputePipelineMaker compute_pipeline_maker;
+    compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/marching_cubes_octree.comp.slang.spv");
+    this->marching_cubes_octree_pipeline_layout = compute_pipeline_maker.MakeLayout (this->context->get_device ()
+        , {
+            this->sdf_scomtree_ds->get_layout ()
+            , this->mesh_ds->get_layout ()
+            , this->marching_cubes_lookup_table_ds->get_layout ()
+            , this->active_leafs_ds->get_layout ()
+            , this->draw_indexed_indirect_command_ds->get_layout ()
+            , this->lod_ds->get_layout ()
+          }
+        , sizeof (PushConstantsData));
+    this->marching_cubes_scomtree_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
 void SDFRasterizer::init_graphics_identity_pipeline () {
+    assert (this->context && "required for 'graphics_identity_pipeline'");
+
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
@@ -174,13 +225,10 @@ void SDFRasterizer::init_graphics_identity_pipeline () {
     pushConstantRange.size = sizeof (PushConstantsData);
     pushConstantRange.offset = 0;
 
-    std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
-    descriptor_set_layouts.push_back (this->mesh_ds.descriptor_set_layout);
-
     VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = descriptor_set_layouts.size ();
-    pipelineLayoutInfo.pSetLayouts = descriptor_set_layouts.data ();
+    pipelineLayoutInfo.setLayoutCount = 0;
+    pipelineLayoutInfo.pSetLayouts = nullptr;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -323,6 +371,8 @@ void SDFRasterizer::init_graphics_identity_pipeline () {
 }
 
 void SDFRasterizer::init_graphics_viewproj_pipeline () {
+    assert (this->context && "required for 'graphics_identity_pipeline'");
+
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
@@ -488,6 +538,9 @@ void SDFRasterizer::init_graphics_viewproj_pipeline () {
 }
 
 void SDFRasterizer::init_graphics_gbuffer_pipeline () {
+    assert (this->context && "required for 'graphics_gbuffer_pipeline'");
+    assert (this->deferred_shading && "required for 'graphics_gbuffer_pipeline'");
+
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
@@ -655,6 +708,9 @@ void SDFRasterizer::init_graphics_gbuffer_pipeline () {
 }
 
 void SDFRasterizer::init_graphics_lighting_pipeline () {
+    assert (this->context && "required for 'graphics_lighting_pipeline'");
+    assert (this->deferred_shading && "required for 'graphics_lighting_pipeline'");
+
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
@@ -765,13 +821,18 @@ void SDFRasterizer::init_graphics_lighting_pipeline () {
     for (VkShaderModule module : shader_modules) vkDestroyShaderModule (this->context->get_device (), module, nullptr);
 }
 
-void SDFRasterizer::init_mesh_shading_pipeline () {
+void SDFRasterizer::init_mesh_shading_octree_pipeline () {
+    assert (this->context && "required for 'mesh_shading_octree_pipeline'");
+    assert (this->sdf_octree_ds && "required for 'mesh_shading_octree_pipeline'");
+    assert (this->marching_cubes_lookup_table_ds && "required for 'mesh_shading_octree_pipeline'");
+    assert (this->active_leafs_ds && "required for 'mesh_shading_octree_pipeline'");
+
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
 
     shader_stages [0] = vk_utils::loadShader (this->context->get_device ()
-            , "./shaders/marching_cubes.mesh.slang.spv"
+            , "./shaders/marching_cubes_octree.mesh.slang.spv"
             , VK_SHADER_STAGE_MESH_BIT_EXT
             , shader_modules);
 
@@ -786,9 +847,9 @@ void SDFRasterizer::init_mesh_shading_pipeline () {
     pushConstantRange.offset = 0;
 
     std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
-    descriptor_set_layouts.push_back (this->sdf_octree_ds.descriptor_set_layout);
-    descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds.descriptor_set_layout);
-    descriptor_set_layouts.push_back (this->active_leafs_ds.descriptor_set_layout);
+    descriptor_set_layouts.push_back (this->sdf_octree_ds->get_layout ());
+    descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds->get_layout ());
+    descriptor_set_layouts.push_back (this->active_leafs_ds->get_layout ());
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -797,7 +858,7 @@ void SDFRasterizer::init_mesh_shading_pipeline () {
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &this->mesh_pipeline_layout));
+    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &this->mesh_shading_octree_pipeline_layout));
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -884,7 +945,7 @@ void SDFRasterizer::init_mesh_shading_pipeline () {
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
 
-    pipelineInfo.layout = this->mesh_pipeline_layout;
+    pipelineInfo.layout = this->mesh_shading_octree_pipeline_layout;
     if (this->context->get_render_pass () == VK_NULL_HANDLE) {
         throw std::runtime_error ("Render Pass is not initialized!");
     }
@@ -892,11 +953,11 @@ void SDFRasterizer::init_mesh_shading_pipeline () {
     pipelineInfo.subpass = 0;
 
     VK_CHECK_RESULT (vkCreateGraphicsPipelines (this->context->get_device ()
-                , VK_NULL_HANDLE
-                , 1
-                , &pipelineInfo
-                , nullptr
-                , &this->mesh_pipeline));
+        , VK_NULL_HANDLE
+        , 1
+        , &pipelineInfo
+        , nullptr
+        , &this->mesh_shading_octree_pipeline));
 
     for (VkShaderModule module : shader_modules) {
         if (module != VK_NULL_HANDLE) {
@@ -906,7 +967,20 @@ void SDFRasterizer::init_mesh_shading_pipeline () {
     shader_modules.clear ();
 }
 
+void SDFRasterizer::init_mesh_shading_scomtree_pipeline () {
+    assert (this->context && "required for 'mesh_shading_scomtree_pipeline'");
+    assert (this->sdf_scomtree_ds && "required for 'mesh_shading_scomtree_pipeline'");
+    assert (this->marching_cubes_lookup_table_ds && "required for 'mesh_shading_scomtree_pipeline'");
+    assert (this->active_leafs_ds && "required for 'mesh_shading_scomtree_pipeline'");
+
+    // TODO:
+    assert (false && "not yet implemented");
+}
+
 void SDFRasterizer::init_graphics_frustum_pipeline () {
+    assert (this->context && "required for 'graphics_frustum_pipeline'");
+    assert (this->frustum_ds && "required for 'graphics_frustum_pipeline'");
+
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
     std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
@@ -1095,26 +1169,34 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings, SceneState
 
     this->sync_draw_method (scene_state);
 
-    this->stats.active_leafs_count = fetch_active_leaf_counter (this->context->get_copy_helper (), this->active_leafs_ds, this->frame_index);
+    this->stats.active_leafs_count = (this->active_leafs_ds) ? this->active_leafs_ds->fetch_active_leaf_counter (this->frame_index) : 0;
     this->stats.active_roots_count = this->visible_subtrees.size ();
 
-    const auto lod = fetch_lod (this->context->get_copy_helper (), this->lod_ds, this->frame_index, 0);
-    this->stats.lod = lod.lod;
-    this->stats.distance = lod.distance;
+    if (this->lod_ds) {
+        const auto lod = this->lod_ds->fetch_lod (this->frame_index, 0);
+        this->stats.lod = lod.lod;
+        this->stats.distance = lod.distance;
+    } else {
+        this->stats.lod = 0;
+        this->stats.distance = 0;
+    }
+
+    if (this->hz_buffer_ds) {
+        this->push_constants.prev_view_proj = this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj;
+    }
 
     this->push_constants.view_proj = scene_state.camera.get_view_projection_matrix ();
     this->push_constants.camera_pos = LiteMath::to_float4 (scene_state.camera.get_position (), 1.0f);
     this->push_constants.far_plane = scene_state.camera.get_far_plane ();
     this->push_constants.near_plane = scene_state.camera.get_near_plane ();
-    this->push_constants.prev_view_proj = this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj;
     this->push_constants.max_lod = scene_state.max_lod;
     this->push_constants.subtree_root_level = this->cpu_traversed;
     this->push_constants.occlusion_culling_level = scene_state.occlusion_culling_level;
     this->push_constants.frustum_culling_level = scene_state.frustum_culling_level;
     this->push_constants.color_leafs = settings.color_leafs;
 
-    FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds.frustum_geometry_memories_mapped [this->frame_index]);
     if (!settings.frustum_view) {
+        FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds->get_frustum_geometry_memory_ptr (this->frame_index));
         this->update_frustum_buffer (scene_state.camera);
         *ptr = this->frustum;
         frustum_culling (this->subtrees, this->frustum, this->visible_subtrees);
@@ -1147,8 +1229,8 @@ void SDFRasterizer::update_frustum_buffer (const Camera& camera) {
 }
 
 void SDFRasterizer::clear_geometry (VkCommandBuffer cmd_buff) {
-    vkCmdFillBuffer (cmd_buff, this->mesh_ds.vertices_buffers [this->frame_index], 0, VK_WHOLE_SIZE, 0x00000000);
-    vkCmdFillBuffer (cmd_buff, this->mesh_ds.indices_buffers [this->frame_index], 0, VK_WHOLE_SIZE, 0x00000000);
+    vkCmdFillBuffer (cmd_buff, this->mesh_ds->get_vertex_buffer (this->frame_index), 0, VK_WHOLE_SIZE, 0x00000000);
+    vkCmdFillBuffer (cmd_buff, this->mesh_ds->get_index_buffer (this->frame_index), 0, VK_WHOLE_SIZE, 0x00000000);
 
     VkBufferMemoryBarrier buffer_barrier = {};
     buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -1161,8 +1243,8 @@ void SDFRasterizer::clear_geometry (VkCommandBuffer cmd_buff) {
     buffer_barrier.size = VK_WHOLE_SIZE;
 
     std::vector <VkBufferMemoryBarrier> barriers (2, buffer_barrier);
-    barriers [0].buffer = this->mesh_ds.vertices_buffers [this->frame_index];
-    barriers [1].buffer = this->mesh_ds.indices_buffers [this->frame_index];
+    barriers [0].buffer = this->mesh_ds->get_vertex_buffer (this->frame_index);
+    barriers [1].buffer = this->mesh_ds->get_index_buffer (this->frame_index);
 
     vkCmdPipelineBarrier (
         cmd_buff,
@@ -1176,7 +1258,7 @@ void SDFRasterizer::clear_geometry (VkCommandBuffer cmd_buff) {
 }
 
 void SDFRasterizer::copy_depth (VkCommandBuffer cmd_buff) {
-    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
+    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
 
     if (!this->frustum_draw_buffer && this->push_constants.occlusion_culling_level) {
         VkImageMemoryBarrier depth_to_src = {};
@@ -1214,7 +1296,7 @@ void SDFRasterizer::copy_depth (VkCommandBuffer cmd_buff) {
                 .layerCount = 1,
             },
             .imageOffset = { 0, 0, 0 },
-            .imageExtent = { this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height, 1 }
+            .imageExtent = { this->hz_buffer_ds->get_extent ().width, this->hz_buffer_ds->get_extent ().height, 1 }
         };
 
         vkCmdCopyImageToBuffer (cmd_buff
@@ -1315,7 +1397,7 @@ void SDFRasterizer::copy_subtrees (VkCommandBuffer cmd_buff) {
         return;
     }
 
-    vkCmdCopyBuffer (cmd_buff, this->subtrees_buffer, this->sdf_octree_ds.subtree_root_buffers [this->frame_index], 1, &copy_region);
+    vkCmdCopyBuffer (cmd_buff, this->subtrees_buffer, this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index), 1, &copy_region);
 
     VkBufferMemoryBarrier barr = {};
     barr.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -1323,7 +1405,7 @@ void SDFRasterizer::copy_subtrees (VkCommandBuffer cmd_buff) {
     barr.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barr.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barr.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barr.buffer = this->sdf_octree_ds.subtree_root_buffers [this->frame_index];
+    barr.buffer = this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index);
     barr.offset = 0;
     barr.size = VK_WHOLE_SIZE;
 
@@ -1340,7 +1422,7 @@ void SDFRasterizer::copy_subtrees (VkCommandBuffer cmd_buff) {
 void SDFRasterizer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
     // NOTE: expects layout of all hz_buffer_ds mip-images to be VK_IMAGE_LAYOUT_GENERAL
 
-    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
+    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
 
     if (this->push_constants.occlusion_culling_level) {
         vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_hz_buffer_pipeline);
@@ -1348,8 +1430,8 @@ void SDFRasterizer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
         for (uint32_t i = 0; i < f.hz_buffer.mipLvls - 1; ++i) {
             const uint32_t dstMip = i + 1;
 
-            uint32_t dstWidth = std::max (1u, this->hz_buffer_ds.extent.width >> dstMip);
-            uint32_t dstHeight = std::max (1u, this->hz_buffer_ds.extent.height >> dstMip);
+            uint32_t dstWidth = std::max (1u, this->hz_buffer_ds->get_extent ().width >> dstMip);
+            uint32_t dstHeight = std::max (1u, this->hz_buffer_ds->get_extent ().height >> dstMip);
 
             vkCmdBindDescriptorSets (cmd_buff
                 , VK_PIPELINE_BIND_POINT_COMPUTE
@@ -1416,7 +1498,7 @@ void SDFRasterizer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
 }
 
 void SDFRasterizer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
-    vkCmdFillBuffer (cmd_buff, this->active_leafs_ds.active_leaf_counter_buffers [this->frame_index], 0, VK_WHOLE_SIZE, 0x00000000);
+    vkCmdFillBuffer (cmd_buff, this->active_leafs_ds->get_active_leaf_counter_buffer (this->frame_index), 0, VK_WHOLE_SIZE, 0x00000000);
 
     VkBufferMemoryBarrier buffer_barrier = {};
     buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -1425,7 +1507,7 @@ void SDFRasterizer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
     buffer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
     buffer_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     buffer_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    buffer_barrier.buffer = this->active_leafs_ds.active_leaf_counter_buffers [this->frame_index];
+    buffer_barrier.buffer = this->active_leafs_ds->get_active_leaf_counter_buffer (this->frame_index);
     buffer_barrier.offset = 0;
     buffer_barrier.size = VK_WHOLE_SIZE;
 
@@ -1440,23 +1522,52 @@ void SDFRasterizer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
     );
 }
 
-void SDFRasterizer::compute_active_leafs (VkCommandBuffer cmd_buff, std::vector <VkDescriptorSet> ds) {
+void SDFRasterizer::traverse_octree (VkCommandBuffer cmd_buff) {
     if (this->visible_subtrees.empty ()) {
         return;
     }
 
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline);
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->traverse_octree_pipeline);
 
-    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_active_leafs_pipeline_layout,
+    std::vector <VkDescriptorSet> ds (5);
+    ds [0] = this->sdf_octree_ds->get_descriptor_set (this->frame_index);
+    ds [1] = this->active_leafs_ds->get_descriptor_set (this->frame_index);
+    ds [2] = this->frustum_ds->get_descriptor_set (this->frame_index);
+    ds [3] = this->hz_buffer_ds->frame_resources_ref (this->frame_index).descriptor_set;
+    ds [4] = this->lod_ds->get_descriptor_set (this->frame_index);
+
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->traverse_octree_pipeline_layout,
         0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
 
-    vkCmdPushConstants (cmd_buff, this->compute_active_leafs_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+    vkCmdPushConstants (cmd_buff, this->traverse_octree_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
     vkCmdDispatch (cmd_buff, 8, 8, static_cast <uint32_t> (this->visible_subtrees.size ()));
 }
 
+void SDFRasterizer::traverse_scomtree (VkCommandBuffer cmd_buff) {
+    if (this->visible_subtrees.empty ()) {
+        return;
+    }
+
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->traverse_scomtree_pipeline);
+
+    std::vector <VkDescriptorSet> ds (5);
+    ds [0] = this->sdf_scomtree_ds->get_descriptor_set (this->frame_index);
+    ds [1] = this->active_leafs_ds->get_descriptor_set (this->frame_index);
+    ds [2] = this->frustum_ds->get_descriptor_set (this->frame_index);
+    ds [3] = this->hz_buffer_ds->frame_resources_ref (this->frame_index).descriptor_set;
+    ds [4] = this->lod_ds->get_descriptor_set (this->frame_index);
+
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->traverse_scomtree_pipeline_layout
+        , 0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
+
+    vkCmdPushConstants (cmd_buff, this->traverse_scomtree_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+
+    vkCmdDispatch (cmd_buff, 1, 1, static_cast <uint32_t> (this->visible_subtrees.size ())); // TODO: direct descend with (8, 8, <cpu_roots>)
+}
+
 void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff) {
-    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds.frame_resources [this->frame_index];
+    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
 
     VkImageMemoryBarrier first_lvl_as_depth_dst = {};
     first_lvl_as_depth_dst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1509,6 +1620,10 @@ void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff) {
 }
 
 void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size) {
+    assert (this->context && "required for 'prepare_indirect'");
+    assert (this->active_leafs_ds && "required for 'prepare_indirect'");
+    assert (this->indirect_dispatch_ds && "required for 'prepare_indirect'");
+
     VkMemoryBarrier barrier1 = {};
     barrier1.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier1.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -1524,12 +1639,9 @@ void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgro
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prepare_indirect_pipeline);
 
-    assert (!this->active_leafs_ds.descriptor_sets.empty ());
-    assert (!this->indirect_dispatch_ds.descriptor_sets.empty ());
-
     std::array <VkDescriptorSet, 2> ds = {
-        this->active_leafs_ds.descriptor_sets [this->frame_index],
-        this->indirect_dispatch_ds.descriptor_sets [this->frame_index],
+        this->active_leafs_ds->get_descriptor_set (this->frame_index),
+        this->indirect_dispatch_ds->get_descriptor_set (this->frame_index),
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_prepare_indirect_pipeline_layout,
@@ -1554,43 +1666,71 @@ void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgro
         );
 }
 
-void SDFRasterizer::compute_geometry (VkCommandBuffer cmd_buff) {
-    if (this->sdf_octree_ds.descriptor_sets.empty ()) {
-        return;
-    }
+void SDFRasterizer::marching_cubes_octree (VkCommandBuffer cmd_buff) {
+    assert (this->context && "required for 'marching_cubes_octree'");
+    assert (this->sdf_octree_ds && "required for 'marching_cubes_octree'"); // TODO: scomtree
+    assert (this->mesh_ds && "required for 'marching_cubes_octree'");
+    assert (this->marching_cubes_lookup_table_ds && "required for 'marching_cubes_octree'");
+    assert (this->active_leafs_ds && "required for 'marching_cubes_octree'");
+    assert (this->draw_indexed_indirect_command_ds && "required for 'marching_cubes_octree'");
+    assert (this->lod_ds && "required for 'marching_cubes_octree'");
 
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_geometry_pipeline);
-
-    assert (!this->sdf_octree_ds.descriptor_sets.empty ());
-    assert (!this->mesh_ds.descriptor_sets.empty ());
-    assert (this->marching_cubes_lookup_table_ds.descriptor_set != VK_NULL_HANDLE);
-    assert (!this->active_leafs_ds.descriptor_sets.empty ());
-    assert (!this->draw_indexed_indirect_command_ds.descriptor_sets.empty ());
-    assert (!this->lod_ds.descriptor_sets.empty ());
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->marching_cubes_octree_pipeline);
 
     std::array <VkDescriptorSet, 6> ds = {
-        this->sdf_octree_ds.descriptor_sets [this->frame_index],
-        this->mesh_ds.descriptor_sets [this->frame_index],
-        this->marching_cubes_lookup_table_ds.descriptor_set,
-        this->active_leafs_ds.descriptor_sets [this->frame_index],
-        this->draw_indexed_indirect_command_ds.descriptor_sets [this->frame_index],
-        this->lod_ds.descriptor_sets [this->frame_index]
+        this->sdf_octree_ds->get_descriptor_set (this->frame_index),
+        this->mesh_ds->get_descriptor_set (this->frame_index),
+        this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index),
+        this->active_leafs_ds->get_descriptor_set (this->frame_index),
+        this->draw_indexed_indirect_command_ds->get_descriptor_set (this->frame_index),
+        this->lod_ds->get_descriptor_set (this->frame_index)
     };
 
-    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->compute_geometry_pipeline_layout,
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->marching_cubes_octree_pipeline_layout,
                              0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
 
-    vkCmdPushConstants (cmd_buff, this->compute_geometry_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+    vkCmdPushConstants (cmd_buff, this->marching_cubes_octree_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-    vkCmdDispatchIndirect (cmd_buff, this->indirect_dispatch_ds.indirect_dispatch_buffers [this->frame_index], 0);
+    vkCmdDispatchIndirect (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0);
+}
+
+void SDFRasterizer::marching_cubes_scomtree (VkCommandBuffer cmd_buff) {
+    assert (this->context && "required for 'marching_cubes_scomtree'");
+    assert (this->sdf_scomtree_ds && "required for 'marching_cubes_scomtree'"); // TODO: scomtree
+    assert (this->mesh_ds && "required for 'marching_cubes_scomtree'");
+    assert (this->marching_cubes_lookup_table_ds && "required for 'marching_cubes_scomtree'");
+    assert (this->active_leafs_ds && "required for 'marching_cubes_scomtree'");
+    assert (this->draw_indexed_indirect_command_ds && "required for 'marching_cubes_scomtree'");
+    assert (this->lod_ds && "required for 'marching_cubes_scomtree'");
+
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->marching_cubes_scomtree_pipeline);
+
+    std::array <VkDescriptorSet, 6> ds = {
+        this->sdf_scomtree_ds->get_descriptor_set (this->frame_index),
+        this->mesh_ds->get_descriptor_set (this->frame_index),
+        this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index),
+        this->active_leafs_ds->get_descriptor_set (this->frame_index),
+        this->draw_indexed_indirect_command_ds->get_descriptor_set (this->frame_index),
+        this->lod_ds->get_descriptor_set (this->frame_index)
+    };
+
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->marching_cubes_scomtree_pipeline_layout
+        , 0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
+
+    vkCmdPushConstants (cmd_buff, this->marching_cubes_scomtree_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+
+    vkCmdDispatchIndirect (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0);
 }
 
 void SDFRasterizer::geometry_barrier (VkCommandBuffer cmd_buff) {
+    assert (this->mesh_ds && "required for 'geometry_barrier'");
+    assert (this->draw_indexed_indirect_command_ds && "required for 'geometry_barrier'");
+
     VkBufferMemoryBarrier vertex_buffer_barrier = {};
     vertex_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     vertex_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     vertex_buffer_barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-    vertex_buffer_barrier.buffer = this->mesh_ds.vertices_buffers [this->frame_index];
+    vertex_buffer_barrier.buffer = this->mesh_ds->get_vertex_buffer (this->frame_index);
     vertex_buffer_barrier.offset = 0;
     vertex_buffer_barrier.size = VK_WHOLE_SIZE;
 
@@ -1598,7 +1738,7 @@ void SDFRasterizer::geometry_barrier (VkCommandBuffer cmd_buff) {
     index_buffer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     index_buffer_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     index_buffer_barrier.dstAccessMask = VK_ACCESS_INDEX_READ_BIT;
-    index_buffer_barrier.buffer = this->mesh_ds.indices_buffers [this->frame_index];
+    index_buffer_barrier.buffer = this->mesh_ds->get_index_buffer (this->frame_index);
     index_buffer_barrier.offset = 0;
     index_buffer_barrier.size = VK_WHOLE_SIZE;
 
@@ -1620,7 +1760,7 @@ void SDFRasterizer::geometry_barrier (VkCommandBuffer cmd_buff) {
     indirect_draw_barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
     indirect_draw_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     indirect_draw_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    indirect_draw_barrier.buffer = this->draw_indexed_indirect_command_ds.draw_indexed_indirect_command_buffers [this->frame_index];
+    indirect_draw_barrier.buffer = this->draw_indexed_indirect_command_ds->get_indirect_buffer (this->frame_index);
     indirect_draw_barrier.offset = 0;
     indirect_draw_barrier.size = VK_WHOLE_SIZE;
 
@@ -1671,12 +1811,12 @@ void SDFRasterizer::draw_geometry (VkCommandBuffer cmd_buff) {
 
     vkCmdPushConstants (cmd_buff, this->graphics_identity_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-    VkBuffer vertex_buffers [] = {this->mesh_ds.vertices_buffers [this->frame_index]};
+    VkBuffer vertex_buffers [] = {this->mesh_ds->get_vertex_buffer (this->frame_index)};
     VkDeviceSize offsets [] = {0};
     vkCmdBindVertexBuffers (cmd_buff, 0, 1, vertex_buffers, offsets);
-    vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds.indices_buffers [this->frame_index], 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds->get_index_buffer (this->frame_index), 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdDrawIndexedIndirect (cmd_buff, this->draw_indexed_indirect_command_ds.draw_indexed_indirect_command_buffers [this->frame_index], 0, 1, 0);
+    vkCmdDrawIndexedIndirect (cmd_buff, this->draw_indexed_indirect_command_ds->get_indirect_buffer (this->frame_index), 0, 1, 0);
 
     vkCmdEndRenderPass (cmd_buff);
 }
@@ -1747,10 +1887,10 @@ void SDFRasterizer::raster_explicit (VkCommandBuffer cmd_buff) {
         vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_viewproj_pipeline);
         vkCmdPushConstants (cmd_buff, this->graphics_viewproj_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-        VkBuffer v_buffers [] = { this->mesh_ds.vertices_buffers [this->frame_index] };
+        VkBuffer v_buffers [] = { this->mesh_ds->get_vertex_buffer (this->frame_index) };
         VkDeviceSize offsets [] = { 0 };
         vkCmdBindVertexBuffers (cmd_buff, 0, 1, v_buffers, offsets);
-        vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds.indices_buffers [this->frame_index], 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds->get_index_buffer (this->frame_index), 0, VK_INDEX_TYPE_UINT32);
 
         vkCmdDrawIndexed (cmd_buff, this->explicit_index_count, 1, 0, 0, 0);
     }
@@ -1796,10 +1936,10 @@ void SDFRasterizer::raster_explicit_deferred (VkCommandBuffer cmd_buff) {
         vkCmdPushConstants (cmd_buff, this->graphics_gbuffer_pipeline_layout
             , VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-        VkBuffer v_buffers [] = { this->mesh_ds.vertices_buffers [fif_idx] };
+        VkBuffer v_buffers [] = { this->mesh_ds->get_vertex_buffer (fif_idx) };
         VkDeviceSize offsets [] = { 0 };
         vkCmdBindVertexBuffers (cmd_buff, 0, 1, v_buffers, offsets);
-        vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds.indices_buffers [fif_idx], 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds->get_index_buffer (fif_idx), 0, VK_INDEX_TYPE_UINT32);
         
         vkCmdDrawIndexed (cmd_buff, this->explicit_index_count, 1, 0, 0, 0);
     }
@@ -1841,17 +1981,11 @@ void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
-    std::vector <VkDescriptorSet> compute_active_leafs_ds (5);
-    compute_active_leafs_ds [0] = this->sdf_octree_ds.descriptor_sets [this->frame_index];
-    compute_active_leafs_ds [1] = this->active_leafs_ds.descriptor_sets [this->frame_index];
-    compute_active_leafs_ds [2] = this->frustum_ds.descriptor_sets [this->frame_index];
-    compute_active_leafs_ds [3] = this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set;
-    compute_active_leafs_ds [4] = this->lod_ds.descriptor_sets [this->frame_index];
-    this->compute_active_leafs (cmd_buff, compute_active_leafs_ds);
+    this->traverse_octree (cmd_buff);
 
     this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_MESH_WORKGROUP});
 
-    if (this->mesh_pipeline == VK_NULL_HANDLE) {
+    if (this->mesh_shading_octree_pipeline == VK_NULL_HANDLE) {
         if (this->context->get_use_mesh_shading ()) {
             throw std::logic_error ("Mesh shader pipeline is NULL_HANDLE despite mesh shading being supported.");
         }
@@ -1889,46 +2023,27 @@ void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     scissor.extent = extent;
     vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
 
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_pipeline);
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_octree_pipeline);
 
     std::array <VkDescriptorSet, 3> ds = {
-        this->sdf_octree_ds.descriptor_sets [this->frame_index]
-        , this->marching_cubes_lookup_table_ds.descriptor_set
-        , this->active_leafs_ds.descriptor_sets [this->frame_index]
+        this->sdf_octree_ds->get_descriptor_set (this->frame_index)
+        , this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index)
+        , this->active_leafs_ds->get_descriptor_set (this->frame_index)
     };
 
-    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_pipeline_layout
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_octree_pipeline_layout
         , 0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
 
-    vkCmdPushConstants (cmd_buff, this->mesh_pipeline_layout, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+    vkCmdPushConstants (cmd_buff, this->mesh_shading_octree_pipeline_layout, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
     assert (sizeof (IndirectDispatch) == sizeof (VkDrawMeshTasksIndirectCommandEXT));
-    vkCmdDrawMeshTasksIndirectEXT (cmd_buff, this->indirect_dispatch_ds.indirect_dispatch_buffers [this->frame_index], 0, 1, sizeof (VkDrawMeshTasksIndirectCommandEXT));
+    vkCmdDrawMeshTasksIndirectEXT (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0, 1, sizeof (VkDrawMeshTasksIndirectCommandEXT));
 
     vkCmdEndRenderPass (cmd_buff);
 }
 
 void SDFRasterizer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
-    this->copy_subtrees (cmd_buff);
-    this->reset_active_leafs_counter (cmd_buff);
-
-    std::vector <VkDescriptorSet> compute_active_leafs_ds (5);
-    compute_active_leafs_ds [0] = this->sdf_octree_ds.descriptor_sets [this->frame_index];
-    compute_active_leafs_ds [1] = this->active_leafs_ds.descriptor_sets [this->frame_index];
-    compute_active_leafs_ds [2] = this->frustum_ds.descriptor_sets [this->frame_index];
-    compute_active_leafs_ds [3] = this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set;
-    compute_active_leafs_ds [4] = this->lod_ds.descriptor_sets [this->frame_index];
-    this->compute_active_leafs (cmd_buff, compute_active_leafs_ds);
-
-    this->clear_geometry (cmd_buff);
-    this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_COMPUTE_WORKGROUP});
-    this->compute_geometry (cmd_buff);
-    this->geometry_barrier (cmd_buff);
-    this->draw_geometry (cmd_buff);
-}
-
-void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
-    if (this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image != VK_NULL_HANDLE) {
+    if (this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image != VK_NULL_HANDLE) {
         this->copy_depth (cmd_buff);
         this->compute_hz_buffer (cmd_buff);
     } else {
@@ -1939,25 +2054,47 @@ void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buf
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
-    std::vector <VkDescriptorSet> compute_active_leafs_ds (5);
-    compute_active_leafs_ds [0] = this->sdf_scomtree_ds.descriptor_sets [this->frame_index];
-    compute_active_leafs_ds [1] = this->active_leafs_ds.descriptor_sets [this->frame_index];
-    compute_active_leafs_ds [2] = this->frustum_ds.descriptor_sets [this->frame_index];
-    compute_active_leafs_ds [3] = this->hz_buffer_ds.frame_resources [this->frame_index].descriptor_set;
-    compute_active_leafs_ds [4] = this->lod_ds.descriptor_sets [this->frame_index];
-    this->compute_active_leafs (cmd_buff, compute_active_leafs_ds);
+    this->traverse_octree (cmd_buff);
 
     this->clear_geometry (cmd_buff);
-    this->prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
-    this->compute_geometry (cmd_buff);
+    this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_COMPUTE_WORKGROUP});
+    this->marching_cubes_octree (cmd_buff);
     this->geometry_barrier (cmd_buff);
     this->draw_geometry (cmd_buff);
 
     this->hz_buffer_barrier (cmd_buff);
 
     if (!this->frustum_draw_buffer) {
-        this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image = this->context->get_depth_buffer ().image;
-        this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj = this->push_constants.view_proj;
+        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->context->get_depth_buffer ().image;
+        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
+    }
+}
+
+void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
+    if (this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image != VK_NULL_HANDLE) {
+        this->copy_depth (cmd_buff);
+        this->compute_hz_buffer (cmd_buff);
+    } else {
+        LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
+        this->push_constants.occlusion_culling_level = false;
+    }
+
+    this->copy_subtrees (cmd_buff);
+    this->reset_active_leafs_counter (cmd_buff);
+
+    this->traverse_scomtree (cmd_buff);
+
+    this->clear_geometry (cmd_buff);
+    this->prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
+    this->marching_cubes_octree (cmd_buff);
+    this->geometry_barrier (cmd_buff);
+    this->draw_geometry (cmd_buff);
+
+    this->hz_buffer_barrier (cmd_buff);
+
+    if (!this->frustum_draw_buffer) {
+        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->context->get_depth_buffer ().image;
+        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
     }
 }
 
@@ -2007,30 +2144,27 @@ void SDFRasterizer::unset_scene () {
     this->visible_subtrees.clear ();
     this->cleanup_subtree_roots_staging_buffer ();
 
-    cleanup_active_leafs_descriptor_set (this->context->get_device (), this->active_leafs_ds);
-    cleanup_draw_indexed_indirect_command_descriptor_set (this->context->get_device (), this->draw_indexed_indirect_command_ds);
-    cleanup_frustum_descriptor_set (this->context->get_device (), this->frustum_ds);
-    cleanup_hz_buffer_descriptor_set (this->context->get_device (), this->hz_buffer_ds);
-    cleanup_indirect_dispatch_descriptor_set (this->context->get_device (), this->indirect_dispatch_ds);
-    cleanup_lod_descriptor_set (this->context->get_device (), this->lod_ds);
-    cleanup_lookup_table_descriptor_set (this->context->get_device (), this->marching_cubes_lookup_table_ds);
-    cleanup_mesh_descriptor_set (this->context->get_device (), this->mesh_ds);
-    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
-    cleanup_sdf_scomtree_descriptor_set (this->context->get_device (), this->sdf_scomtree_ds);
+    this->active_leafs_ds.reset ();
+    this->draw_indexed_indirect_command_ds.reset ();
+    this->hz_buffer_ds.reset ();
+    this->indirect_dispatch_ds.reset ();
+    this->lod_ds.reset ();
+    this->marching_cubes_lookup_table_ds.reset ();
+    this->mesh_ds.reset ();
+    this->sdf_octree_ds.reset ();
+    this->sdf_scomtree_ds.reset ();
 
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_active_leafs_pipeline, this->compute_active_leafs_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_geometry_pipeline, this->compute_geometry_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->traverse_octree_pipeline, this->traverse_octree_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->marching_cubes_octree_pipeline, this->marching_cubes_octree_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_hz_buffer_pipeline, this->compute_hz_buffer_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prepare_indirect_pipeline, this->compute_prepare_indirect_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_gbuffer_pipeline, this->graphics_gbuffer_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_identity_pipeline, this->graphics_identity_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_lighting_pipeline, this->graphics_lighting_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_viewproj_pipeline, this->graphics_viewproj_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->mesh_pipeline, this->mesh_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->mesh_shading_octree_pipeline, this->mesh_shading_octree_pipeline_layout);
 
     this->deferred_shading.reset ();
-    this->descriptor_maker_for_resizable.reset ();
-    this->descriptor_maker.reset ();
 }
 
 void SDFRasterizer::set_scene (Scene* scene) {
@@ -2042,15 +2176,6 @@ void SDFRasterizer::set_scene (Scene* scene) {
         LOG_WARN ("[{}] 'set_scene' called with a null scene. Resources cleared.", RENDERER_NAME);
         return;
     }
-
-    vk_utils::DescriptorTypesVec ds_type_vec {};
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000);
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000);
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000);
-    ds_type_vec.emplace_back (VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000);
-
-    this->descriptor_maker = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
-    this->descriptor_maker_for_resizable = std::make_shared <vk_utils::DescriptorMaker> (this->context->get_device (), ds_type_vec, 100);
 
     const auto method = scene->get_state ().draw_method;
 
@@ -2071,54 +2196,44 @@ void SDFRasterizer::set_scene (Scene* scene) {
     }
 
     if (method == DrawMethod::Explicit || method == DrawMethod::ExplicitDeferred || method == DrawMethod::OctreeCompute || method == DrawMethod::SComTreeCompute) {
-	    this->mesh_ds = create_mesh_descriptor_set (this->context->get_device ()
+	    this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
 	        , this->context->get_physical_device ()
 	        , this->context->get_copy_helper ()
-	        , *descriptor_maker
 	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
 	        , this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS
 	        , this->context->get_total_frames ());
     }
 
     if (method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh || method == DrawMethod::SComTreeCompute) {
-	    this->marching_cubes_lookup_table_ds = create_lookup_table_descriptor_set (this->context->get_device ()
+	    this->marching_cubes_lookup_table_ds = std::make_unique <MarchingCubesLookupTableDescriptorSetInfo> (this->context->get_device ()
 	        , this->context->get_physical_device ()
 	        , this->context->get_copy_helper ()
-	        , *descriptor_maker
 	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
 
-        this->hz_buffer_ds = create_hz_buffer_descriptor_set (this->context->get_device ()
+        this->hz_buffer_ds = std::make_unique <HZBufferDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_physical_device ()
-            , *(this->descriptor_maker_for_resizable)
+            , this->context->get_transfer_command_pool_reset ()
+            , this->context->get_transfer_queue ()
             , VK_SHADER_STAGE_COMPUTE_BIT
             , this->context->get_swapchain_extent ()
             , this->context->get_total_frames ());
 
-        change_hz_buffer_layout_to_shader_read_only_optimal (this->context->get_device ()
-            , this->context->get_transfer_command_pool_reset ()
-            , this->context->get_transfer_queue ()
-            , this->hz_buffer_ds);
-
+        /*
         LOG_INFO ("[{}] Created {} HZ-buffers for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
             , this->context->get_total_frames ()
             , this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height
             , this->hz_buffer_ds.frame_resources [0].hz_buffer.mipLvls);
+            */
 
-        this->frustum_ds = create_frustum_descriptor_set (this->context->get_device ()
+        this->indirect_dispatch_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_physical_device ()
-            , *descriptor_maker
             , VK_SHADER_STAGE_COMPUTE_BIT
+            , sizeof (IndirectDispatch)
             , this->context->get_total_frames ());
 
-        this->indirect_dispatch_ds = create_indirect_dispatch_descriptor_set (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , *descriptor_maker
-            , VK_SHADER_STAGE_COMPUTE_BIT
-            , this->context->get_total_frames ());
-
-        this->lod_ds = create_lod_descriptor_set (this->context->get_device ()
+        this->lod_ds = std::make_unique <LODDescriptorSetInfo> (this->context->get_device ()
+            , this->context->get_copy_helper ()
 	        , this->context->get_physical_device ()
-	        , *descriptor_maker
 	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
 	        , 1 // TODO: edit to match max models count in scene
 	        , this->context->get_total_frames ());
@@ -2127,18 +2242,17 @@ void SDFRasterizer::set_scene (Scene* scene) {
     if (method == DrawMethod::OctreeCompute || method == DrawMethod::SComTreeCompute) {
         VkDeviceSize active_leaf_size = (method == DrawMethod::OctreeCompute) ? sizeof (NodeContext) : sizeof (SComTreeBrickPayload);
 
-	    this->active_leafs_ds = create_active_leafs_descriptor_set (this->context->get_device ()
+	    this->active_leafs_ds = std::make_unique <ActiveLeafsDescriptorSetInfo> (this->context->get_device ()
 	        , this->context->get_physical_device ()
 	        , this->context->get_copy_helper ()
-	        , *descriptor_maker
 	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
 	        , this->push_constants.active_leafs_max_count * active_leaf_size
 	        , this->context->get_total_frames ());
 
-        this->draw_indexed_indirect_command_ds = create_draw_indexed_indirect_command_descriptor_set (this->context->get_device ()
+        this->draw_indexed_indirect_command_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_physical_device ()
-            , *descriptor_maker
             , VK_SHADER_STAGE_COMPUTE_BIT
+            , sizeof (VkDrawIndexedIndirectCommand)
             , this->context->get_total_frames ());
     }
 
@@ -2146,12 +2260,10 @@ void SDFRasterizer::set_scene (Scene* scene) {
         const SdfOctree& scene_data = octree_scene->get_octree_data ();
         const SceneState& scene_state = octree_scene->get_state ();
 
-        // TODO: scene_ds
-        this->sdf_octree_ds = create_sdf_octree_descriptor_set (
+        this->sdf_octree_ds = std::make_unique <SdfOctreeDescriptorSetInfo> (
             this->context->get_device (),
             this->context->get_physical_device (),
             this->context->get_copy_helper (),
-            *descriptor_maker,
             VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT,
             scene_data,
             scene_state.cpu_traversed,
@@ -2163,12 +2275,11 @@ void SDFRasterizer::set_scene (Scene* scene) {
 	    this->init_subtree_roots_staging_buffer ();
 
 	    LOG_INFO ("[{}] Created gpu resources for sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
-	           , scene_state.name
-	           , scene_state.octree_depth
-	           , this->cpu_traversed
-	           , scene_state.octree_depth - this->cpu_traversed);
+	         , scene_state.name
+	         , scene_state.octree_depth
+	         , this->cpu_traversed
+	         , scene_state.octree_depth - this->cpu_traversed);
     } else if (ObjScene* obj_scene = dynamic_cast <ObjScene*> (scene)) {
-        /*
         LOG_INFO ("[{}] Received a scene that of type ObjScene.", RENDERER_NAME);
 
         const auto& model_data = obj_scene->get_model_data ();
@@ -2183,12 +2294,12 @@ void SDFRasterizer::set_scene (Scene* scene) {
 
         for (uint32_t i = 0; i < this->context->get_total_frames (); ++i) {
             this->context->get_copy_helper ()->UpdateBuffer (
-                this->mesh_ds.vertices_buffers [i], 0
+                this->mesh_ds->get_vertex_buffer (i), 0
                 , model_data.vertices.data (), model_data.vertices.size () * sizeof (Vertex)
             );
 
             this->context->get_copy_helper()->UpdateBuffer(
-                this->mesh_ds.indices_buffers [i], 0
+                this->mesh_ds->get_index_buffer (i), 0
                 , model_data.indices.data () , model_data.indices.size () * sizeof (uint32_t)
             );
         }
@@ -2197,18 +2308,14 @@ void SDFRasterizer::set_scene (Scene* scene) {
 
         LOG_INFO ("[{}] Created GPU resources for OBJ scene '{}'. Vertices: {}, Indices: {}"
             , RENDERER_NAME, scene_state.name, model_data.vertices.size (), this->explicit_index_count);
-        */
     } else if (SComTreeScene* scomtree_scene = dynamic_cast <SComTreeScene*> (scene)) {
         /*
         const SComTree& scene_data = scomtree_scene->get_octree_data ();
         const SceneState& scene_state = scomtree_scene->get_state ();
 
-        cleanup_sdf_scomtree_descriptor_set (this->context->get_device (), this->sdf_scomtree_ds);
-
-        this->sdf_scomtree_ds = create_sdf_scomtree_descriptor_set (this->context->get_device ()
+        this->sdf_scomtree_ds = std::make_unique <SComTreeTreeDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()
-            , *descriptor_maker
             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
             , scene_data
             , scene_state.cpu_traversed
@@ -2260,7 +2367,7 @@ void SDFRasterizer::set_scene (Scene* scene) {
         this->init_compute_hz_buffer_pipeline (); // NOTE: OctreeMesh || OctreeCompute
         this->init_compute_active_leafs_pipeline (); // NOTE: OctreeMesh || OctreeCompute
         this->init_compute_prepare_indirect_pipeline ();
-        this->init_compute_geometry_pipeline ();
+        this->init_marching_cubes_octree_pipeline ();
         this->init_graphics_identity_pipeline ();
     }
 
@@ -2276,7 +2383,7 @@ void SDFRasterizer::set_scene (Scene* scene) {
     }
 
     if (method == DrawMethod::OctreeMesh) {
-        this->init_mesh_shading_pipeline ();
+        this->init_mesh_shading_octree_pipeline ();
     }
 }
 
@@ -2330,11 +2437,12 @@ void SDFRasterizer::shutdown (Settings& /*settings*/) {
     this->unset_scene ();
 
     if (this->frustum_draw_buffer) {
-    //     settings.frustum_view = false;
-    //     scene_state.camera = this->frustum_draw_buffer->get_camera ();
+        // settings.frustum_view = false;
+        // scene_state.camera = this->frustum_draw_buffer->get_camera ();
         this->frustum_draw_buffer.reset ();
     }
 
+    this->frustum_ds.reset ();
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_frustum_pipeline, this->graphics_frustum_pipeline_layout);
 
     this->initialized = false;

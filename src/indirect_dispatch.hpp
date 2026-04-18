@@ -1,29 +1,36 @@
 #pragma once
 
-#include <memory>
-#include <string>
-#include <unordered_map>
-#include <vector>
+#include <vk_descriptor_sets.h>
 
-#include "vk_descriptor_sets.h"
+#include <memory>
+#include <vector>
 
 namespace sdf_raster {
 
-    struct IndirectDispatchDescriptorSetInfo {
-        std::vector <VkDescriptorSet> descriptor_sets;
-        VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
+class IndirectDescriptorSetInfo {
+public:
+    IndirectDescriptorSetInfo (VkDevice device
+        , VkPhysicalDevice physical_device
+        , VkShaderStageFlags shader_stage_flags
+        , VkDeviceSize indirect_dispatch_size
+        , size_t max_frames_in_flight);
+    ~IndirectDescriptorSetInfo ();
 
-        std::vector <VkBuffer> indirect_dispatch_buffers;
-        VkDeviceMemory memory = VK_NULL_HANDLE;
-    };
+    VkDescriptorSet get_descriptor_set (uint32_t fif_index) const { return this->descriptor_sets [fif_index]; }
+    VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
 
-    IndirectDispatchDescriptorSetInfo create_indirect_dispatch_descriptor_set (
-            VkDevice device
-            , VkPhysicalDevice physical_device
-            , vk_utils::DescriptorMaker& ds_maker
-            , VkShaderStageFlags shader_stage_flags
-            , size_t max_frames_in_flight);
+    VkBuffer get_indirect_buffer (uint32_t fif_index) const { return this->indirect_dispatch_buffers [fif_index]; }
 
-    void cleanup_indirect_dispatch_descriptor_set (VkDevice device, IndirectDispatchDescriptorSetInfo& info);
+private:
+    VkDevice device = VK_NULL_HANDLE;
+
+    std::unique_ptr <vk_utils::DescriptorMaker> desc_maker; 
+    std::vector <VkDescriptorSet> descriptor_sets;
+    VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
+
+    std::vector <VkBuffer> indirect_dispatch_buffers;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+};
+
 }
 

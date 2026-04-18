@@ -1,23 +1,22 @@
 #include "occlusion_culling.hpp"
 
-#include "vk_buffers.h"
-#include "vk_utils.h"
+#include <vk_buffers.h>
+#include <vk_utils.h>
 
 namespace sdf_raster {
 
-HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
-        VkDevice device
+HZBufferDescriptorSetInfo::HZBufferDescriptorSetInfo (VkDevice device
         , VkPhysicalDevice physical_device
-        , vk_utils::DescriptorMaker& ds_maker
+        , VkCommandPool command_pool
+        , VkQueue queue
         , VkShaderStageFlags shader_stage_flags
         , VkExtent2D swapchain_extent
-        , size_t max_frames_in_flight) {
+        , size_t max_frames_in_flight) : device (device) {
     const uint32_t width = swapchain_extent.width;
     const uint32_t height = swapchain_extent.height;
 
     assert (device != VK_NULL_HANDLE && "VkDevice must not be VK_NULL_HANDLE");
     assert (physical_device != VK_NULL_HANDLE && "VkPhysicalDevice must not be VK_NULL_HANDLE");
-    assert (ds_maker.GetPool () != VK_NULL_HANDLE && "VkDescriptorPool of vk_utils::DescriptorMaker must not be VK_NULL_HANDLE");
     assert (shader_stage_flags != 0 && "shader_stage_flags must specify at least one stage");
     assert (width > 0 && "Swapchain width must be positive");
     assert (height > 0 && "Swapchain height must be positive");
@@ -25,9 +24,8 @@ HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
 
     const uint32_t mip_lvls = static_cast <uint32_t> (std::floor (std::log2 (std::max (width, height)) + 1));
 
-    HZBufferDescriptorSetInfo info = {};
-    info.extent = swapchain_extent;
-    info.frame_resources.resize (max_frames_in_flight);
+    this->extent = swapchain_extent;
+    this->frame_resources.resize (max_frames_in_flight);
 
     VkSamplerCreateInfo sampler_info = {};
     sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -45,14 +43,20 @@ HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
     sampler_info.maxLod = static_cast <float> (mip_lvls);
     sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
     sampler_info.unnormalizedCoordinates = VK_FALSE;
-    VK_CHECK_RESULT (vkCreateSampler (device, &sampler_info, nullptr, &info.sampler));
+    VK_CHECK_RESULT (vkCreateSampler (device, &sampler_info, nullptr, &this->sampler));
 
     const VkFormat format = VK_FORMAT_R32_SFLOAT;
     const VkImageUsageFlags usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     VkImageCreateInfo image_info = vk_utils::defaultImageCreateInfo (width, height, format, usage, mip_lvls);
 
+    vk_utils::DescriptorTypesVec pool_sizes = {
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, max_frames_in_flight }
+        , { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2 * mip_lvls * max_frames_in_flight }
+    };
+    this->desc_maker = std::make_unique <vk_utils::DescriptorMaker> (device, pool_sizes, max_frames_in_flight + (mip_lvls - 1) * max_frames_in_flight);
+
     for (size_t frame_idx = 0; frame_idx < max_frames_in_flight; ++frame_idx) {
-        HZBufferDescriptorSetInfo::FrameResources& f = info.frame_resources [frame_idx];
+        HZBufferDescriptorSetInfo::FrameResources& f = this->frame_resources [frame_idx];
         f.hz_buffer.mipLvls = mip_lvls;
         f.hz_buffer.format = format;
         f.prev_depth_image = VK_NULL_HANDLE;
@@ -79,15 +83,15 @@ HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
 
         f.gen_descriptor_sets.resize (f.hz_buffer.mipLvls - 1);
         for (size_t i = 0; i < mip_lvls - 1; ++i) {
-            ds_maker.BindBegin (shader_stage_flags);
-            ds_maker.BindImage (0, f.gen_image_views [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
-            ds_maker.BindImage (1, f.gen_image_views [i + 1], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
-            ds_maker.BindEnd (&f.gen_descriptor_sets [i], &info.gen_descriptor_set_layout);
+            this->desc_maker->BindBegin (shader_stage_flags);
+            this->desc_maker->BindImage (0, f.gen_image_views [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
+            this->desc_maker->BindImage (1, f.gen_image_views [i + 1], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
+            this->desc_maker->BindEnd (&f.gen_descriptor_sets [i], &this->gen_descriptor_set_layout);
         }
 
-        ds_maker.BindBegin (shader_stage_flags);
-        ds_maker.BindImage (0, f.hz_buffer.view, info.sampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-        ds_maker.BindEnd (&f.descriptor_set, &info.descriptor_set_layout);
+        this->desc_maker->BindBegin (shader_stage_flags);
+        this->desc_maker->BindImage (0, f.hz_buffer.view, this->sampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        this->desc_maker->BindEnd (&f.descriptor_set, &this->descriptor_set_layout);
     }
 
     const VkDeviceSize transition_size = width * height * sizeof (float);
@@ -96,27 +100,23 @@ HZBufferDescriptorSetInfo create_hz_buffer_descriptor_set (
 
     for (size_t i = 0; i < max_frames_in_flight; ++i) {
         buffers [i] = vk_utils::createBuffer (device, transition_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, &mem_reqs [i]);
-        info.frame_resources [i].transition_buffer = buffers [i];
+        this->frame_resources [i].transition_buffer = buffers [i];
     }
 
-    info.transition_memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
+    this->transition_memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
 
-    return info;
-}
-
-void change_hz_buffer_layout_to_shader_read_only_optimal (VkDevice device, VkCommandPool pool, VkQueue queue, HZBufferDescriptorSetInfo& info) {
     VkCommandBufferBeginInfo begin_info {};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags = 0;
     begin_info.pInheritanceInfo = nullptr;
 
-    VkCommandBuffer cmd_buff = vk_utils::createCommandBuffer (device, pool);
+    VkCommandBuffer cmd_buff = vk_utils::createCommandBuffer (device, command_pool);
     VK_CHECK_RESULT (vkBeginCommandBuffer (cmd_buff, &begin_info));
 
     VkImageSubresourceRange whole_image {};
     whole_image.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     whole_image.baseMipLevel = 0;
-    whole_image.levelCount = info.frame_resources [0].hz_buffer.mipLvls;
+    whole_image.levelCount = this->frame_resources [0].hz_buffer.mipLvls;
     whole_image.baseArrayLayer = 0;
     whole_image.layerCount = 1;
 
@@ -131,8 +131,8 @@ void change_hz_buffer_layout_to_shader_read_only_optimal (VkDevice device, VkCom
     barr.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barr.subresourceRange = whole_image;
 
-    for (size_t i = 0; i < info.frame_resources.size (); ++i) {
-        barr.image = info.frame_resources [i].hz_buffer.image;
+    for (size_t i = 0; i < this->frame_resources.size (); ++i) {
+        barr.image = this->frame_resources [i].hz_buffer.image;
 
         vkCmdPipelineBarrier (cmd_buff
             , VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
@@ -147,8 +147,12 @@ void change_hz_buffer_layout_to_shader_read_only_optimal (VkDevice device, VkCom
     vk_utils::executeCommandBufferNow (cmd_buff, queue, device);
 }
 
-void cleanup_hz_buffer_descriptor_set (VkDevice device, HZBufferDescriptorSetInfo& info) {
-    for (auto& f : info.frame_resources) {
+HZBufferDescriptorSetInfo::~HZBufferDescriptorSetInfo () {
+    if (this->device == VK_NULL_HANDLE) return;
+
+    this->desc_maker.reset ();
+
+    for (auto& f : this->frame_resources) {
         vk_utils::deleteImg (device, &f.hz_buffer);
 
         for (auto& view : f.gen_image_views) {
@@ -167,19 +171,17 @@ void cleanup_hz_buffer_descriptor_set (VkDevice device, HZBufferDescriptorSetInf
         }
     }
 
-    info.frame_resources.clear ();
+    this->frame_resources.clear ();
 
-    if (info.sampler != VK_NULL_HANDLE) {
-        vkDestroySampler (device, info.sampler, nullptr);
-        info.sampler = VK_NULL_HANDLE;
+    if (this->sampler != VK_NULL_HANDLE) {
+        vkDestroySampler (device, this->sampler, nullptr);
+        this->sampler = VK_NULL_HANDLE;
     }
 
-    if (info.transition_memory != VK_NULL_HANDLE) {
-        vkFreeMemory (device, info.transition_memory, nullptr);
-        info.transition_memory = VK_NULL_HANDLE;
+    if (this->transition_memory != VK_NULL_HANDLE) {
+        vkFreeMemory (device, this->transition_memory, nullptr);
+        this->transition_memory = VK_NULL_HANDLE;
     }
-
-    info = {};
 }
 
 }

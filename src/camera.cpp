@@ -1,11 +1,12 @@
+#include "camera.hpp"
+
+#include "shader_common.hpp"
+
+#include <vk_buffers.h>
+#include <vk_utils.h>
+
 #include <fstream>
 #include <vector>
-
-#include "vk_buffers.h"
-#include "vk_utils.h"
-
-#include "camera.hpp"
-#include "shader_common.hpp"
 
 namespace sdf_raster {
 
@@ -185,59 +186,60 @@ FrustumDrawBuffer::~FrustumDrawBuffer () {
     }
 }
 
-FrustumDescriptorSetInfo create_frustum_descriptor_set (
-    VkDevice device
+FrustumDescriptorSetInfo::FrustumDescriptorSetInfo (VkDevice device
     , VkPhysicalDevice physical_device
-    , vk_utils::DescriptorMaker& ds_maker
     , VkShaderStageFlags shader_stage_flags
-    , size_t max_frames_in_flight) {
-    FrustumDescriptorSetInfo info = {};
-
+    , size_t max_frames_in_flight) : device (device) {
     VkDeviceSize frustum_geometry_size = sizeof (FrustumGeometry);
 
-    info.frustum_geometry_buffers.resize (max_frames_in_flight);
-    info.frustum_geometry_memories.resize (max_frames_in_flight);
-    info.frustum_geometry_memories_mapped.resize (max_frames_in_flight);
+    this->frustum_geometry_buffers.resize (max_frames_in_flight);
+    this->frustum_geometry_memories.resize (max_frames_in_flight);
+    this->frustum_geometry_memories_mapped.resize (max_frames_in_flight);
 
     for (size_t i = 0; i < max_frames_in_flight; ++i) {
         VkMemoryRequirements mem_req;
-        info.frustum_geometry_buffers [i] = vk_utils::createBuffer (device, frustum_geometry_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &mem_req);
+        this->frustum_geometry_buffers [i] = vk_utils::createBuffer (device, frustum_geometry_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &mem_req);
 
         VkMemoryAllocateInfo allocInfo {};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = mem_req.size;
         allocInfo.memoryTypeIndex = vk_utils::findMemoryType (mem_req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, physical_device);
 
-        VK_CHECK_RESULT (vkAllocateMemory (device, &allocInfo, nullptr, &(info.frustum_geometry_memories [i])));
+        VK_CHECK_RESULT (vkAllocateMemory (device, &allocInfo, nullptr, &(this->frustum_geometry_memories [i])));
 
-        vkBindBufferMemory (device, info.frustum_geometry_buffers [i], info.frustum_geometry_memories [i], 0);
+        vkBindBufferMemory (device, this->frustum_geometry_buffers [i], this->frustum_geometry_memories [i], 0);
 
-        VK_CHECK_RESULT (vkMapMemory (device, info.frustum_geometry_memories [i], 0, frustum_geometry_size, 0, &(info.frustum_geometry_memories_mapped [i])));
+        VK_CHECK_RESULT (vkMapMemory (device, this->frustum_geometry_memories [i], 0, frustum_geometry_size, 0, &(this->frustum_geometry_memories_mapped [i])));
     }
 
-    info.descriptor_sets.resize (max_frames_in_flight);
+    vk_utils::DescriptorTypesVec pool_sizes = {
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, max_frames_in_flight }
+    };
+    this->desc_maker = std::make_unique <vk_utils::DescriptorMaker> (device, pool_sizes, max_frames_in_flight);
+
+    this->descriptor_sets.resize (max_frames_in_flight);
     for (size_t i = 0; i < max_frames_in_flight; ++i) {
-        ds_maker.BindBegin (shader_stage_flags);
-        ds_maker.BindBuffer (0, info.frustum_geometry_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-        ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
+        this->desc_maker->BindBegin (shader_stage_flags);
+        this->desc_maker->BindBuffer (0, this->frustum_geometry_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        this->desc_maker->BindEnd (&this->descriptor_sets [i], &this->descriptor_set_layout);
     }
-
-    return info;
 }
 
-void cleanup_frustum_descriptor_set (VkDevice device, FrustumDescriptorSetInfo& info) {
-    for (size_t i = 0; i < info.frustum_geometry_buffers.size (); ++i) {
-        if (info.frustum_geometry_buffers [i] != VK_NULL_HANDLE) {
-            vkDestroyBuffer (device, info.frustum_geometry_buffers [i], nullptr);
-            info.frustum_geometry_buffers [i] = VK_NULL_HANDLE;
+FrustumDescriptorSetInfo::~FrustumDescriptorSetInfo () {
+    if (this->device == VK_NULL_HANDLE) return;
+
+    this->desc_maker.reset ();
+
+    for (size_t i = 0; i < this->frustum_geometry_buffers.size (); ++i) {
+        if (this->frustum_geometry_buffers [i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer (this->device, this->frustum_geometry_buffers [i], nullptr);
+            this->frustum_geometry_buffers [i] = VK_NULL_HANDLE;
         }
-        if (info.frustum_geometry_memories [i] != VK_NULL_HANDLE) {
-            vkFreeMemory (device, info.frustum_geometry_memories [i], nullptr);
-            info.frustum_geometry_memories [i] = VK_NULL_HANDLE;
+        if (this->frustum_geometry_memories [i] != VK_NULL_HANDLE) {
+            vkFreeMemory (this->device, this->frustum_geometry_memories [i], nullptr);
+            this->frustum_geometry_memories [i] = VK_NULL_HANDLE;
         }
     }
-
-    info = {};
 }
 
 }

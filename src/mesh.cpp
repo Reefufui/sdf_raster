@@ -67,16 +67,12 @@ void save_mesh_as_obj (const Mesh& mesh, const std::string& filename) {
     printf ("Saved mesh to '%s'.\n", filename.c_str ());
 }
 
-MeshDescriptorSetInfo create_mesh_descriptor_set (
-    VkDevice device
+MeshDescriptorSetInfo::MeshDescriptorSetInfo (VkDevice device
     , VkPhysicalDevice physical_device
     , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-    , vk_utils::DescriptorMaker& ds_maker
     , VkShaderStageFlags shader_stage_flags
     , size_t max_vertices_count
-    , size_t max_frames_in_flight) {
-    MeshDescriptorSetInfo info = {};
-
+    , size_t max_frames_in_flight) : device (device), copy_helper (copy_helper) {
     if (!copy_helper) {
         throw std::runtime_error ("ICopyEngine shared_ptr cannot be null.");
     }
@@ -91,76 +87,81 @@ MeshDescriptorSetInfo create_mesh_descriptor_set (
     std::vector <VkBuffer> buffers (1 + 2 * max_frames_in_flight);
     std::vector <VkMemoryRequirements> mem_reqs (1 + 2 * max_frames_in_flight);
 
-    info.vertices_buffers.clear ();
-    info.indices_buffers.clear ();
+    this->vertices_buffers.clear ();
+    this->indices_buffers.clear ();
     for (size_t i = 0; i < max_frames_in_flight; ++i) {
         buffers [i * 2 + 0] = vk_utils::createBuffer (device, vertices_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT, &mem_reqs [i * 2 + 0]);
         buffers [i * 2 + 1] = vk_utils::createBuffer (device, indices_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT, &mem_reqs [i * 2 + 1]);
-        info.vertices_buffers.push_back (buffers [i * 2 + 0]);
-        info.indices_buffers.push_back (buffers [i * 2 + 1]);
+        this->vertices_buffers.push_back (buffers [i * 2 + 0]);
+        this->indices_buffers.push_back (buffers [i * 2 + 1]);
     }
 
     buffers [2 * max_frames_in_flight] = vk_utils::createBuffer (device, sizeof (LiteMath::uint)
             , VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [2 * max_frames_in_flight]);
-    info.insufficent_mem_flag_buffer = buffers [2 * max_frames_in_flight];
+    this->insufficent_mem_flag_buffer = buffers [2 * max_frames_in_flight];
 
-    info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
+    this->memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
 
     LiteMath::uint insufficent_mem_flag = 0;
-    copy_helper->UpdateBuffer (info.insufficent_mem_flag_buffer, 0, &insufficent_mem_flag, sizeof (LiteMath::uint));
+    copy_helper->UpdateBuffer (this->insufficent_mem_flag_buffer, 0, &insufficent_mem_flag, sizeof (LiteMath::uint));
 
-    info.descriptor_sets.resize (max_frames_in_flight);
+    vk_utils::DescriptorTypesVec pool_sizes = {
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 * max_frames_in_flight }
+    };
+    this->desc_maker = std::make_unique <vk_utils::DescriptorMaker> (device, pool_sizes, max_frames_in_flight);
+
+    this->descriptor_sets.resize (max_frames_in_flight);
     for (size_t i = 0; i < max_frames_in_flight; ++i) {
-        ds_maker.BindBegin (shader_stage_flags);
-        ds_maker.BindBuffer (0, info.vertices_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        ds_maker.BindBuffer (1, info.indices_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        ds_maker.BindBuffer (2, info.insufficent_mem_flag_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
+        this->desc_maker->BindBegin (shader_stage_flags);
+        this->desc_maker->BindBuffer (0, this->vertices_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        this->desc_maker->BindBuffer (1, this->indices_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        this->desc_maker->BindBuffer (2, this->insufficent_mem_flag_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        this->desc_maker->BindEnd (&this->descriptor_sets [i], &this->descriptor_set_layout);
     }
-
-    return info;
 }
 
-void cleanup_mesh_descriptor_set (VkDevice device, MeshDescriptorSetInfo& info) {
-    for (size_t i = 0; i < info.vertices_buffers.size (); ++i) {
-        if (info.vertices_buffers [i] != VK_NULL_HANDLE) {
-            vkDestroyBuffer (device, info.vertices_buffers [i], nullptr);
-            info.vertices_buffers [i] = VK_NULL_HANDLE;
+MeshDescriptorSetInfo::~MeshDescriptorSetInfo () {
+    if (this->device == VK_NULL_HANDLE) return;
+
+    this->desc_maker.reset ();
+
+    for (size_t i = 0; i < this->vertices_buffers.size (); ++i) {
+        if (this->vertices_buffers [i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer (device, this->vertices_buffers [i], nullptr);
+            this->vertices_buffers [i] = VK_NULL_HANDLE;
         }
     }
 
-    for (size_t i = 0; i < info.indices_buffers.size (); ++i) {
-        if (info.indices_buffers [i] != VK_NULL_HANDLE) {
-            vkDestroyBuffer (device, info.indices_buffers [i], nullptr);
-            info.indices_buffers [i] = VK_NULL_HANDLE;
+    for (size_t i = 0; i < this->indices_buffers.size (); ++i) {
+        if (this->indices_buffers [i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer (device, this->indices_buffers [i], nullptr);
+            this->indices_buffers [i] = VK_NULL_HANDLE;
         }
     }
 
-    if (info.insufficent_mem_flag_buffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer (device, info.insufficent_mem_flag_buffer, nullptr);
-        info.insufficent_mem_flag_buffer = VK_NULL_HANDLE;
+    if (this->insufficent_mem_flag_buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer (device, this->insufficent_mem_flag_buffer, nullptr);
+        this->insufficent_mem_flag_buffer = VK_NULL_HANDLE;
     }
 
-    if (info.memory != VK_NULL_HANDLE) {
-        vkFreeMemory (device, info.memory, nullptr);
-        info.memory = VK_NULL_HANDLE;
+    if (this->memory != VK_NULL_HANDLE) {
+        vkFreeMemory (device, this->memory, nullptr);
+        this->memory = VK_NULL_HANDLE;
     }
-
-    info = {};
 }
 
-LiteMath::uint fetch_insufficent_mem_flag (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, MeshDescriptorSetInfo info) {
+LiteMath::uint MeshDescriptorSetInfo::fetch_insufficent_mem_flag () {
     LiteMath::uint data;
-    copy_helper->ReadBuffer (info.insufficent_mem_flag_buffer, 0, &data, sizeof (LiteMath::uint));
+    this->copy_helper->ReadBuffer (this->insufficent_mem_flag_buffer, 0, &data, sizeof (LiteMath::uint));
     return data;
 }
 
-Mesh fetch_mesh_from_device (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, const MeshDescriptorSetInfo& info, size_t frame) {
-    std::vector <uint32_t> idxs (100000);
-    std::vector <Vertex> verts (100000);
+Mesh MeshDescriptorSetInfo::fetch_mesh_from_device (size_t fif_index) {
+    std::vector <uint32_t> idxs (100000); // TODO:
+    std::vector <Vertex> verts (100000); // TODO:
 
-    copy_helper->ReadBuffer (info.indices_buffers [frame], 0, idxs.data (), sizeof (uint32_t) * 100000);
-    copy_helper->ReadBuffer (info.vertices_buffers [frame], 0, verts.data (), sizeof (Vertex) * 100000);
+    this->copy_helper->ReadBuffer (this->indices_buffers [fif_index], 0, idxs.data (), sizeof (uint32_t) * 100000);
+    this->copy_helper->ReadBuffer (this->vertices_buffers [fif_index], 0, verts.data (), sizeof (Vertex) * 100000);
 
     return {std::move (idxs), std::move (verts)};
 }

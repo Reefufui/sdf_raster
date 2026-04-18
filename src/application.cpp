@@ -53,7 +53,7 @@ Application::~Application () {
 
 void Application::marching_cubes_cpu (const std::string& a_octree_filename, const std::string& a_mesh_filename) {
     SdfOctree scene {};
-    load_sdf_octree (scene, a_octree_filename);
+    // TODO: load_sdf_octree (scene, a_octree_filename);
 
     MarchingCubesSettings settings;
     settings.iso_level = 0.0f;

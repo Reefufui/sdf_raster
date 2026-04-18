@@ -16,12 +16,29 @@
 
 namespace sdf_raster {
 
-void load_sdf_octree (SdfOctree& scene, const std::filesystem::path& path);
-void save_sdf_octree (const SdfOctree &scene, const std::string &path);
 void dump_sdf_octree_text (const SdfOctree &scene, const std::string &path_to_dump);
 float sample_sdf (const SdfOctree& scene, const LiteMath::float3& p);
 
-struct SdfOctreeDescriptorSetInfo {
+class SdfOctreeDescriptorSetInfo {
+public:
+    SdfOctreeDescriptorSetInfo (VkDevice device
+        , VkPhysicalDevice physical_device
+        , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
+        , VkShaderStageFlags shader_stage_flags
+        , const sdf_raster::SdfOctree& octree
+        , size_t subtree_root_level
+        , size_t max_frames_in_flight);
+    ~SdfOctreeDescriptorSetInfo ();
+
+    VkDescriptorSet get_descriptor_set (uint32_t fif_index) const { return this->descriptor_sets [fif_index]; }
+    VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
+
+    VkBuffer get_subtree_root_buffer (uint32_t fif_index) const { return this->subtree_root_buffers [fif_index]; }
+
+private:
+    VkDevice device = VK_NULL_HANDLE;
+
+    std::unique_ptr <vk_utils::DescriptorMaker> desc_maker; 
     std::vector <VkDescriptorSet> descriptor_sets;
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
@@ -31,35 +48,7 @@ struct SdfOctreeDescriptorSetInfo {
     VkDeviceMemory memory = VK_NULL_HANDLE;
 };
 
-struct DrawIndexedIndirectCommandDescriptorSetInfo {
-    std::vector <VkDescriptorSet> descriptor_sets;
-    VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
-
-    std::vector <VkBuffer> draw_indexed_indirect_command_buffers;
-
-    VkDeviceMemory memory = VK_NULL_HANDLE;
-};
-
-SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
-        VkDevice device
-        , VkPhysicalDevice physical_device
-        , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , vk_utils::DescriptorMaker& ds_maker
-        , VkShaderStageFlags shader_stage_flags
-        , const sdf_raster::SdfOctree& octree
-        , size_t subtree_root_level
-        , size_t max_frames_in_flight);
-
-DrawIndexedIndirectCommandDescriptorSetInfo create_draw_indexed_indirect_command_descriptor_set (
-        VkDevice device
-        , VkPhysicalDevice physical_device
-        , vk_utils::DescriptorMaker& ds_maker
-        , VkShaderStageFlags shader_stage_flags
-        , size_t max_frames_in_flight);
-
-void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetInfo& info);
-void cleanup_draw_indexed_indirect_command_descriptor_set (VkDevice device, DrawIndexedIndirectCommandDescriptorSetInfo& info);
-
+// TODO: move to scenes/octree
 std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend);
 std::vector <NodeContext> get_octree_subtrees_payloads_parallel (const SdfOctree& scene, int max_level_to_descend);
 int get_octree_max_depth (const SdfOctree& scene);

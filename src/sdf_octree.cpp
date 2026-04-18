@@ -10,25 +10,7 @@
 
 namespace sdf_raster {
 
-void load_sdf_octree (SdfOctree& scene, const std::filesystem::path& path) {
-    std::ifstream fs (path, std::ios::binary);
-    unsigned sz = 0;
-    fs.read ((char *) &sz, sizeof (unsigned));
-    scene.nodes.resize (sz);
-    fs.read ((char *) scene.nodes.data (), scene.nodes.size () * sizeof (SdfOctreeNode));
-    fs.close ();
-    scene.name = path.stem ().string ();
-}
-
-void save_sdf_octree (const SdfOctree &scene, const std::string &path) {
-    std::ofstream fs (path, std::ios::binary);
-    size_t size = scene.nodes.size ();
-    fs.write ((const char *) &size, sizeof (unsigned));
-    fs.write ((const char *) scene.nodes.data (), size * sizeof (SdfOctreeNode));
-    fs.flush ();
-    fs.close ();
-}
-
+// TODO: move to scenes/octree
 void dump_sdf_octree_text (const SdfOctree &scene, const std::string &path_to_dump) {
     std::ofstream dump_file (path_to_dump);
     if (!dump_file.is_open()) {
@@ -61,6 +43,7 @@ void dump_sdf_octree_text (const SdfOctree &scene, const std::string &path_to_du
     LOG_INFO ("SDF Octree successfully dumped to '{}'", path_to_dump);
 }
 
+// TODO: move to scenes/octree
 float sample_sdf (const SdfOctree& scene, const LiteMath::float3& p) {
     const SdfOctreeNode* node = &scene.nodes [0];
     LiteMath::float3 min_corner = {-1.0f, -1.0f, -1.0f};
@@ -90,17 +73,13 @@ float sample_sdf (const SdfOctree& scene, const LiteMath::float3& p) {
     return lerp (c0, c1, local.z);
 }
 
-SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
-        VkDevice device
+SdfOctreeDescriptorSetInfo::SdfOctreeDescriptorSetInfo (VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , vk_utils::DescriptorMaker& ds_maker
         , VkShaderStageFlags shader_stage_flags
         , const sdf_raster::SdfOctree& octree
         , const size_t subtree_root_level
-        , size_t max_frames_in_flight) {
-    SdfOctreeDescriptorSetInfo info = {};
-
+        , size_t max_frames_in_flight) : device (device) {
     if (!copy_helper) {
         throw std::runtime_error ("ICopyEngine shared_ptr cannot be null.");
     }
@@ -115,99 +94,55 @@ SdfOctreeDescriptorSetInfo create_sdf_octree_descriptor_set (
     std::vector <VkBuffer> buffers (1 + max_frames_in_flight);
     std::vector <VkMemoryRequirements> mem_reqs (1 + max_frames_in_flight);
 
-    info.subtree_root_buffers.clear ();
+    this->subtree_root_buffers.clear ();
 
     buffers [0] = vk_utils::createBuffer (device, octree_nodes_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [0]);
-    info.nodes_buffer = buffers [0];
+    this->nodes_buffer = buffers [0];
 
     for (size_t i = 0; i < max_frames_in_flight; ++i) {
         buffers [i + 1] = vk_utils::createBuffer (device, subtree_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i + 1]);
-        info.subtree_root_buffers.push_back (buffers [i + 1]);
+        this->subtree_root_buffers.push_back (buffers [i + 1]);
     }
 
-    info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
+    this->memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
 
-    copy_helper->UpdateBuffer (info.nodes_buffer, 0, octree.nodes.data (), octree_nodes_size);
+    copy_helper->UpdateBuffer (this->nodes_buffer, 0, octree.nodes.data (), octree_nodes_size);
 
-    info.descriptor_sets.resize (max_frames_in_flight);
+    vk_utils::DescriptorTypesVec pool_sizes = {
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * max_frames_in_flight }
+    };
+    this->desc_maker = std::make_unique <vk_utils::DescriptorMaker> (device, pool_sizes, max_frames_in_flight);
+
+    this->descriptor_sets.resize (max_frames_in_flight);
     for (size_t i = 0; i < max_frames_in_flight; ++i) {
-        ds_maker.BindBegin (shader_stage_flags);
-        ds_maker.BindBuffer (0, info.nodes_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        ds_maker.BindBuffer (1, info.subtree_root_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
+        this->desc_maker->BindBegin (shader_stage_flags);
+        this->desc_maker->BindBuffer (0, this->nodes_buffer, VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        this->desc_maker->BindBuffer (1, this->subtree_root_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        this->desc_maker->BindEnd (&this->descriptor_sets [i], &this->descriptor_set_layout);
     }
-
-    return info;
 }
 
-DrawIndexedIndirectCommandDescriptorSetInfo create_draw_indexed_indirect_command_descriptor_set (
-        VkDevice device
-        , VkPhysicalDevice physical_device
-        , vk_utils::DescriptorMaker& ds_maker
-        , VkShaderStageFlags shader_stage_flags
-        , size_t max_frames_in_flight) {
-    DrawIndexedIndirectCommandDescriptorSetInfo info = {};
+SdfOctreeDescriptorSetInfo::~SdfOctreeDescriptorSetInfo () {
+    if (this->device == VK_NULL_HANDLE) return;
 
-    const VkDeviceSize draw_indexed_indirect_command_size = sizeof (VkDrawIndexedIndirectCommand);
+    this->desc_maker.reset ();
 
-    std::vector <VkBuffer> buffers (max_frames_in_flight);
-    std::vector <VkMemoryRequirements> mem_reqs (max_frames_in_flight);
-
-    info.draw_indexed_indirect_command_buffers.clear ();
-
-    for (size_t i = 0; i < max_frames_in_flight; ++i) {
-        buffers [i] = vk_utils::createBuffer (device, draw_indexed_indirect_command_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i]);
-
-        info.draw_indexed_indirect_command_buffers.push_back (buffers [i]);
+    if (this->nodes_buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer (device, this->nodes_buffer, nullptr);
+        this->nodes_buffer = VK_NULL_HANDLE;
     }
 
-    info.memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
-
-    info.descriptor_sets.resize (max_frames_in_flight);
-    for (size_t i = 0; i < max_frames_in_flight; ++i) {
-        ds_maker.BindBegin (shader_stage_flags);
-        ds_maker.BindBuffer (0, info.draw_indexed_indirect_command_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        ds_maker.BindEnd (&info.descriptor_sets [i], &info.descriptor_set_layout);
-    }
-
-    return info;
-}
-
-void cleanup_sdf_octree_descriptor_set (VkDevice device, SdfOctreeDescriptorSetInfo& info) {
-    if (info.nodes_buffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer (device, info.nodes_buffer, nullptr);
-        info.nodes_buffer = VK_NULL_HANDLE;
-    }
-
-    for (size_t i = 0; i < info.subtree_root_buffers.size (); ++i) {
-        if (info.subtree_root_buffers [i] != VK_NULL_HANDLE) {
-            vkDestroyBuffer (device, info.subtree_root_buffers [i], nullptr);
-            info.subtree_root_buffers [i] = VK_NULL_HANDLE;
+    for (size_t i = 0; i < this->subtree_root_buffers.size (); ++i) {
+        if (this->subtree_root_buffers [i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer (device, this->subtree_root_buffers [i], nullptr);
+            this->subtree_root_buffers [i] = VK_NULL_HANDLE;
         }
     }
 
-    if (info.memory != VK_NULL_HANDLE) {
-        vkFreeMemory (device, info.memory, nullptr);
-        info.memory = VK_NULL_HANDLE;
+    if (this->memory != VK_NULL_HANDLE) {
+        vkFreeMemory (device, this->memory, nullptr);
+        this->memory = VK_NULL_HANDLE;
     }
-
-    info = {};
-}
-
-void cleanup_draw_indexed_indirect_command_descriptor_set (VkDevice device, DrawIndexedIndirectCommandDescriptorSetInfo& info) {
-    for (size_t i = 0; i < info.draw_indexed_indirect_command_buffers.size (); ++i) {
-        if (info.draw_indexed_indirect_command_buffers [i] != VK_NULL_HANDLE) {
-            vkDestroyBuffer (device, info.draw_indexed_indirect_command_buffers [i], nullptr);
-            info.draw_indexed_indirect_command_buffers [i] = VK_NULL_HANDLE;
-        }
-    }
-
-    if (info.memory != VK_NULL_HANDLE) {
-        vkFreeMemory (device, info.memory, nullptr);
-        info.memory = VK_NULL_HANDLE;
-    }
-
-    info = {};
 }
 
 int calc_cube_index (const float arr [8]) {

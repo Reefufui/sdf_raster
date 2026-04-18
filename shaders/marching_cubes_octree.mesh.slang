@@ -1,4 +1,4 @@
-// mesh_sphere.slang
+// marching_cubes_octree.mesh.slang
 
 #include "shader_common.hpp"
 

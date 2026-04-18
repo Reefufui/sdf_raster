@@ -9,7 +9,34 @@
 
 namespace sdf_raster {
 
-struct ActiveLeafsDescriptorSetInfo {
+class ActiveLeafsDescriptorSetInfo {
+public:
+    ActiveLeafsDescriptorSetInfo (VkDevice device
+        , VkPhysicalDevice physical_device
+        , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
+        , VkShaderStageFlags shader_stage_flags
+        , VkDeviceSize active_leafs_size
+        , size_t max_frames_in_flight);
+    ~ActiveLeafsDescriptorSetInfo ();
+
+    // ActiveLeafsDescriptorSetInfo (const ActiveLeafsDescriptorSetInfo&) = delete;
+    // ActiveLeafsDescriptorSetInfo& operator= (const ActiveLeafsDescriptorSetInfo&) = delete;
+    //
+    // ActiveLeafsDescriptorSetInfo (ActiveLeafsDescriptorSetInfo&&) noexcept;
+    // ActiveLeafsDescriptorSetInfo& operator= (ActiveLeafsDescriptorSetInfo&&) noexcept;
+
+    VkDescriptorSet get_descriptor_set (uint32_t fif_index) const { return this->descriptor_sets [fif_index]; }
+    VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
+
+    VkBuffer get_active_leaf_counter_buffer (uint32_t fif_index) const { return this->active_leaf_counter_buffers [fif_index]; }
+    uint32_t fetch_active_leaf_counter (uint32_t fif_index);
+
+private:
+    VkDevice device = VK_NULL_HANDLE;
+
+    std::shared_ptr <vk_utils::ICopyEngine> copy_helper;
+
+    std::unique_ptr <vk_utils::DescriptorMaker> desc_maker; 
     std::vector <VkDescriptorSet> descriptor_sets;
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
@@ -18,19 +45,6 @@ struct ActiveLeafsDescriptorSetInfo {
 
     VkDeviceMemory memory = VK_NULL_HANDLE;
 };
-
-ActiveLeafsDescriptorSetInfo create_active_leafs_descriptor_set (
-        VkDevice device
-        , VkPhysicalDevice physical_device
-        , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , vk_utils::DescriptorMaker& ds_maker
-        , VkShaderStageFlags shader_stage_flags
-        , VkDeviceSize active_leafs_size
-        , size_t max_frames_in_flight);
-
-void cleanup_active_leafs_descriptor_set (VkDevice device, ActiveLeafsDescriptorSetInfo& info);
-
-uint32_t fetch_active_leaf_counter (std::shared_ptr <vk_utils::ICopyEngine> copy_helper, ActiveLeafsDescriptorSetInfo info, size_t frame);
 
 }
 

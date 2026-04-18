@@ -34,14 +34,16 @@ Application::Application ()
 }
 
 Application::~Application () {
-    settings.window_maximized = glfwGetWindowAttrib (this->window, GLFW_MAXIMIZED);
+    this->settings.window_maximized = glfwGetWindowAttrib (this->window, GLFW_MAXIMIZED);
     glfwGetWindowSize (window, &this->settings.window_width, &this->settings.window_height);
     glfwSetWindowShouldClose (this->window, true);
 
     SessionState session_to_save;
     session_to_save.settings = this->settings;
     session_to_save.scene_states = this->scene_manager->get_all_states ();
-    session_to_save.current_scene_path = this->scene_manager->get_scene ()->get_state ().path;
+    if (auto scene = this->scene_manager->get_scene ()) {
+        session_to_save.current_scene_path = scene->get_state ().path;
+    }
 
     dump_session (session_to_save, "/tmp/sdf_raster.json");
     this->scene_manager.reset ();

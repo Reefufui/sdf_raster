@@ -1928,6 +1928,14 @@ void SDFRasterizer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff)
 }
 
 void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
+    if (this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image != VK_NULL_HANDLE) {
+        this->copy_depth (cmd_buff);
+        this->compute_hz_buffer (cmd_buff);
+    } else {
+        LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
+        this->push_constants.occlusion_culling_level = false;
+    }
+
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
@@ -1944,29 +1952,23 @@ void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buf
     this->compute_geometry (cmd_buff);
     this->geometry_barrier (cmd_buff);
     this->draw_geometry (cmd_buff);
+
+    this->hz_buffer_barrier (cmd_buff);
+
+    if (!this->frustum_draw_buffer) {
+        this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image = this->context->get_depth_buffer ().image;
+        this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj = this->push_constants.view_proj;
+    }
 }
 
 void SDFRasterizer::render (VkCommandBuffer cmd_buff) {
     assert (this->initialized);
 
-    if (this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image != VK_NULL_HANDLE) {
-        this->copy_depth (cmd_buff);
-        this->compute_hz_buffer (cmd_buff);
-    } else {
-        LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
-        this->push_constants.occlusion_culling_level = false;
-    }
-
     assert (this->draw);
     std::invoke (this->draw, this, cmd_buff);
 
-    this->hz_buffer_barrier (cmd_buff);
-
     if (this->frustum_draw_buffer) {
         this->draw_frustum (cmd_buff);
-    } else {
-        this->hz_buffer_ds.frame_resources [this->frame_index].prev_depth_image = this->context->get_depth_buffer ().image;
-        this->hz_buffer_ds.frame_resources [this->frame_index].prev_view_proj = this->push_constants.view_proj;
     }
 }
 
@@ -1997,36 +1999,38 @@ void SDFRasterizer::process_commands (std::queue <RenderCommand>& commands, std:
 }
 
 void SDFRasterizer::unset_scene () {
-	this->cpu_traversed = 0;
-	this->subtrees.clear ();
+    vkDeviceWaitIdle (this->context->get_device ());
+
+    this->cpu_traversed = 0;
+    this->explicit_index_count = 0;
+    this->subtrees.clear ();
     this->visible_subtrees.clear ();
     this->cleanup_subtree_roots_staging_buffer ();
 
-    this->cleanup_subtree_roots_staging_buffer ();
-
-    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
-    cleanup_sdf_scomtree_descriptor_set (this->context->get_device (), this->sdf_scomtree_ds);
-    cleanup_mesh_descriptor_set (this->context->get_device (), this->mesh_ds);
-    cleanup_lookup_table_descriptor_set (this->context->get_device (), this->marching_cubes_lookup_table_ds);
     cleanup_active_leafs_descriptor_set (this->context->get_device (), this->active_leafs_ds);
-    cleanup_frustum_descriptor_set (this->context->get_device (), this->frustum_ds);
     cleanup_draw_indexed_indirect_command_descriptor_set (this->context->get_device (), this->draw_indexed_indirect_command_ds);
+    cleanup_frustum_descriptor_set (this->context->get_device (), this->frustum_ds);
     cleanup_hz_buffer_descriptor_set (this->context->get_device (), this->hz_buffer_ds);
     cleanup_indirect_dispatch_descriptor_set (this->context->get_device (), this->indirect_dispatch_ds);
     cleanup_lod_descriptor_set (this->context->get_device (), this->lod_ds);
-
-    this->deferred_shading.reset ();
-    this->descriptor_maker.reset ();
+    cleanup_lookup_table_descriptor_set (this->context->get_device (), this->marching_cubes_lookup_table_ds);
+    cleanup_mesh_descriptor_set (this->context->get_device (), this->mesh_ds);
+    cleanup_sdf_octree_descriptor_set (this->context->get_device (), this->sdf_octree_ds);
+    cleanup_sdf_scomtree_descriptor_set (this->context->get_device (), this->sdf_scomtree_ds);
 
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_active_leafs_pipeline, this->compute_active_leafs_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_geometry_pipeline, this->compute_geometry_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_hz_buffer_pipeline, this->compute_hz_buffer_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prepare_indirect_pipeline, this->compute_prepare_indirect_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_identity_pipeline, this->graphics_identity_pipeline_layout);
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_viewproj_pipeline, this->graphics_viewproj_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_gbuffer_pipeline, this->graphics_gbuffer_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_identity_pipeline, this->graphics_identity_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_lighting_pipeline, this->graphics_lighting_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_viewproj_pipeline, this->graphics_viewproj_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->mesh_pipeline, this->mesh_pipeline_layout);
+
+    this->deferred_shading.reset ();
+    this->descriptor_maker_for_resizable.reset ();
+    this->descriptor_maker.reset ();
 }
 
 void SDFRasterizer::set_scene (Scene* scene) {

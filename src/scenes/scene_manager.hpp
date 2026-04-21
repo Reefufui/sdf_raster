@@ -56,7 +56,7 @@ public:
 
     void load_scene (const std::filesystem::path& path);
 
-    Scene* get_scene ();
+    std::shared_ptr <Scene> get_scene ();
 
     [[nodiscard]] bool is_loading_scene () const noexcept {
         return is_loading.load (std::memory_order_acquire);
@@ -68,11 +68,11 @@ private:
     void notify (SceneEventType type, const std::filesystem::path& path);
 
 private:
-    std::variant <std::monostate, std::unique_ptr <Scene>> managed_scene;
+    std::variant <std::monostate, std::shared_ptr <Scene>> managed_scene;
     std::atomic <bool> is_loading {false};
 
     std::map <std::filesystem::path, SceneState> cached_scene_states;
-    std::map <std::string, std::function <std::unique_ptr <Scene> ()>> factory_registry;
+    std::map <std::string, std::function <std::shared_ptr <Scene> ()>> factory_registry;
     std::vector <SceneEventCallback> subscribers;
 
     mutable std::mutex mutex;

@@ -77,15 +77,17 @@ SdfOctreeDescriptorSetInfo::SdfOctreeDescriptorSetInfo (VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
         , VkShaderStageFlags shader_stage_flags
-        , const sdf_raster::SdfOctree& octree
-        , const size_t subtree_root_level
-        , size_t max_frames_in_flight) : device (device) {
+        , std::shared_ptr <SdfOctreeScene> scene
+        , size_t max_frames_in_flight) : device (device) , scene (scene) {
     if (!copy_helper) {
         throw std::runtime_error ("ICopyEngine shared_ptr cannot be null.");
     }
 
-    VkDeviceSize octree_nodes_size = octree.nodes.size () * sizeof (SdfOctreeNode);
-    VkDeviceSize subtree_size = (1LL << (3 * subtree_root_level)) * sizeof (NodeContext); // NOTE: max octree nodes on level: pow (8, level)
+    const SdfOctree& scene_data = scene->get_octree_data ();
+    const SceneState& scene_state = scene->get_state ();
+
+    VkDeviceSize octree_nodes_size = scene_data.nodes.size () * sizeof (SdfOctreeNode);
+    VkDeviceSize subtree_size = (1LL << (3 * scene_state.cpu_traversed)) * sizeof (NodeContext); // NOTE: max octree nodes on level: pow (8, level)
 
     if (octree_nodes_size == 0) {
         throw std::runtime_error ("SdfOctree is empty, cannot create descriptor set.");
@@ -106,7 +108,7 @@ SdfOctreeDescriptorSetInfo::SdfOctreeDescriptorSetInfo (VkDevice device
 
     this->memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
 
-    copy_helper->UpdateBuffer (this->nodes_buffer, 0, octree.nodes.data (), octree_nodes_size);
+    copy_helper->UpdateBuffer (this->nodes_buffer, 0, scene_data.nodes.data (), octree_nodes_size);
 
     vk_utils::DescriptorTypesVec pool_sizes = {
         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * max_frames_in_flight }
@@ -120,10 +122,39 @@ SdfOctreeDescriptorSetInfo::SdfOctreeDescriptorSetInfo (VkDevice device
         this->desc_maker->BindBuffer (1, this->subtree_root_buffers [i], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         this->desc_maker->BindEnd (&this->descriptor_sets [i], &this->descriptor_set_layout);
     }
+
+    this->subtree_roots_staging_buffers.resize (max_frames_in_flight);
+    this->staging_buffer_memories.resize (max_frames_in_flight);
+    this->subtrees_memory_mapped.resize (max_frames_in_flight);
+
+    for (size_t i = 0; i < max_frames_in_flight; ++i) {
+        VkMemoryRequirements mem_req;
+        this->subtree_roots_staging_buffers [i] = vk_utils::createBuffer (device, subtree_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &mem_req);
+
+        VkMemoryAllocateInfo allocInfo {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = mem_req.size;
+        allocInfo.memoryTypeIndex = vk_utils::findMemoryType (mem_req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, physical_device);
+
+        VK_CHECK_RESULT (vkAllocateMemory (this->device, &allocInfo, nullptr, &this->staging_buffer_memories [i]));
+        vkBindBufferMemory (this->device, this->subtree_roots_staging_buffers [i], this->staging_buffer_memories [i], 0);
+        VK_CHECK_RESULT (vkMapMemory (this->device, this->staging_buffer_memories [i], 0, subtree_size, 0, &this->subtrees_memory_mapped [i]));
+    }
 }
 
 SdfOctreeDescriptorSetInfo::~SdfOctreeDescriptorSetInfo () {
     if (this->device == VK_NULL_HANDLE) return;
+
+    for (size_t i = 0; i < this->subtree_roots_staging_buffers.size (); ++i) {
+        if (this->subtree_roots_staging_buffers [i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer (device, this->subtree_roots_staging_buffers [i], nullptr);
+            this->subtree_roots_staging_buffers [i] = VK_NULL_HANDLE;
+        }
+
+        vkUnmapMemory (this->device, this->staging_buffer_memories [i]);
+        vkFreeMemory (this->device, this->staging_buffer_memories [i], nullptr);
+        this->staging_buffer_memories [i] = VK_NULL_HANDLE;
+    }
 
     this->desc_maker.reset ();
 
@@ -145,247 +176,14 @@ SdfOctreeDescriptorSetInfo::~SdfOctreeDescriptorSetInfo () {
     }
 }
 
-int calc_cube_index (const float arr [8]) {
-    int cube_index = 0;
-
-    for (int i = 0; i < 8; ++i) {
-        if (arr [i] < 0.0f) {
-            cube_index |= (1 << i);
-        }
+void SdfOctreeDescriptorSetInfo::update_subtree_root_buffer (const FrustumGeometry& frustum, uint32_t fif_index) {
+    assert (this->scene);
+    auto visible_subtrees = this->scene->collect_visible_subtrees (frustum);
+    this->subtree_count = visible_subtrees.size ();
+    if (this->subtree_count) {
+        assert (this->subtree_count < (1LL << (3 * this->scene->get_state ().cpu_traversed)));
+        memcpy (this->subtrees_memory_mapped [fif_index], visible_subtrees.data (), this->subtree_count * sizeof (NodeContext));
     }
-
-    return cube_index;
-};
-
-namespace {
-
-struct StackFrame {
-    uint32_t node_idx;
-    LiteMath::float3 min_corner;
-    float voxel_size;
-    int level;
-};
-
-}
-
-std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, int max_level_to_descend) {
-    std::vector <NodeContext> payloads;
-
-    if (scene.nodes.empty ()) {
-        return payloads;
-    }
-
-    std::stack <StackFrame> s;
-
-    LiteMath::float3 root_min_corner = {-1.0f, -1.0f, -1.0f};
-    float root_voxel_size = 2.0f;
-    uint32_t root_node_idx = 0;
-
-    s.push ({root_node_idx, root_min_corner, root_voxel_size, 0});
-
-    while (!s.empty ()) {
-        StackFrame current = s.top ();
-        s.pop ();
-
-        const SdfOctreeNode& node = scene.nodes [current.node_idx];
-
-        if (current.level >= max_level_to_descend || node.offset == 0) {
-            int cube_index = calc_cube_index (node.values);
-            if (node.offset == 0 && (cube_index == 0 || cube_index == 255)) {
-                continue; // no triangles
-            }
-            payloads.push_back ({
-                current.min_corner.x,
-                current.min_corner.y,
-                current.min_corner.z,
-                current.voxel_size,
-                static_cast <int> (current.node_idx),
-                cube_index
-            });
-            continue;
-        }
-
-        float half = current.voxel_size * 0.5f;
-        for (int i = 7; i >= 0; --i) {
-            LiteMath::float3 child_min_corner = current.min_corner;
-
-            if ((i & 1) != 0) child_min_corner.x += half;
-            if ((i & 2) != 0) child_min_corner.y += half;
-            if ((i & 4) != 0) child_min_corner.z += half;
-
-            uint32_t child_node_idx = node.offset + i;
-
-            s.push ({
-                child_node_idx,
-                child_min_corner,
-                half,
-                current.level + 1
-            });
-        }
-    }
-
-    return payloads;
-}
-
-std::vector <NodeContext> process_subtree (const SdfOctree& scene, StackFrame initial_frame, int max_level_to_descend) {
-    std::vector <NodeContext> local_payloads;
-    std::stack <StackFrame> s;
-    s.push (initial_frame);
-
-    while (!s.empty ()) {
-        StackFrame current = s.top ();
-        s.pop ();
-
-        const SdfOctreeNode& node = scene.nodes [current.node_idx];
-
-        if (current.level >= max_level_to_descend || node.offset == 0) {
-            int cube_index = calc_cube_index (node.values);
-            if (node.offset == 0 && (cube_index == 0 || cube_index == 255)) {
-                continue; // NOTE: cube_index == 255 may be useful as best occluders
-            }
-            local_payloads.push_back ({current.min_corner.x
-                , current.min_corner.y
-                , current.min_corner.z
-                , current.voxel_size
-                , static_cast <int> (current.node_idx)
-                , cube_index
-            });
-            continue;
-        }
-
-        float half = current.voxel_size * 0.5f;
-        for (int i = 7; i >= 0; --i) {
-            LiteMath::float3 child_min_corner = current.min_corner;
-            if ((i & 1) != 0) child_min_corner.x += half;
-            if ((i & 2) != 0) child_min_corner.y += half;
-            if ((i & 4) != 0) child_min_corner.z += half;
-            uint32_t child_node_idx = node.offset + i;
-
-            s.push ({child_node_idx, child_min_corner, half, current.level + 1});
-        }
-    }
-
-    return local_payloads;
-}
-
-std::vector <NodeContext> get_octree_subtrees_payloads_parallel (const SdfOctree& scene, int max_level_to_descend) {
-    if (scene.nodes.empty ()) {
-        return {};
-    }
-
-    unsigned int num_threads = std::thread::hardware_concurrency ();
-    int level_to_split = (num_threads > 1) ? static_cast <int> (ceil (log (4 * num_threads) / log(8))) : 0;
-    if (level_to_split <= 0) level_to_split = 1;
-    level_to_split = std::min (level_to_split, max_level_to_descend);
-
-
-    std::vector <StackFrame> tasks;
-    std::stack <StackFrame> s;
-
-    s.push ({0, {-1.0f, -1.0f, -1.0f}, 2.0f, 0});
-
-    while (!s.empty ()) {
-        StackFrame current = s.top ();
-        s.pop ();
-
-        if (current.level >= level_to_split || scene.nodes [current.node_idx].offset == 0) {
-            tasks.push_back (current);
-            continue;
-        }
-
-        const SdfOctreeNode& node = scene.nodes [current.node_idx];
-        float half = current.voxel_size * 0.5f;
-
-        for (int i = 7; i >= 0; --i) {
-            LiteMath::float3 child_min_corner = current.min_corner;
-            if ((i & 1) != 0) child_min_corner.x += half;
-            if ((i & 2) != 0) child_min_corner.y += half;
-            if ((i & 4) != 0) child_min_corner.z += half;
-            uint32_t child_node_idx = node.offset + i;
-
-            s.push ({child_node_idx, child_min_corner, half, current.level + 1});
-        }
-    }
-
-    if (tasks.size () <= 1) {
-        return process_subtree (scene, tasks.empty () ? StackFrame {0, {-1.0f, -1.0f, -1.0f}, 2.0f, 0} : tasks [0], max_level_to_descend);
-    }
-
-    std::vector <std::future <std::vector <NodeContext>>> futures;
-
-    size_t tasks_per_thread = (tasks.size () + num_threads - 1) / num_threads;
-    for (size_t i = 0; i < tasks.size (); i += tasks_per_thread) {
-        auto start = tasks.begin () + i;
-        auto end = tasks.begin () + std::min (i + tasks_per_thread, tasks.size ());
-        std::vector <StackFrame> thread_tasks (start, end);
-
-        futures.push_back (std::async (std::launch::async, [thread_tasks, &scene, max_level_to_descend] {
-            std::vector <NodeContext> thread_payloads;
-            for (const auto& task : thread_tasks) {
-                auto partial_result = process_subtree (scene, task, max_level_to_descend);
-                if (!partial_result.empty ()) {
-                    thread_payloads.insert (thread_payloads.end (), partial_result.begin (), partial_result.end ());
-                }
-            }
-            return thread_payloads;
-        }));
-    }
-
-    std::vector <NodeContext> final_payloads;
-
-    std::vector <std::vector <NodeContext>> all_results;
-    all_results.reserve (futures.size ());
-    size_t total_size = 0;
-
-    for (auto& f : futures) {
-        all_results.push_back (f.get ());
-        total_size += all_results.back ().size ();
-    }
-
-    final_payloads.reserve (total_size);
-
-    for (const auto& res : all_results) {
-        final_payloads.insert (final_payloads.end (), res.begin (), res.end ());
-    }
-
-    return final_payloads;
-}
-
-int get_octree_max_depth (const SdfOctree& scene) {
-    if (scene.nodes.empty ()) {
-        return -1;
-    }
-
-    int max_overall_depth = 0;
-
-    struct StackFrame {
-        uint32_t node_idx;
-        int level;
-    };
-    std::stack <StackFrame> s;
-
-    uint32_t root_node_idx = 0;
-    s.push ({root_node_idx, 0});
-
-    while (!s.empty ()) {
-        StackFrame current = s.top ();
-        s.pop ();
-
-        max_overall_depth = std::max (max_overall_depth, current.level);
-
-        const SdfOctreeNode& node = scene.nodes [current.node_idx];
-
-        if (node.offset == 0) {
-            continue;
-        }
-
-        for (int i = 0; i < 8; ++i) {
-            uint32_t child_node_idx = node.offset + i;
-            s.push ({ child_node_idx, current.level + 1 });
-        }
-    }
-
-    return max_overall_depth;
 }
 
 }

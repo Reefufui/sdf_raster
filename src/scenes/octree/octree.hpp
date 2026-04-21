@@ -5,6 +5,8 @@
 
 #include <filesystem>
 
+struct FrustumGeometry;
+struct NodeContext;
 struct SdfOctreeNode;
 
 namespace sdf_raster {
@@ -26,9 +28,15 @@ public:
 
     const SdfOctree& get_octree_data () const;
 
+    std::vector <NodeContext> collect_visible_subtrees (const FrustumGeometry& frustum) const;
+
 private:
+    void invalidate_cache ();
+
     SceneState state;
     SdfOctree data;
+
+    std::vector <NodeContext> cached_all_subtrees;
 };
 
 } // sdf_raster

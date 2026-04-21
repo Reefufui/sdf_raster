@@ -279,6 +279,11 @@ void VulkanContext::create_device () {
     eight_bit_storage_features_query.pNext = pNext_query_chain;
     pNext_query_chain = &eight_bit_storage_features_query;
 
+    VkPhysicalDeviceVulkan13Features vulkan13_features_query {};
+    vulkan13_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    vulkan13_features_query.pNext = pNext_query_chain;
+    pNext_query_chain = &vulkan13_features_query;
+
     VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shader_features_query {};
     VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties_query {};
 
@@ -366,6 +371,14 @@ void VulkanContext::create_device () {
     } else {
         this->use_mesh_shading = false;
         LOG_WARN ("[VulkanContext] Mesh Shaders are NOT supported on this physical device.");
+    }
+
+    VkPhysicalDeviceVulkan13Features vulkan13_features_enable {};
+    if (vulkan13_features_query.shaderIntegerDotProduct) {
+        vulkan13_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        vulkan13_features_enable.shaderIntegerDotProduct = VK_TRUE;
+        vulkan13_features_enable.pNext = pNext_create_chain;
+        pNext_create_chain = &vulkan13_features_enable;
     }
 
     VkPhysicalDeviceFeatures features_to_enable_in_base_struct = device_features_2.features;

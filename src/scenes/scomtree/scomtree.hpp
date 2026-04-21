@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <vector>
 
+struct SComTreeStackElement;
+
 namespace sdf_raster {
 
 struct SComTree {
@@ -30,6 +32,8 @@ public:
 
     const SComTree& get_octree_data () const;
 
+    std::vector <SComTreeStackElement> collect_visible_subtrees (const FrustumGeometry& frustum) const;
+
     void dump_as_json (const std::filesystem::path& path) const;
 
     Mesh generate_mesh () const;
@@ -37,8 +41,12 @@ public:
     Mesh generate_voxel_mesh () const;
 
 private:
+    void invalidate_cache ();
+
     SceneState state;
     SComTree data;
+
+    std::vector <SComTreeStackElement> cached_all_subtrees;
 };
 
 } // sdf_raster

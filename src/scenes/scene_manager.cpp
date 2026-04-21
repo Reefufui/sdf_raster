@@ -23,8 +23,8 @@ SceneManager::~SceneManager () {
 std::map <std::filesystem::path, SceneState> SceneManager::get_all_states () const {
     std::lock_guard lock (this->mutex);
     std::map <std::filesystem::path, SceneState> result = this->cached_scene_states;
-    if (std::holds_alternative <std::unique_ptr <Scene>> (this->managed_scene)) {
-        auto& state = std::get <std::unique_ptr <Scene>> (this->managed_scene)->get_state ();
+    if (std::holds_alternative <std::shared_ptr <Scene>> (this->managed_scene)) {
+        auto& state = std::get <std::shared_ptr <Scene>> (this->managed_scene)->get_state ();
         result [state.path] = state;
     }
     return result;
@@ -60,8 +60,8 @@ void SceneManager::load_scene (const std::filesystem::path& path) {
         old_state = cache_it->second;
     }
 
-    if (std::holds_alternative <std::unique_ptr <Scene>> (this->managed_scene)) {
-        const auto& current = std::get <std::unique_ptr <Scene>> (managed_scene);
+    if (std::holds_alternative <std::shared_ptr <Scene>> (this->managed_scene)) {
+        const auto& current = std::get <std::shared_ptr <Scene>> (managed_scene);
         const auto& current_path = current->get_state ().path;
         if (current_path == path) {
             LOG_WARN ("[{}] Scene {} was already loaded.", SCENE_MANAGER_NAME, path.string ());
@@ -80,7 +80,7 @@ void SceneManager::load_scene (const std::filesystem::path& path) {
     std::thread ([this, path, factory_func, old_state] () mutable {
         LOG_INFO ("[{}] Background loading started: {}", SCENE_MANAGER_NAME, path.string ());
 
-        std::unique_ptr <Scene> scene = factory_func ();
+        std::shared_ptr <Scene> scene = factory_func ();
         if (scene && scene->load (path)) {
             if (old_state) {
                 scene->set_state (*old_state);
@@ -103,10 +103,10 @@ void SceneManager::load_scene (const std::filesystem::path& path) {
     }).detach ();
 }
 
-Scene* SceneManager::get_scene () {
+std::shared_ptr <Scene> SceneManager::get_scene () {
     std::lock_guard lock (this->mutex);
-    if (std::holds_alternative <std::unique_ptr <Scene>> (this->managed_scene)) {
-        return std::get <std::unique_ptr <Scene>> (this->managed_scene).get ();
+    if (std::holds_alternative <std::shared_ptr <Scene>> (this->managed_scene)) {
+        return std::get <std::shared_ptr <Scene>> (this->managed_scene);
     }
     return nullptr;
 }

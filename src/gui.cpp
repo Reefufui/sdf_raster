@@ -77,7 +77,6 @@ private:
     const float alpha = .8f;
 
     bool lock_occlusion_culling = false;
-    bool lock_mesh_shading = false;
 
     std::shared_ptr <SceneManager> scene_manager;
 };
@@ -540,13 +539,13 @@ void UI::update (Settings& settings, const Stats& stats) {
 
         ImGui::SetNextWindowPos (ImGui::GetMainViewport ()->GetCenter (), ImGuiCond_Always, ImVec2 (0.5f, 0.5f));
         if (ImGui::Begin ("Loading...", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text ("We are about to render!");
+            ImGui::Text ("Loading scene");
             ImGui::End ();
         }
         return;
     }
 
-    Scene* current_scene = this->scene_manager->get_scene ();
+    auto current_scene = this->scene_manager->get_scene ();
 
     if (current_scene) {
         SceneState& scene_state = current_scene->get_state ();

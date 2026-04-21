@@ -69,7 +69,6 @@ private:
 
     std::vector <VkBuffer> vertices_buffers;
     std::vector <VkBuffer> indices_buffers;
-    VkBuffer indices_count = VK_NULL_HANDLE;
     VkBuffer insufficent_mem_flag_buffer = VK_NULL_HANDLE;
 
     VkDeviceMemory memory = VK_NULL_HANDLE;

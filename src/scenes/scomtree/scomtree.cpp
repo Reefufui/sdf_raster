@@ -1,11 +1,11 @@
 #include "scenes/scomtree/scomtree.hpp"
 
+#include "frustum_culling.hpp"
 #include "logger.hpp"
 #include "marching_cubes_lookup_table.hpp"
 #include "scenes/scomtree/defs.hpp"
 #include "scenes/scomtree/rotation_lookup_tables.hpp"
 #include "scenes/scomtree/utils.hpp"
-
 #include "shader_common.hpp"
 
 #include <fstream>
@@ -60,7 +60,7 @@ bool SComTreeScene::load (const std::filesystem::path& path) {
 
     this->state = SceneState {
         .camera = Camera (),
-        .draw_method = DrawMethod::ExplicitDeferred,
+        .draw_method = DrawMethod::SComTreeCompute,
         .name = path.stem ().string (),
         .path = path,
         .octree_depth = depth,
@@ -496,6 +496,21 @@ Mesh SComTreeScene::generate_voxel_mesh () const {
 SComTreeScene::~SComTreeScene () {
     this->data.nodes.clear ();
     this->data.bricks.clear ();
+}
+
+std::vector <SComTreeStackElement> get_octree_subtrees_payloads (const SComTree& /*scene*/, int /*max_level_to_descend*/) {
+    // TODO:
+    return {};
+}
+
+void SComTreeScene::invalidate_cache () {
+    this->cached_all_subtrees = get_octree_subtrees_payloads (this->data, this->state.cpu_traversed);
+}
+
+std::vector <SComTreeStackElement> SComTreeScene::collect_visible_subtrees (const FrustumGeometry& frustum) const {
+    std::vector <SComTreeStackElement> visible;
+    frustum_culling (this->cached_all_subtrees, frustum, visible);
+    return visible;
 }
 
 } // sdf_raster

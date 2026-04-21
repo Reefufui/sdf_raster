@@ -34,20 +34,21 @@ public:
     ~SDFRasterizer ();
 
     void init () override;
-    void update (uint32_t frame_index, Settings& settings, SceneState& scene_state) override;
+    void update (uint32_t frame_index, Settings& settings) override;
     void render (VkCommandBuffer cmd_buff) override;
-    void shutdown (Settings& settings) override;
+    void shutdown () override;
     void process_commands (std::queue <RenderCommand>& commands, std::mutex& mutex) override;
-    void set_scene (Scene* scene);
+    void set_scene (std::shared_ptr <Scene> scene);
     const Stats& get_stats () override;
 
 private:
     void init_push_constants ();
-    void unset_scene ();
+    void reset_scene ();
 
     void init_compute_hz_buffer_pipeline ();
     void init_compute_prepare_indirect_pipeline ();
-    void init_compute_active_leafs_pipeline ();
+    void init_traverse_octree_pipeline ();
+    void init_traverse_scomtree_pipeline ();
     void init_marching_cubes_octree_pipeline ();
     void init_marching_cubes_scomtree_pipeline ();
     void init_graphics_identity_pipeline ();
@@ -60,9 +61,6 @@ private:
     void register_resizable ();
 
     void init_graphics_frustum_pipeline ();
-
-    void init_subtree_roots_staging_buffer ();
-    void cleanup_subtree_roots_staging_buffer ();
 
     void update_frustum_buffer (const Camera& camera);
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
@@ -80,8 +78,6 @@ private:
     void draw_frustum (VkCommandBuffer cmd_buff);
     void copy_depth (VkCommandBuffer cmd_buff);
     void copy_subtrees (VkCommandBuffer cmd_buff);
-
-    void sync_draw_method (SceneState& scene_state);
 
     std::shared_ptr <VulkanContext> context {nullptr};
 
@@ -125,19 +121,16 @@ private:
     VkPipelineLayout traverse_octree_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout traverse_scomtree_pipeline_layout {VK_NULL_HANDLE};
 
-    std::unique_ptr <DeferredShading> deferred_shading;
+    std::shared_ptr <Scene> current_scene {};
 
-    std::vector <NodeContext> subtrees {};
-    std::vector <NodeContext> visible_subtrees {};
-    VkBuffer subtrees_buffer {VK_NULL_HANDLE};
-    VkDeviceMemory subtrees_memory {VK_NULL_HANDLE};
-    void* subtrees_memory_mapped = nullptr;
+    std::unique_ptr <DeferredShading> deferred_shading {};
 
     void raster_explicit (VkCommandBuffer cmd_buff);
     void raster_explicit_deferred (VkCommandBuffer cmd_buff);
     void raster_octree_via_compute_shading (VkCommandBuffer cmd_buff);
     void raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff);
     void raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff);
+    void raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff);
     using RenderMethodPtr = void (SDFRasterizer::*)(VkCommandBuffer);
     RenderMethodPtr draw = &SDFRasterizer::raster_explicit;
 
@@ -148,16 +141,15 @@ private:
         bool needs_mesh_shading;
     };
 
-    static inline constexpr std::array <MethodTrait, 6> draw_strategies = {{
+    static inline constexpr std::array <MethodTrait, 7> draw_strategies = {{
           { DrawMethod::None, &SDFRasterizer::raster_explicit, "None (Idle)", false}
         , { DrawMethod::Explicit, &SDFRasterizer::raster_explicit, "Explicit", false}
         , { DrawMethod::ExplicitDeferred, &SDFRasterizer::raster_explicit_deferred, "Explicit Deferred", false}
         , { DrawMethod::OctreeCompute, &SDFRasterizer::raster_octree_via_compute_shading, "SDF-Octree via compute shaders", false}
-        , { DrawMethod::OctreeMesh, &SDFRasterizer::raster_octree_via_mesh_shading, "Mesh", true }
-        , { DrawMethod::SComTreeCompute, &SDFRasterizer::raster_scomtree_via_compute_shading, "SComTree via compute shaders", true }
+        , { DrawMethod::OctreeMesh, &SDFRasterizer::raster_octree_via_mesh_shading, "SDF-Octree via mesh shaders", true }
+        , { DrawMethod::SComTreeCompute, &SDFRasterizer::raster_scomtree_via_compute_shading, "SComTree via compute shaders", false }
+        , { DrawMethod::SComTreeMesh, &SDFRasterizer::raster_scomtree_via_mesh_shading, "SComTree via mesh shaders", true }
     }};
-
-    DrawMethod last_applied_method = DrawMethod::None;
 
     FrustumGeometry frustum {};
     std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer {nullptr};
@@ -165,13 +157,11 @@ private:
     PushConstantsData push_constants {};
     Stats stats {};
     int cpu_traversed {};
-    std::string scene_name;
     LiteMath::float4 clear_color {0.25f, 0.25f, 0.25f, 1.0f};
 
     uint32_t explicit_index_count {};
 
     uint32_t frame_index {0};
-    bool initialized {false};
 };
 
 } // namespace sdf_raster

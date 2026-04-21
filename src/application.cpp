@@ -51,7 +51,8 @@ Application::~Application () {
     cleanup ();
 }
 
-void Application::marching_cubes_cpu (const std::string& a_octree_filename, const std::string& a_mesh_filename) {
+void Application::marching_cubes_cpu (const std::string& /*a_octree_filename*/, const std::string& a_mesh_filename) {
+    assert (false && "cpu-only implementation temporary unsupported");
     SdfOctree scene {};
     // TODO: load_sdf_octree (scene, a_octree_filename);
 
@@ -87,10 +88,7 @@ void Application::run (bool /*single_frame*/) {
             gui::update (this->settings, this->renderer->get_stats ());
 
             this->renderer->process_commands (this->render_commands, this->render_command_mutex);
-            if (auto scene = this->scene_manager->get_scene ()) {
-                // TODO: update everything through 'process_commands'
-                this->renderer->update (i, this->settings, scene->get_state ());
-            }
+            this->renderer->update (i, this->settings); // TODO: update everything through 'process_commands'
 
             this->renderer->render (cmd_buff);
             gui::draw (this->vulkan_context->get_swapchain_image_index (), cmd_buff);
@@ -197,7 +195,7 @@ void Application::cleanup () {
     gui::cleanup (this->settings);
 
     if (this->renderer) {
-        this->renderer->shutdown (this->settings);
+        this->renderer->shutdown ();
     }
 
     if (this->vulkan_context) {
@@ -239,12 +237,12 @@ void Application::on_scene_event (SceneEventType type, const std::filesystem::pa
 
     switch (type) {
         case SceneEventType::LOADED: {
-            Scene* scene_ptr = this->scene_manager->get_scene ();
+            std::shared_ptr <Scene> scene = this->scene_manager->get_scene ();
 
-            if (scene_ptr) {
-                RenderCommand command = [scene_ptr] (Renderer* renderer) {
+            if (scene) {
+                RenderCommand command = [scene] (Renderer* renderer) {
                     if (SDFRasterizer* sdf_rasterizer = dynamic_cast <SDFRasterizer*> (renderer)) {
-                        sdf_rasterizer->set_scene (scene_ptr);
+                        sdf_rasterizer->set_scene (scene);
                     }
                 };
                 std::lock_guard lock (this->render_command_mutex);

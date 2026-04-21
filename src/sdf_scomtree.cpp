@@ -13,12 +13,6 @@
 
 namespace sdf_raster {
 
-float sample_sdf (const SComTree& /*scene*/, const LiteMath::float3& /*p*/) {
-    // TODO
-    assert (false);
-    return 0.f;
-}
-
 SComTreeTreeDescriptorSetInfo::SComTreeTreeDescriptorSetInfo (VkDevice device
     , VkPhysicalDevice physical_device
     , std::shared_ptr <vk_utils::ICopyEngine> copy_helper

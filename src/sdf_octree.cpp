@@ -1,77 +1,14 @@
+#include "sdf_octree.hpp"
+
+#include <vk_buffers.h>
+
 #include <cstdint>
 #include <fstream>
 #include <stack>
 #include <future>
 
-#include "vk_buffers.h"
-
-#include "logger.hpp"
-#include "sdf_octree.hpp"
 
 namespace sdf_raster {
-
-// TODO: move to scenes/octree
-void dump_sdf_octree_text (const SdfOctree &scene, const std::string &path_to_dump) {
-    std::ofstream dump_file (path_to_dump);
-    if (!dump_file.is_open()) {
-        LOG_ERROR ("could not open file {} for dumping octree", path_to_dump);
-        return;
-    }
-
-    dump_file << "SDF Octree Dump:" << std::endl;
-    dump_file << "Total nodes: " << scene.nodes.size() << std::endl;
-    dump_file << "----------------------------------------" << std::endl;
-
-    for (size_t i = 0; i < scene.nodes.size(); ++i) {
-        const auto& node = scene.nodes[i];
-        dump_file << "Node [" << i << "]:" << std::endl;
-        dump_file << "  Values: [";
-        for (int j = 0; j < 8; ++j) {
-            dump_file << node.values[j] << (j < 7 ? ", " : "");
-        }
-        dump_file << "]" << std::endl;
-        dump_file << "  Offset: " << node.offset << std::endl;
-        if (node.offset == 0) {
-            dump_file << "  Type: Leaf Node" << std::endl;
-        } else {
-            dump_file << "  Type: Internal Node (children start around index after offset manipulation, or at offset index)" << std::endl;
-        }
-        dump_file << "----------------------------------------" << std::endl;
-    }
-
-    dump_file.close();
-    LOG_INFO ("SDF Octree successfully dumped to '{}'", path_to_dump);
-}
-
-// TODO: move to scenes/octree
-float sample_sdf (const SdfOctree& scene, const LiteMath::float3& p) {
-    const SdfOctreeNode* node = &scene.nodes [0];
-    LiteMath::float3 min_corner = {-1.0f, -1.0f, -1.0f};
-    float voxel_size = 2.0f;
-
-    while (node->offset != 0) {
-        float half = voxel_size * 0.5f;
-        unsigned child_index = 0;
-        if (p.x >= min_corner.x + half) child_index |= 1, min_corner.x += half;
-        if (p.y >= min_corner.y + half) child_index |= 2, min_corner.y += half;
-        if (p.z >= min_corner.z + half) child_index |= 4, min_corner.z += half;
-        voxel_size = half;
-        node = &scene.nodes [node->offset + child_index];
-    }
-
-    LiteMath::float3 local = (p - min_corner) / voxel_size;
-    auto lerp = [] (float a, float b, float t) { return a + t * (b - a); };
-
-    float c00 = lerp (node->values [0], node->values [1], local.x);
-    float c01 = lerp (node->values [4], node->values [5], local.x);
-    float c10 = lerp (node->values [3], node->values [2], local.x);
-    float c11 = lerp (node->values [7], node->values [6], local.x);
-
-    float c0 = lerp (c00, c10, local.y);
-    float c1 = lerp (c01, c11, local.y);
-
-    return lerp (c0, c1, local.z);
-}
 
 SdfOctreeDescriptorSetInfo::SdfOctreeDescriptorSetInfo (VkDevice device
         , VkPhysicalDevice physical_device

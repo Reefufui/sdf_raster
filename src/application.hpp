@@ -22,8 +22,7 @@ public:
     Application ();
     ~Application ();
 
-    void run (bool single_frame);
-    void marching_cubes_cpu (const std::string& a_octree_filename, const std::string& a_mesh_filename);
+    void run ();
 
 private:
     void cleanup ();

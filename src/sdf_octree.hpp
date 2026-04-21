@@ -18,9 +18,6 @@ struct FrustumGeometry;
 
 namespace sdf_raster {
 
-void dump_sdf_octree_text (const SdfOctree &scene, const std::string &path_to_dump);
-float sample_sdf (const SdfOctree& scene, const LiteMath::float3& p);
-
 class SdfOctreeDescriptorSetInfo {
 public:
     SdfOctreeDescriptorSetInfo (VkDevice device

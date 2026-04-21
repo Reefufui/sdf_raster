@@ -15,10 +15,6 @@
 
 namespace sdf_raster {
 
-// TODO: move to scenes/scomtree
-void load_scomtree (SComTree& scene, const std::filesystem::path& path);
-float sample_sdf (const SComTree& scene, const LiteMath::float3& p);
-
 class SComTreeTreeDescriptorSetInfo {
 public:
     SComTreeTreeDescriptorSetInfo (VkDevice device
@@ -59,11 +55,6 @@ private:
 
     VkDeviceMemory memory = VK_NULL_HANDLE;
 };
-
-// TODO: move to scenes/scomtree
-std::vector <NodeContext> get_scomtree_subtrees_payloads (const SComTree& scene, int max_level_to_descend);
-std::vector <NodeContext> get_scomtree_subtrees_payloads_parallel (const SComTree& scene, int max_level_to_descend);
-int get_scomtree_max_depth (const SComTree& scene);
 
 }
 

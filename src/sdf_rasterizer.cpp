@@ -1423,7 +1423,11 @@ void SDFRasterizer::copy_subtrees (VkCommandBuffer cmd_buff) {
     barr.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barr.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barr.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barr.buffer = this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index);
+    if (this->sdf_octree_ds) {
+        barr.buffer = this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index);
+    } else if (this->sdf_scomtree_ds) {
+        barr.buffer = this->sdf_scomtree_ds->get_subtree_root_buffer (this->frame_index);
+    }
     barr.offset = 0;
     barr.size = subtrees_size;
 
@@ -2078,7 +2082,6 @@ void SDFRasterizer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff)
     }
 
     this->copy_subtrees (cmd_buff);
-    // FIXME: this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
     this->traverse_octree (cmd_buff);

@@ -7,7 +7,6 @@
 #include "application.hpp"
 #include "gui.hpp"
 #include "logger.hpp"
-#include "marching_cubes.hpp"
 #include "scenes/obj/obj.hpp"
 #include "scenes/octree/octree.hpp"
 #include "scenes/scomtree/scomtree.hpp"
@@ -51,19 +50,7 @@ Application::~Application () {
     cleanup ();
 }
 
-void Application::marching_cubes_cpu (const std::string& /*a_octree_filename*/, const std::string& a_mesh_filename) {
-    assert (false && "cpu-only implementation temporary unsupported");
-    SdfOctree scene {};
-    // TODO: load_sdf_octree (scene, a_octree_filename);
-
-    MarchingCubesSettings settings;
-    settings.iso_level = 0.0f;
-    settings.max_threads = 1;
-    const std::vector <Mesh> meshes = create_mesh_marching_cubes (settings, scene);
-    save_mesh_as_obj (meshes [0], a_mesh_filename); // TODO: mesh concatenation
-}
-
-void Application::run (bool /*single_frame*/) {
+void Application::run () {
     if (!this->renderer) {
         cleanup ();
         throw std::logic_error ("[Application::run] renderer is not inited");

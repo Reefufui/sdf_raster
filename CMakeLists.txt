@@ -160,7 +160,6 @@ add_executable(${PROJECT_NAME}
     src/logger.cpp
     src/main.cpp
     src/marching_cubes_lookup_table.cpp
-    src/marching_cubes.cpp
     src/mesh.cpp
     src/occlusion_culling.cpp
     src/sdf_octree.cpp

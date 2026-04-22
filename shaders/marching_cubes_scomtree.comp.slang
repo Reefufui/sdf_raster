@@ -33,16 +33,6 @@
 
 [[vk::binding (0, 5)]] RWStructuredBuffer <LevelOfDetail> g_lod;
 
-static const float eps = 1e-6f;
-
-float sample_sdf (const float3 p) {
-    return 0.f; // TODO:
-}
-
-float3 sample_normal (float3 p) {
-    return float3 (0.f); // TODO:
-}
-
 float3 interpolate_vertex (float isolevel, float3 p1, float3 p2, float valp1, float valp2) {
     if (abs (isolevel - valp1) < 0.00001)
         return (p1);
@@ -60,22 +50,20 @@ float3 interpolate_vertex (float isolevel, float3 p1, float3 p2, float valp1, fl
     return (p);
 }
 
-/*
-float eval_sdf_local (VoxelContext ctx, float3 p) {
-    float3 local_p = (p - ctx.min_pos) / ctx.size;
+float eval_local_voxel_sdf (float sdf [8], float3 min_pos, float size, float3 p) {
+    float3 local_p = (p - min_pos) / size;
     float tx = local_p.x, ty = local_p.y, tz = local_p.z;
 
-    float c00 = ctx.sdf [0] * (1 - tx) + ctx.sdf [4] * tx;
-    float c01 = ctx.sdf [1] * (1 - tx) + ctx.sdf [5] * tx;
-    float c10 = ctx.sdf [2] * (1 - tx) + ctx.sdf [6] * tx;
-    float c11 = ctx.sdf [3] * (1 - tx) + ctx.sdf [7] * tx;
+    float c00 = sdf [0] * (1 - tx) + sdf [4] * tx;
+    float c01 = sdf [1] * (1 - tx) + sdf [5] * tx;
+    float c10 = sdf [2] * (1 - tx) + sdf [6] * tx;
+    float c11 = sdf [3] * (1 - tx) + sdf [7] * tx;
 
     float c0 = c00 * (1 - ty) + c10 * ty;
     float c1 = c01 * (1 - ty) + c11 * ty;
 
     return c0 * (1 - tz) + c1 * tz;
 }
-*/
 
 void generate_geometry (uint active_leaf_index) {
 	const SComTreeBrickPayload payload = g_active_leafs [active_leaf_index];
@@ -106,8 +94,6 @@ void generate_geometry (uint active_leaf_index) {
 
         float vmin = 1e30;
         float vmax = -1e30;
-        // float vmin = float.minValue;
-        // float vmax = float.maxValue;
         float sdf_values [8] = {};
 
         for (int i = 0; i < 8; ++i) {
@@ -169,38 +155,23 @@ void generate_geometry (uint active_leaf_index) {
 
                 Vertex vertex;
                 vertex.position = mul (pc.view_proj, float4 (position, 1.0f));
-                // vertex.normal = float4 (sample_normal (position), 1.0f); // TODO:
+
+                const float h = voxel_size * 0.01f;
+                const float dx = eval_local_voxel_sdf (sdf_values, voxel_min_pos, voxel_size, position + float3 (h, 0, 0))
+                               - eval_local_voxel_sdf (sdf_values, voxel_min_pos, voxel_size, position - float3 (h, 0, 0));
+                const float dy = eval_local_voxel_sdf (sdf_values, voxel_min_pos, voxel_size, position + float3 (0, h, 0))
+                               - eval_local_voxel_sdf (sdf_values, voxel_min_pos, voxel_size, position - float3 (0, h, 0));
+                const float dz = eval_local_voxel_sdf (sdf_values, voxel_min_pos, voxel_size, position + float3 (0, 0, h))
+                               - eval_local_voxel_sdf (sdf_values, voxel_min_pos, voxel_size, position - float3 (0, 0, h));
+                const float3 norm = normalize (float3 (dx, dy, dz));
+
+                vertex.normal = { norm.x, norm.y, norm.z, 0.0f };
                 vertex.color = float4 (1.f);
 
                 g_vertices [voxel_vertices_offset + i] = vertex;
 
                 edge_bit <<= 1;
             }
-
-            /*
-            const int* triangle_indices = cube_index_2_triangle_indices [cube_index];
-            for (int i = 0; triangle_indices [i] != -1; i += 3) {
-                for (int j = 0; j < 3; ++j) {
-                    auto pos = edge_vertices [triangle_indices [i + j]];
-                    tri [j].position = { pos.x, pos.y, pos.z, 1.f };
-
-                    const float h = ctx.size * 0.01f;
-
-                    float dx = eval_sdf_local (ctx, pos + float3 {h, 0, 0})
-                        - eval_sdf_local (ctx, pos - float3 {h, 0, 0});
-                    float dy = eval_sdf_local (ctx, pos + float3 {0, h, 0})
-                        - eval_sdf_local (ctx, pos - float3 {0, h, 0});
-                    float dz = eval_sdf_local (ctx, pos + float3 {0, 0, h})
-                        - eval_sdf_local (ctx, pos - float3 {0, 0, h});
-
-                    float3 norm = normalize (float3 {dx, dy, dz});
-                    tri [j].normal = { norm.x, norm.y, norm.z, 0.0f };
-
-                    // tri [j].color = float4 (1.f, 1.f, 1.f, 1.f);
-                    tri [j].color = to_float4 ((norm / 2.f) + 0.5f, 1.f);
-                }
-            }
-            */
         }
     }
 

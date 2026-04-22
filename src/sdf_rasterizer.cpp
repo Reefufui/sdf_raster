@@ -1111,7 +1111,7 @@ void SDFRasterizer::copy_depth (VkCommandBuffer cmd_buff) {
         depth_to_src.pNext = nullptr;
         depth_to_src.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         depth_to_src.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        depth_to_src.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depth_to_src.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         depth_to_src.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         depth_to_src.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         depth_to_src.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -1946,7 +1946,11 @@ void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buf
     this->hz_buffer_barrier (cmd_buff);
 
     if (!this->frustum_draw_buffer) {
-        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->context->get_depth_buffer ().image;
+        if (this->deferred_shading) {
+            this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->deferred_shading->get_depth_buffer (this->frame_index);
+        } else {
+            this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->context->get_depth_buffer ().image;
+        }
         this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
     }
 }

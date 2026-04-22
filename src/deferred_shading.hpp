@@ -34,6 +34,8 @@ public:
     VkDescriptorSet get_descriptor_set (uint32_t fif_index) const { return this->descriptor_sets [fif_index]; }
     VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
 
+    VkImage get_depth_buffer (uint32_t fif_index) const { return this->gbuffer_cascades [fif_index].images [3].image; }
+
 private:
     VkDevice device = VK_NULL_HANDLE;
 

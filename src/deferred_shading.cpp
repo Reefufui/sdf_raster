@@ -124,7 +124,7 @@ std::vector <vk_utils::VulkanImageMem> create_gbuffer_images (VkDevice device, V
 
     depth_images.push_back (
         vk_utils::createImg (device, extent.width, extent.height, depth_format
-            , VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 1)
+            , VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 1)
     );
 
     vk_utils::allocateImgsBindCreateView (device, physical_device, color_images);

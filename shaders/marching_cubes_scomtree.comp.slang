@@ -78,9 +78,9 @@ float eval_sdf_local (VoxelContext ctx, float3 p) {
 */
 
 void generate_geometry (uint active_leaf_index) {
-	SComTreeBrickPayload payload = g_active_leafs [active_leaf_index];
-	uint vertices_offset = active_leaf_index * MAX_BRICK_VERTS;
-	uint indices_offset = active_leaf_index * MAX_BRICK_PRIMS * 3;
+	const SComTreeBrickPayload payload = g_active_leafs [active_leaf_index];
+	const uint brick_vertices_offset = active_leaf_index * MAX_BRICK_VERTS;
+	const uint brick_indices_offset = active_leaf_index * MAX_BRICK_PRIMS * 3;
 
     const uint3 p = uint3 (payload.p_size.x >> 16, payload.p_size.x & 0xFFFF, payload.p_size.y >> 16);
     const uint32_t level_sz = payload.p_size.y & 0xFFFF;
@@ -92,18 +92,23 @@ void generate_geometry (uint active_leaf_index) {
     const uint link = payload.rot_link & 0x3FFFFFF;
     const uint rotation = payload.rot_link >> 26;
 
-    uint32_t link_data = g_scomtree_nodes [link];
-    SdfDAGDataEdge de = unpack_data_edge (g_scomtree_header, max_val, link_data, link_data);
-    uint32_t offset = g_scomtree_header.bricks_step * de.data_offset;
-    uint32_t rotation_index = g_rotation_add [rotation * 48 + de.rotation_id];
-    float add = de.add;
+    const uint32_t link_data = g_scomtree_nodes [link];
+    const SdfDAGDataEdge de = unpack_data_edge (g_scomtree_header, max_val, link_data, link_data);
+    const uint32_t offset = g_scomtree_header.bricks_step * de.data_offset;
+    const uint32_t rotation_index = g_rotation_add [rotation * 48 + de.rotation_id];
+    const float add = de.add;
 
     for (uint32_t vox_idx = 0; vox_idx < 8; ++vox_idx) {
-        float vmin = float.minValue;
-        float vmax = float.maxValue;
-        float sdf_values [8] = {};
+	    const uint voxel_vertices_offset = brick_vertices_offset + vox_idx * MAX_LEAF_VERTS;
+	    const uint voxel_indices_offset = brick_indices_offset + vox_idx * MAX_LEAF_PRIMS * 3;
 
-        int3 vox_p = int3 (((vox_idx & 4) >> 2), ((vox_idx & 2) >> 1), (vox_idx & 1));
+        const int3 vox_p = int3 (((vox_idx & 4) >> 2), ((vox_idx & 2) >> 1), (vox_idx & 1));
+
+        float vmin = 1e30;
+        float vmax = -1e30;
+        // float vmin = float.minValue;
+        // float vmax = float.maxValue;
+        float sdf_values [8] = {};
 
         for (int i = 0; i < 8; ++i) {
             int4 value_p = int4 (vox_p, 0) + int4 (((i & 4) >> 2), ((i & 2) >> 1), (i & 1), 1);
@@ -139,14 +144,14 @@ void generate_geometry (uint active_leaf_index) {
 
             for (int i = 0; i < triangles_count; ++i) {
                 const int base = cube_index * 16 + i * 3;
-                g_indices [indices_offset + i * 3 + 0] = vertices_offset + cube_index_2_triangle_indices [base + 0];
-                g_indices [indices_offset + i * 3 + 1] = vertices_offset + cube_index_2_triangle_indices [base + 1];
-                g_indices [indices_offset + i * 3 + 2] = vertices_offset + cube_index_2_triangle_indices [base + 2];
+                g_indices [voxel_indices_offset + i * 3 + 0] = voxel_vertices_offset + cube_index_2_triangle_indices [base + 0];
+                g_indices [voxel_indices_offset + i * 3 + 1] = voxel_vertices_offset + cube_index_2_triangle_indices [base + 1];
+                g_indices [voxel_indices_offset + i * 3 + 2] = voxel_vertices_offset + cube_index_2_triangle_indices [base + 2];
             }
 
             int edge_mask = cube_index_2_edge_mask [cube_index];
             if (edge_mask == 0) {
-                return;
+                continue;
             }
             int edge_bit = 1;
 
@@ -167,7 +172,7 @@ void generate_geometry (uint active_leaf_index) {
                 // vertex.normal = float4 (sample_normal (position), 1.0f); // TODO:
                 vertex.color = float4 (1.f);
 
-                g_vertices [vertices_offset + MAX_LEAF_VERTS * vox_idx + i] = vertex;
+                g_vertices [voxel_vertices_offset + i] = vertex;
 
                 edge_bit <<= 1;
             }
@@ -200,7 +205,7 @@ void generate_geometry (uint active_leaf_index) {
     }
 
 	if (active_leaf_index == g_active_leaf_counter [0] - 1) {
-		g_draw_indexed_indirect_command [0] = {(indices_offset + MAX_BRICK_PRIMS) * 3, 1, 0, 0, 0};
+		g_draw_indexed_indirect_command [0] = {(brick_indices_offset + MAX_BRICK_PRIMS * 3), 1, 0, 0, 0};
 	}
 }
 

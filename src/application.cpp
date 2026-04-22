@@ -37,6 +37,15 @@ Application::~Application () {
     glfwGetWindowSize (window, &this->settings.window_width, &this->settings.window_height);
     glfwSetWindowShouldClose (this->window, true);
 
+    {
+        // NOTE: We should destroy renderer prior to saving scene states
+        // If we want it to return camera captured during frustum demo.
+        this->settings.frustum_view = false;
+        if (this->renderer) {
+            this->renderer->shutdown ();
+        }
+    }
+
     SessionState session_to_save;
     session_to_save.settings = this->settings;
     session_to_save.scene_states = this->scene_manager->get_all_states ();

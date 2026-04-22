@@ -166,7 +166,7 @@ void SComTreeTreeDescriptorSetInfo::update_subtree_root_buffer (const FrustumGeo
     auto visible_subtrees = this->scene->collect_visible_subtrees (frustum);
     this->subtree_count = visible_subtrees.size ();
     if (this->subtree_count) {
-        memcpy (this->subtrees_memory_mapped [fif_index], visible_subtrees.data (), this->subtree_count * sizeof (NodeContext));
+        memcpy (this->subtrees_memory_mapped [fif_index], visible_subtrees.data (), this->subtree_count * sizeof (SComTreeStackElement));
     }
 }
 

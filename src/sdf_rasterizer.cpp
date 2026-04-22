@@ -313,7 +313,8 @@ void SDFRasterizer::init_graphics_identity_pipeline () {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    // rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -910,7 +911,8 @@ void SDFRasterizer::init_mesh_shading_octree_pipeline () {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    // rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -1074,7 +1076,8 @@ void SDFRasterizer::init_graphics_frustum_pipeline () {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    // rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -1172,6 +1175,8 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
     this->stats.active_leafs_count = (this->active_leafs_ds) ? this->active_leafs_ds->fetch_active_leaf_counter (this->frame_index) : 0;
     if (this->sdf_octree_ds) {
         this->stats.active_roots_count = this->sdf_octree_ds->get_subtree_count ();
+    } else if (this->sdf_scomtree_ds) {
+        this->stats.active_roots_count = this->sdf_scomtree_ds->get_subtree_count ();
     } else {
         this->stats.active_roots_count = 0;
     }
@@ -1206,6 +1211,8 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
 
         if (this->sdf_octree_ds) {
             this->sdf_octree_ds->update_subtree_root_buffer (this->frustum, this->frame_index);
+        } else if (this->sdf_scomtree_ds) {
+            this->sdf_scomtree_ds->update_subtree_root_buffer (this->frustum, this->frame_index);
         }
     }
 }
@@ -1692,7 +1699,7 @@ void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgro
 
 void SDFRasterizer::marching_cubes_octree (VkCommandBuffer cmd_buff) {
     assert (this->context && "required for 'marching_cubes_octree'");
-    assert (this->sdf_octree_ds && "required for 'marching_cubes_octree'"); // TODO: scomtree
+    assert (this->sdf_octree_ds && "required for 'marching_cubes_octree'");
     assert (this->mesh_ds && "required for 'marching_cubes_octree'");
     assert (this->marching_cubes_lookup_table_ds && "required for 'marching_cubes_octree'");
     assert (this->active_leafs_ds && "required for 'marching_cubes_octree'");
@@ -1720,7 +1727,7 @@ void SDFRasterizer::marching_cubes_octree (VkCommandBuffer cmd_buff) {
 
 void SDFRasterizer::marching_cubes_scomtree (VkCommandBuffer cmd_buff) {
     assert (this->context && "required for 'marching_cubes_scomtree'");
-    assert (this->sdf_scomtree_ds && "required for 'marching_cubes_scomtree'"); // TODO: scomtree
+    assert (this->sdf_scomtree_ds && "required for 'marching_cubes_scomtree'");
     assert (this->mesh_ds && "required for 'marching_cubes_scomtree'");
     assert (this->marching_cubes_lookup_table_ds && "required for 'marching_cubes_scomtree'");
     assert (this->active_leafs_ds && "required for 'marching_cubes_scomtree'");
@@ -2249,13 +2256,6 @@ void SDFRasterizer::set_scene (std::shared_ptr <Scene> scene) {
             , this->context->get_swapchain_extent ()
             , this->context->get_total_frames ());
 
-        /*
-        LOG_INFO ("[{}] Created {} HZ-buffers for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
-            , this->context->get_total_frames ()
-            , this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height
-            , this->hz_buffer_ds.frame_resources [0].hz_buffer.mipLvls);
-            */
-
         this->indirect_dispatch_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_physical_device ()
             , VK_SHADER_STAGE_COMPUTE_BIT
@@ -2270,7 +2270,8 @@ void SDFRasterizer::set_scene (std::shared_ptr <Scene> scene) {
 	        , this->context->get_total_frames ());
     }
 
-    if (method == DrawMethod::OctreeCompute || method == DrawMethod::SComTreeCompute) {
+    if (method == DrawMethod::OctreeCompute || method == DrawMethod::SComTreeCompute
+        || method == DrawMethod::OctreeMesh || method == DrawMethod::SComTreeMesh) {
         VkDeviceSize active_leaf_size = (method == DrawMethod::OctreeCompute) ? sizeof (NodeContext) : sizeof (SComTreeBrickPayload);
 
 	    this->active_leafs_ds = std::make_unique <ActiveLeafsDescriptorSetInfo> (this->context->get_device ()
@@ -2408,13 +2409,14 @@ void SDFRasterizer::shutdown () {
         return;
     }
 
-    this->reset_scene ();
-
     if (this->frustum_draw_buffer) {
-        // settings.frustum_view = false;
-        // scene_state.camera = this->frustum_draw_buffer->get_camera ();
+        if (this->current_scene) {
+            this->current_scene->get_state ().camera = this->frustum_draw_buffer->get_camera ();
+        }
         this->frustum_draw_buffer.reset ();
     }
+
+    this->reset_scene ();
 
     this->frustum_ds.reset ();
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_frustum_pipeline, this->graphics_frustum_pipeline_layout);

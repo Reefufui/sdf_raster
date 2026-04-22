@@ -53,13 +53,6 @@ bool is_visible_node (int level, float3 node_coord, float node_size, out float m
 #define MAX_DIRECT_DESCEND_PATH 5
 #define SCOM2_EPS 1e-6f
 
-struct ExtStackElement {
-    uint links_offset;
-    uint transform;
-    uint info;
-    uint2 p_size;
-};
-
 // NOTE: root expected to have children
 void dfs_scomtree (SComTreeStackElement cur, uint lod) {
     SComTreeStackElement stack [16];
@@ -67,10 +60,7 @@ void dfs_scomtree (SComTreeStackElement cur, uint lod) {
     int top = 0;
     float d = 1.0f;
 
-    stack [0].links_offset = 0xFFFFFFFFu;
-    stack [0].info = 0;
-    stack [0].transform = 0;
-    stack [0].p_size = uint2 (0, 0);
+    stack [0] = cur;
 
     while (top >= 0) {
         const uint child = cur.info & 0x7;

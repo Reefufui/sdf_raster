@@ -168,8 +168,6 @@ add_executable(${PROJECT_NAME}
     src/state.cpp
     src/vulkan_context.cpp
 
-    src/algorithms/scomtree_traverse.cpp
-
     src/scenes/obj/obj.cpp
     src/scenes/octree/octree.cpp
     src/scenes/scene_manager.cpp

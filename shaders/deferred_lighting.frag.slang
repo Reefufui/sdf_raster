@@ -1,7 +1,7 @@
 // deferred_lighting.frag.slang
 #include "shader_common.hpp"
 
-[[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
+[[vk::push_constant]] ConstantBuffer <DeferredLightingPushConstants> pc;
 
 [[vk::binding (0, 0)]] Sampler2D tex_position;
 [[vk::binding (1, 0)]] Sampler2D tex_normal;
@@ -20,8 +20,6 @@ float4 main (float4 sv_pos : SV_Position) : SV_Target {
     float3 position = tex_position.Sample (uv).xyz;
     float4 albedo = tex_albedo.Sample (uv);
 
-    const float depthThreshold = 0.0001f; 
-    
     float bestNeighborDepth = 1.0f;
     int2  best_offset = int2 (0, 0);
     bool  isHole = false;
@@ -35,7 +33,7 @@ float4 main (float4 sv_pos : SV_Position) : SV_Target {
             float2 sample_uv = uv + float2 (x, y) * texel_size;
             float d = tex_depth.Sample (sample_uv).r;
 
-            if (d < depth - depthThreshold) {
+            if (d < depth - pc.depth_threshold) {
                 isHole = true;
                 if (d < bestNeighborDepth) {
                     bestNeighborDepth = d;
@@ -57,31 +55,23 @@ float4 main (float4 sv_pos : SV_Position) : SV_Target {
         return albedo;
     }
 
-    const float3 lightPos = float3 (5.0f, 5.0f, 5.0f);
-    const float3 lightCol = float3 (1.0f, 1.0f, 1.0f);
-    
-    float3 light_dir = normalize (lightPos - position);
+    float3 light_dir = normalize (pc.light_pos.xyz - position);
     float3 view_dir  = normalize (pc.camera_pos.xyz - position);
     float3 half_dir  = normalize (light_dir + view_dir);
 
+    float3 ambient_term = albedo.rgb * pc.ambient_strength;
+
     float diff = saturate (dot (normal, light_dir));
-    float3 diffuse_term = albedo.rgb * diff * lightCol;
+    float3 diffuse_term = albedo.rgb * diff * pc.light_color.xyz;
 
-    float spec = pow (saturate (dot (normal, half_dir)), 64.0f);
-    float3 specular_term = float3 (0.4f) * spec * lightCol;
+    float spec = pow (saturate (dot (normal, half_dir)), pc.shininess);
+    float3 specular_term = float3 (pc.specular_strength) * spec * pc.light_color.xyz;
 
-    float3 ambient_term = albedo.rgb * 0.1f;
+    float3 final_color = ambient_term + diffuse_term + specular_term;
 
-    float3 finalColor = ambient_term + diffuse_term + specular_term;
+    float fog_factor = smoothstep (pc.fog_start, pc.fog_end, depth);
+    final_color = lerp (final_color, pc.fog_color.xyz, fog_factor);
 
-    const float3 fogColor = float3 (0.25f, 0.25f, 0.25f);
-    const float fogStart = 0.999f;
-    const float fogEnd = 1.0f;
-
-    float fogFactor = smoothstep (fogStart, fogEnd, depth);
-
-    float3 colorWithFog = lerp (finalColor, fogColor, fogFactor);
-
-    return float4 (colorWithFog, 1.0f);
+    return float4 (final_color, 1.0f);
 }
 

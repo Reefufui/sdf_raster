@@ -2,8 +2,9 @@
 #pragma once
 
 #include "state.hpp"
-#include "nlohmann/json.hpp"
-#include "LiteMath.h"
+
+#include <nlohmann/json.hpp>
+#include <LiteMath.h>
 
 #include <filesystem>
 #include <string>
@@ -119,6 +120,19 @@ struct adl_serializer <std::optional <T>> {
 } // namespace nlohmann
 
 namespace sdf_raster {
+    NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(
+        LightingSettings,
+        light_pos,
+        light_color,
+        fog_color,
+        ambient_strength,
+        specular_strength,
+        shininess,
+        depth_threshold,
+        fog_start,
+        fog_end
+    )
+
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE (
         Settings,
         window_width,
@@ -128,7 +142,8 @@ namespace sdf_raster {
         color_leafs,
         show_ui,
         show_camera_window,
-        show_renderer_window
+        show_renderer_window,
+        lighting
     )
 
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE (

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "shader_common.hpp" // DeferredLightingPushConstants
+
 #include <vk_descriptor_sets.h> // DescriptorMaker
 #include <vk_images.h> // VulkanImageMem
 #include <vk_include.h> // vk* Vk*
@@ -33,6 +35,7 @@ public:
     VkFramebuffer get_lighting_fb (uint32_t swap_index) const { return this->lighting_framebuffers [swap_index]; }
     VkDescriptorSet get_descriptor_set (uint32_t fif_index) const { return this->descriptor_sets [fif_index]; }
     VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
+    DeferredLightingPushConstants& push_constants_ref () { return this->push_constants; }
 
     VkImage get_depth_buffer (uint32_t fif_index) const { return this->gbuffer_cascades [fif_index].images [3].image; }
 
@@ -55,5 +58,7 @@ private:
     std::unique_ptr <vk_utils::DescriptorMaker> desc_maker; 
     std::vector <VkDescriptorSet> descriptor_sets; // NOTE: In-Flight count
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
+
+    DeferredLightingPushConstants push_constants;
 };
 

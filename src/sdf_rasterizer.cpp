@@ -1038,6 +1038,24 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
     this->push_constants.frustum_culling_level = scene_state.frustum_culling_level;
     this->push_constants.color_leafs = settings.color_leafs;
 
+    if (this->deferred_shading) {
+        auto& lighting_pc = this->deferred_shading->push_constants_ref ();
+        const auto& lighting = settings.lighting;
+
+        lighting_pc.camera_pos        = LiteMath::to_float4 (scene_state.camera.get_position (), 1.0f);
+        lighting_pc.light_pos         = LiteMath::to_float4 (lighting.light_pos, 1.0f);
+        lighting_pc.light_color       = LiteMath::to_float4 (lighting.light_color, 1.0f);
+        lighting_pc.fog_color         = LiteMath::to_float4 (lighting.fog_color, 1.0f);
+
+        lighting_pc.ambient_strength  = lighting.ambient_strength;
+        lighting_pc.specular_strength = lighting.specular_strength;
+        lighting_pc.shininess         = lighting.shininess;
+        lighting_pc.depth_threshold   = lighting.depth_threshold;
+
+        lighting_pc.fog_start         = lighting.fog_start;
+        lighting_pc.fog_end           = lighting.fog_end;
+    }
+
     if (!settings.frustum_view && this->frustum_ds) {
         FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds->get_frustum_geometry_memory_ptr (this->frame_index));
         this->update_frustum_buffer (scene_state.camera);
@@ -1815,7 +1833,7 @@ void SDFRasterizer::deferred_rendering (VkCommandBuffer cmd_buff) {
         , this->graphics_lighting_pipeline_layout, 0, 1, &gbuffer_ds, 0, nullptr);
 
     vkCmdPushConstants (cmd_buff, this->graphics_lighting_pipeline_layout
-        , VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+        , VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (DeferredLightingPushConstants), &this->deferred_shading->push_constants_ref ());
 
     vkCmdDraw (cmd_buff, 3, 1, 0, 0); // NOTE: Fullscreen Triangle
 

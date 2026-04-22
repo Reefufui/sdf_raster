@@ -84,6 +84,22 @@ struct PushConstantsData {
     alignas (4)  uint color_leafs;
 };
 
+struct DeferredLightingPushConstants {
+    float4 camera_pos;         // xyz = camera world pos
+    float4 light_pos;          // xyz = light world pos
+    float4 light_color;        // rgb = color, a unused
+
+    float4 fog_color;          // rgb = fog color, a unused
+
+    float  ambient_strength;   // 0.1 default
+    float  specular_strength;  // 0.4 default
+    float  shininess;          // 64.0 default
+    float  depth_threshold;    // 0.0001 default
+
+    float  fog_start;          // 0.999 default
+    float  fog_end;            // 1.0 default
+};
+
 struct SComTreeHeader {
     uint brick_size;
     uint v_size;

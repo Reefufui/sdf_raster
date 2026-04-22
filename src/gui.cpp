@@ -443,8 +443,79 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
         ImGui::EndDisabled ();
     }
 
-    ImGui::SeparatorText ("Fragment");
+    ImGui::SeparatorText ("Lighting");
     ImGui::Checkbox ("color leafs", &settings.color_leafs);
+
+    auto& lighting = settings.lighting;
+
+    ImGui::Spacing ();
+
+    if (ImGui::CollapsingHeader ("Deferred lighting", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::DragFloat3 ("light pos", &lighting.light_pos.x, 0.1f);
+        if (ImGui::IsItemHovered ()) {
+            ImGui::SetTooltip ("World-space light position.");
+        }
+
+        ImGui::ColorEdit3 ("light color", &lighting.light_color.x);
+        if (ImGui::IsItemHovered ()) {
+            ImGui::SetTooltip ("Light color used for diffuse and specular terms.");
+        }
+
+        ImGui::SliderFloat ("ambient strength", &lighting.ambient_strength, 0.0f, 1.0f, "%.3f");
+        if (ImGui::IsItemHovered ()) {
+            ImGui::SetTooltip ("Constant ambient light contribution.");
+        }
+
+        ImGui::SliderFloat ("specular strength", &lighting.specular_strength, 0.0f, 2.0f, "%.3f");
+        if (ImGui::IsItemHovered ()) {
+            ImGui::SetTooltip ("Intensity of the specular highlight.");
+        }
+
+        ImGui::SliderFloat ("shininess", &lighting.shininess, 1.0f, 256.0f, "%.1f");
+        if (ImGui::IsItemHovered ()) {
+            ImGui::SetTooltip ("Higher values produce a tighter specular highlight.");
+        }
+
+        ImGui::DragFloat ("depth threshold", &lighting.depth_threshold, 0.00001f, 0.0f, 0.01f, "%.5f");
+        if (ImGui::IsItemHovered ()) {
+            ImGui::SetTooltip ("Threshold for hole detection when selecting a better depth neighbor.");
+        }
+
+        ImGui::ColorEdit3 ("fog color", &lighting.fog_color.x);
+        if (ImGui::IsItemHovered ()) {
+            ImGui::SetTooltip ("Fog color blended with lit color by depth.");
+        }
+
+        ImGui::DragFloat ("fog start", &lighting.fog_start, 0.0001f, 0.0f, 1.0f, "%.4f");
+        ImGui::DragFloat ("fog end", &lighting.fog_end, 0.0001f, 0.0f, 1.0f, "%.4f");
+        if (ImGui::IsItemHovered ()) {
+            ImGui::SetTooltip ("Fog range end depth.");
+        }
+
+        lighting.fog_start = LiteMath::clamp (lighting.fog_start, 0.0f, 1.0f);
+        lighting.fog_end   = LiteMath::clamp (lighting.fog_end,   0.0f, 1.0f);
+
+        if (lighting.fog_start > lighting.fog_end) {
+            std::swap (lighting.fog_start, lighting.fog_end);
+        }
+
+        lighting.ambient_strength  = LiteMath::max (lighting.ambient_strength,  0.0f);
+        lighting.specular_strength = LiteMath::max (lighting.specular_strength, 0.0f);
+        lighting.shininess         = LiteMath::max (lighting.shininess,         1.0f);
+        lighting.depth_threshold   = LiteMath::max (lighting.depth_threshold,   0.0f);
+
+        if (ImGui::Button ("reset lighting")) {
+            lighting.light_pos          = LiteMath::float3 (5.0f, 5.0f, 5.0f);
+            lighting.light_color        = LiteMath::float3 (1.0f, 1.0f, 1.0f);
+            lighting.fog_color          = LiteMath::float3 (0.25f, 0.25f, 0.25f);
+            lighting.ambient_strength   = 0.1f;
+            lighting.specular_strength  = 0.4f;
+            lighting.shininess          = 64.0f;
+            lighting.depth_threshold    = 0.0001f;
+            lighting.fog_start          = 0.999f;
+            lighting.fog_end            = 1.0f;
+        }
+    }
 
     ImGui::End ();
 }

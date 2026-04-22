@@ -65,6 +65,27 @@ void dfs_scomtree (SComTreeStackElement cur, uint lod) {
     while (top >= 0) {
         const uint child = cur.info & 0x7;
 
+        if (bool (pc.frustum_culling_level) || bool (pc.occlusion_culling_level)) {
+            const uint3 p = uint3 (cur.p_size.x >> 16, cur.p_size.x & 0xFFFF, cur.p_size.y >> 16);
+            const uint level_sz = cur.p_size.y & 0xFFFF;
+
+            const float node_size = 2.0f / float (level_sz);
+            const float3 node_coord = float3 (-1.0f, -1.0f, -1.0f) + node_size * float3 (p);
+
+            const int current_level = pc.subtree_root_level + top;
+            float max_dim;
+
+            if (!is_visible_node (current_level, node_coord, node_size, max_dim)) {
+                const uint next_child = child + 1;
+                if (next_child >= 8) {
+                    cur = stack [top--];
+                } else {
+                    cur.info = next_child | (cur.info & 0xFFFFFF00u);
+                }
+                continue; 
+            }
+        }
+
         const uint3 voxel_pos = uint3 ((child & 4) >> 2, (child & 2) >> 1, child & 1); // (0,0,0)..(1,1,1)
         const uint child_n = uint (dot (g_rotation_modifiers [2 * 48 + cur.transform]
             , int4 (int (voxel_pos.x), int (voxel_pos.y), int (voxel_pos.z), 1)));

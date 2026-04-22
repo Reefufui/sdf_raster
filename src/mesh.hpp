@@ -13,6 +13,7 @@
 
 namespace sdf_raster {
 
+// TODO: move to scenes/obj
 class Mesh {
 public:
     Mesh();
@@ -45,15 +46,24 @@ public:
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
         , VkShaderStageFlags shader_stage_flags
-        , size_t max_vertices_count
+        , size_t vertices_count
+        , size_t indices_count
         , size_t max_frames_in_flight);
     ~MeshDescriptorSetInfo ();
 
-    VkDescriptorSet get_descriptor_set (uint32_t fif_index) const { return this->descriptor_sets [fif_index]; }
+    VkDescriptorSet get_descriptor_set (uint32_t fif_index) const {
+        return (fif_index + 1 > this->descriptor_sets.size ()) ? VK_NULL_HANDLE : this->descriptor_sets [fif_index];
+    }
+
     VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
 
-    VkBuffer get_vertex_buffer (size_t fif_index) { return this->vertices_buffers [fif_index]; }
-    VkBuffer get_index_buffer (size_t fif_index) { return this->indices_buffers [fif_index]; }
+    VkBuffer get_vertex_buffer (size_t fif_index) {
+        return (fif_index + 1 > this->vertices_buffers.size ()) ? this->vertices_buffers [0] : this->vertices_buffers [fif_index];
+    }
+
+    VkBuffer get_index_buffer (size_t fif_index) {
+        return (fif_index + 1 > this->indices_buffers.size ()) ? this->indices_buffers [0] : this->indices_buffers [fif_index];
+    }
 
     LiteMath::uint fetch_insufficent_mem_flag ();
     Mesh fetch_mesh_from_device (size_t fif_index);
@@ -70,6 +80,9 @@ private:
     std::vector <VkBuffer> vertices_buffers;
     std::vector <VkBuffer> indices_buffers;
     VkBuffer insufficent_mem_flag_buffer = VK_NULL_HANDLE;
+
+    size_t vertices_count;
+    size_t indices_count;
 
     VkDeviceMemory memory = VK_NULL_HANDLE;
 };

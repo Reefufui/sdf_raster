@@ -61,7 +61,8 @@ bool SComTreeScene::load (const std::filesystem::path& path) {
 
     this->state = SceneState {
         .camera = Camera (),
-        .draw_method = DrawMethod::SComTreeCompute,
+        // .draw_method = DrawMethod::SComTreeCompute,
+        .draw_method = DrawMethod::SComTreeComputeDeferred,
         .name = path.stem ().string (),
         .path = path,
         .octree_depth = depth,

@@ -16,10 +16,14 @@ public:
         , size_t max_frames_in_flight);
     ~IndirectDescriptorSetInfo ();
 
-    VkDescriptorSet get_descriptor_set (uint32_t fif_index) const { return this->descriptor_sets [fif_index]; }
+    VkDescriptorSet get_descriptor_set (uint32_t fif_index) const {
+        return (fif_index + 1 > this->descriptor_sets.size ()) ? VK_NULL_HANDLE : this->descriptor_sets [fif_index];
+    }
     VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
 
-    VkBuffer get_indirect_buffer (uint32_t fif_index) const { return this->indirect_dispatch_buffers [fif_index]; }
+    VkBuffer get_indirect_buffer (size_t fif_index) {
+        return (fif_index + 1 > this->indirect_dispatch_buffers.size ()) ? this->indirect_dispatch_buffers [0] : this->indirect_dispatch_buffers [fif_index];
+    }
 
 private:
     VkDevice device = VK_NULL_HANDLE;

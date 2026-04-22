@@ -51,33 +51,35 @@ private:
     void init_traverse_scomtree_pipeline ();
     void init_marching_cubes_octree_pipeline ();
     void init_marching_cubes_scomtree_pipeline ();
-    void init_graphics_identity_pipeline ();
-    void init_graphics_viewproj_pipeline ();
+    void init_forward_rendering_pipeline (const std::string& vert_shader_path, const std::string& frag_shader_path, VkFrontFace front_face);
+    // TODO: init_deferred_rendering_pipelines
     void init_graphics_lighting_pipeline ();
-    void init_graphics_gbuffer_pipeline ();
+    void init_graphics_gbuffer_pipeline (const std::string& vert_shader_path, const std::string& frag_shader_path);
+    // TODO: ^^^^
     void init_mesh_shading_octree_pipeline ();
     void init_mesh_shading_scomtree_pipeline ();
 
     void register_resizable ();
 
-    void init_graphics_frustum_pipeline ();
+    void init_frustum_demo_pipeline ();
 
-    void update_frustum_buffer (const Camera& camera);
-    void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
     void clear_geometry (VkCommandBuffer cmd_buff);
     void compute_hz_buffer (VkCommandBuffer cmd_buff);
-    void traverse_octree (VkCommandBuffer cmd_buff);
-    void traverse_scomtree (VkCommandBuffer cmd_buff);
-    void hz_buffer_barrier (VkCommandBuffer cmd_buff);
-    void prepare_draw_indirect (VkCommandBuffer cmd_buff);
-    void prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size);
-    void marching_cubes_octree (VkCommandBuffer cmd_buff);
-    void marching_cubes_scomtree (VkCommandBuffer cmd_buff);
-    void geometry_barrier (VkCommandBuffer cmd_buff);
-    void draw_geometry (VkCommandBuffer cmd_buff);
-    void draw_frustum (VkCommandBuffer cmd_buff);
     void copy_depth (VkCommandBuffer cmd_buff);
     void copy_subtrees (VkCommandBuffer cmd_buff);
+    void deferred_rendering (VkCommandBuffer cmd_buff);
+    void draw_frustum_demo (VkCommandBuffer cmd_buff);
+    void forward_rendering (VkCommandBuffer cmd_buff);
+    void geometry_barrier (VkCommandBuffer cmd_buff);
+    void hz_buffer_barrier (VkCommandBuffer cmd_buff);
+    void marching_cubes_octree (VkCommandBuffer cmd_buff);
+    void marching_cubes_scomtree (VkCommandBuffer cmd_buff);
+    void prepare_draw_indirect (VkCommandBuffer cmd_buff);
+    void prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size);
+    void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
+    void traverse_octree (VkCommandBuffer cmd_buff);
+    void traverse_scomtree (VkCommandBuffer cmd_buff);
+    void update_frustum_buffer (const Camera& camera);
 
     std::shared_ptr <VulkanContext> context {nullptr};
 
@@ -97,16 +99,14 @@ private:
     VkPipelineLayout mesh_shading_octree_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout mesh_shading_scomtree_pipeline_layout {VK_NULL_HANDLE};
 
-    VkPipeline graphics_frustum_pipeline {VK_NULL_HANDLE};
+    VkPipeline forward_rendering_pipeline {VK_NULL_HANDLE};
+    VkPipeline frustum_demo_pipeline {VK_NULL_HANDLE};
     VkPipeline graphics_gbuffer_pipeline {VK_NULL_HANDLE};
-    VkPipeline graphics_identity_pipeline {VK_NULL_HANDLE};
     VkPipeline graphics_lighting_pipeline {VK_NULL_HANDLE};
-    VkPipeline graphics_viewproj_pipeline {VK_NULL_HANDLE};
-    VkPipelineLayout graphics_frustum_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout forward_rendering_pipeline_layout {VK_NULL_HANDLE};
+    VkPipelineLayout frustum_demo_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout graphics_gbuffer_pipeline_layout {VK_NULL_HANDLE};
-    VkPipelineLayout graphics_identity_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout graphics_lighting_pipeline_layout {VK_NULL_HANDLE};
-    VkPipelineLayout graphics_viewproj_pipeline_layout {VK_NULL_HANDLE};
 
     VkPipeline compute_hz_buffer_pipeline {VK_NULL_HANDLE};
     VkPipeline compute_prepare_indirect_pipeline {VK_NULL_HANDLE};
@@ -125,30 +125,29 @@ private:
 
     std::unique_ptr <DeferredShading> deferred_shading {};
 
-    void raster_explicit (VkCommandBuffer cmd_buff);
-    void raster_explicit_deferred (VkCommandBuffer cmd_buff);
     void raster_octree_via_compute_shading (VkCommandBuffer cmd_buff);
     void raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff);
     void raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff);
     void raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff);
     using RenderMethodPtr = void (SDFRasterizer::*)(VkCommandBuffer);
-    RenderMethodPtr draw = &SDFRasterizer::raster_explicit;
+    RenderMethodPtr draw = &SDFRasterizer::forward_rendering;
 
     struct MethodTrait {
         DrawMethod method;
         RenderMethodPtr ptr;
-        std::string_view name;
         bool needs_mesh_shading;
     };
 
-    static inline constexpr std::array <MethodTrait, 7> draw_strategies = {{
-          { DrawMethod::None, &SDFRasterizer::raster_explicit, "None (Idle)", false}
-        , { DrawMethod::Explicit, &SDFRasterizer::raster_explicit, "Explicit", false}
-        , { DrawMethod::ExplicitDeferred, &SDFRasterizer::raster_explicit_deferred, "Explicit Deferred", false}
-        , { DrawMethod::OctreeCompute, &SDFRasterizer::raster_octree_via_compute_shading, "SDF-Octree via compute shaders", false}
-        , { DrawMethod::OctreeMesh, &SDFRasterizer::raster_octree_via_mesh_shading, "SDF-Octree via mesh shaders", true }
-        , { DrawMethod::SComTreeCompute, &SDFRasterizer::raster_scomtree_via_compute_shading, "SComTree via compute shaders", false }
-        , { DrawMethod::SComTreeMesh, &SDFRasterizer::raster_scomtree_via_mesh_shading, "SComTree via mesh shaders", true }
+    static inline constexpr std::array <MethodTrait, 9> draw_strategies = {{
+          { DrawMethod::None, &SDFRasterizer::forward_rendering, false}
+        , { DrawMethod::Explicit, &SDFRasterizer::forward_rendering, false}
+        , { DrawMethod::ExplicitDeferred, &SDFRasterizer::deferred_rendering, false}
+        , { DrawMethod::OctreeCompute, &SDFRasterizer::raster_octree_via_compute_shading, false}
+        , { DrawMethod::OctreeMesh, &SDFRasterizer::raster_octree_via_mesh_shading, true }
+        , { DrawMethod::SComTreeCompute, &SDFRasterizer::raster_scomtree_via_compute_shading, false }
+        , { DrawMethod::SComTreeComputeDeferred, &SDFRasterizer::raster_scomtree_via_compute_shading, false }
+        , { DrawMethod::SComTreeMesh, &SDFRasterizer::raster_scomtree_via_mesh_shading, true }
+        , { DrawMethod::SComTreeMeshDeferred, &SDFRasterizer::raster_scomtree_via_mesh_shading, true }
     }};
 
     FrustumGeometry frustum {};

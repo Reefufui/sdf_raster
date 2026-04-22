@@ -141,6 +141,7 @@ bool ObjScene::load (const std::filesystem::path& path) {
 
     this->state = SceneState {
         .camera = Camera (),
+        // .draw_method = DrawMethod::Explicit,
         .draw_method = DrawMethod::ExplicitDeferred,
         .name = path.stem ().string (),
         .path = path,

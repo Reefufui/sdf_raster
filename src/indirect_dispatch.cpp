@@ -16,7 +16,7 @@ IndirectDescriptorSetInfo::IndirectDescriptorSetInfo (VkDevice device
 
     this->indirect_dispatch_buffers.clear ();
     for (size_t i = 0; i < max_frames_in_flight; ++i) {
-        buffers [i] = vk_utils::createBuffer (device, indirect_dispatch_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &mem_reqs [i]);
+        buffers [i] = vk_utils::createBuffer (device, indirect_dispatch_size, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, &mem_reqs [i]);
         this->indirect_dispatch_buffers.push_back (buffers [i]);
     }
 

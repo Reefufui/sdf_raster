@@ -469,12 +469,19 @@ void UI::status_bar (Settings& settings, const Stats& stats, SceneState& scene_s
     elements.push_back (StatusBarElement {
         .text = std::format ("Cursor:{}", (settings.disabled_cursor) ? "disabled" : "normal")
     });
-    elements.push_back (StatusBarElement {
-        .text = std::format ("Roots:{:06}", stats.active_roots_count)
-    });
-    elements.push_back (StatusBarElement {
-        .text = std::format ("Leafs:{:06}", stats.active_leafs_count)
-    });
+
+    const auto& method = scene_state.draw_method;
+    if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
+        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
+        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
+        elements.push_back (StatusBarElement {
+            .text = std::format ("Roots:{:06}", stats.active_roots_count)
+        });
+        elements.push_back (StatusBarElement {
+            .text = std::format ("Leafs:{:06}", stats.active_leafs_count)
+        });
+    }
+
     elements.push_back (StatusBarElement {
         .text = std::format ("FPS:{:.1f}", io.Framerate)
     });

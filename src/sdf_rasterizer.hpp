@@ -155,10 +155,7 @@ private:
 
     PushConstantsData push_constants {};
     Stats stats {};
-    int cpu_traversed {};
     LiteMath::float4 clear_color {0.25f, 0.25f, 0.25f, 1.0f};
-
-    uint32_t explicit_index_count {};
 
     uint32_t frame_index {0};
 };

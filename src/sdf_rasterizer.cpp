@@ -1025,7 +1025,7 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
     this->push_constants.far_plane = scene_state.camera.get_far_plane ();
     this->push_constants.near_plane = scene_state.camera.get_near_plane ();
     this->push_constants.max_lod = scene_state.max_lod;
-    this->push_constants.subtree_root_level = this->cpu_traversed;
+    this->push_constants.subtree_root_level = scene_state.cpu_traversed;
     this->push_constants.occlusion_culling_level = scene_state.occlusion_culling_level;
     this->push_constants.frustum_culling_level = scene_state.frustum_culling_level;
     this->push_constants.color_leafs = settings.color_leafs;
@@ -2006,9 +2006,6 @@ void SDFRasterizer::release_render_resources () {
 
     this->current_scene.reset ();
 
-    this->cpu_traversed = 0;
-    this->explicit_index_count = 0;
-
     this->active_leafs_ds.reset ();
     this->draw_indexed_indirect_command_ds.reset ();
     this->hz_buffer_ds.reset ();
@@ -2135,13 +2132,12 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
         );
 
         const SceneState& scene_state = octree_scene->get_state ();
-	    this->cpu_traversed = scene_state.cpu_traversed;
 
 	    LOG_INFO ("[{}] Created gpu resources for sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
 	         , scene_state.name
 	         , scene_state.octree_depth
-	         , this->cpu_traversed
-	         , scene_state.octree_depth - this->cpu_traversed);
+	         , scene_state.cpu_traversed
+	         , scene_state.octree_depth - scene_state.cpu_traversed);
     } else if (auto obj_scene = std::dynamic_pointer_cast <ObjScene> (scene)) {
         LOG_INFO ("[{}] Received a scene that of type ObjScene.", RENDERER_NAME);
 
@@ -2190,10 +2186,8 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , &cmd, sizeof (cmd)
         );
 
-        this->explicit_index_count = static_cast <uint32_t> (model_data.indices.size ());
-
         LOG_INFO ("[{}] Created GPU resources for mesh scene '{}'. Vertices: {}, Indices: {}"
-            , RENDERER_NAME, scene_state.name, model_data.vertices.size (), this->explicit_index_count);
+            , RENDERER_NAME, scene_state.name, model_data.vertices.size (), model_data.indices.size ());
     } else if (auto scomtree_scene = std::dynamic_pointer_cast <SComTreeScene> (scene)) {
         const auto& scene_state = scomtree_scene->get_state ();
 
@@ -2205,13 +2199,11 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , this->context->get_total_frames ()
         );
 
-	    this->cpu_traversed = scene_state.cpu_traversed;
-
 	    LOG_INFO ("[{}] Created gpu resources for sdf-scomtree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
 	         , scene_state.name
 	         , scene_state.octree_depth
-	         , this->cpu_traversed
-	         , scene_state.octree_depth - this->cpu_traversed);
+	         , scene_state.cpu_traversed
+	         , scene_state.octree_depth - scene_state.cpu_traversed);
     } else {
         LOG_ERROR ("[{}] Received a scene that is not of any renderable type. Cannot render.", RENDERER_NAME);
         return;

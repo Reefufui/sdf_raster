@@ -17,6 +17,8 @@
 [[vk::binding (0, 2)]] RWStructuredBuffer <uint> g_active_leaf_counter;
 [[vk::binding (1, 2)]] RWStructuredBuffer <NodeContext> g_active_leafs;
 
+[[vk::binding (0, 3)]] RWStructuredBuffer <LevelOfDetail> g_lod;
+
 struct MeshOutput {
     float4 position : SV_Position;
     Vertex vertex;
@@ -48,8 +50,10 @@ float sample_sdf (const float3 p) {
     SdfOctreeNode node = g_octree_data [0];
     float3 min_corner = {-1.0f, -1.0f, -1.0f};
     float voxel_size = 2.0f;
+    uint level = 0;
 
-    while (node.offset != 0) {
+    while (node.offset != 0 && level < g_lod [0].lod) {
+        level += 1;
         float half = voxel_size * 0.5f;
         uint child_index = 0;
         if (p.x >= min_corner.x + half) {
@@ -125,7 +129,7 @@ void generate_geometry (const NodeContext voxel, const uint vertex_offset, const
         Vertex vertex;
         vertex.position = mul (pc.view_proj, float4 (position, 1.0f));
         vertex.normal = float4 (sample_normal (position), 1.0f);
-        vertex.color = colors [voxel.node_index % COLORS_COUNT];
+        vertex.color = (pc.color_leafs == 1u) ? colors [voxel.node_index % COLORS_COUNT] : float4 (1.f);
         s_vertices [vertex_offset + vertex_index].vertex = vertex;
         s_vertices [vertex_offset + vertex_index].position = vertex.position;
 

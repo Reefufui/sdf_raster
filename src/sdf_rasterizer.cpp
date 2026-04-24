@@ -692,6 +692,7 @@ void SDFRasterizer::init_mesh_shading_octree_pipeline () {
     descriptor_set_layouts.push_back (this->sdf_octree_ds->get_layout ());
     descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds->get_layout ());
     descriptor_set_layouts.push_back (this->active_leafs_ds->get_layout ());
+    descriptor_set_layouts.push_back (this->lod_ds->get_layout ());
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1833,6 +1834,14 @@ void SDFRasterizer::deferred_rendering (VkCommandBuffer cmd_buff) {
 }
 
 void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
+    if (this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image != VK_NULL_HANDLE) {
+        this->copy_depth (cmd_buff);
+        this->compute_hz_buffer (cmd_buff);
+    } else {
+        LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
+        this->push_constants.occlusion_culling_level = false;
+    }
+
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
@@ -1850,7 +1859,7 @@ void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     const auto extent = this->context->get_swapchain_extent ();
 
     std::array <VkClearValue, 2> clear_values {};
-    clear_values [0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clear_values [0].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.0f}};
     clear_values [1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo render_pass_info {};
@@ -1880,10 +1889,11 @@ void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_octree_pipeline);
 
-    std::array <VkDescriptorSet, 3> ds = {
+    std::array <VkDescriptorSet, 4> ds = {
         this->sdf_octree_ds->get_descriptor_set (this->frame_index)
         , this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index)
         , this->active_leafs_ds->get_descriptor_set (this->frame_index)
+        , this->lod_ds->get_descriptor_set (this->frame_index)
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_octree_pipeline_layout
@@ -1895,6 +1905,13 @@ void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     vkCmdDrawMeshTasksIndirectEXT (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0, 1, sizeof (VkDrawMeshTasksIndirectCommandEXT));
 
     vkCmdEndRenderPass (cmd_buff);
+
+    this->hz_buffer_barrier (cmd_buff);
+
+    if (!this->frustum_draw_buffer) {
+        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->context->get_depth_buffer ().image;
+        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
+    }
 }
 
 void SDFRasterizer::raster_scomtree_via_mesh_shading (VkCommandBuffer /*cmd_buff*/) {

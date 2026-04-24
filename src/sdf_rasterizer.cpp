@@ -44,54 +44,46 @@ void SDFRasterizer::init () {
 
     this->init_frustum_demo_pipeline (); // TODO: init when asked to?
 
-    // this->register_resizable (); // TODO: re-register in set_scene
+    this->register_resizable ();
 }
 
 void SDFRasterizer::register_resizable () {
-    /*
     auto resize_hz_buffer = [&] () {
-        this->hz_buffer_ds.reset ();
+        if (this->hz_buffer_ds) {
+            this->hz_buffer_ds.reset ();
 
-        VK_CHECK_RESULT (vkResetDescriptorPool (this->context->get_device ()
-            , this->descriptor_maker_for_resizable->GetPool ()
-            , 0));
-
-        this->hz_buffer_ds = create_hz_buffer_descriptor_set (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , *(this->descriptor_maker_for_resizable)
-            , VK_SHADER_STAGE_COMPUTE_BIT
-            , this->context->get_swapchain_extent ()
-            , this->context->get_total_frames ());
-
-        LOG_INFO ("[{}] Created {} HZ-buffers for occlusion culling ({}, {}) with {} mip levels.", RENDERER_NAME
-            , this->context->get_total_frames ()
-            , this->hz_buffer_ds.extent.width, this->hz_buffer_ds.extent.height
-            , this->hz_buffer_ds.frame_resources [0].hz_buffer.mipLvls);
+            this->hz_buffer_ds = std::make_unique <HZBufferDescriptorSetInfo> (this->context->get_device ()
+                , this->context->get_physical_device ()
+                , this->context->get_transfer_command_pool_reset ()
+                , this->context->get_transfer_queue ()
+                , VK_SHADER_STAGE_COMPUTE_BIT
+                , this->context->get_swapchain_extent ()
+                , this->context->get_total_frames ());
+        }
     };
 
-    this->context->register_resizable (resize_hz_buffer);
-
     auto resize_g_buffer = [&] () {
-        this->deferred_shading.reset ();
+        if (this->deferred_shading) {
+            this->deferred_shading.reset ();
 
-        this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_transfer_command_pool_reset ()
-            , this->context->get_transfer_queue ()
-            , DeferredShadingConfig {
-                .extent = this->context->get_swapchain_extent (),
-                .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
-                .depth_format = this->context->get_depth_format (),
-                .swapchain_format = this->context->get_swapchain_image_format (),
-                .num_inflight_frames = this->context->get_total_frames (),
-                .filter = VK_FILTER_LINEAR // TODO: try NEAREST
-            }
-            , this->context->get_swapchain_image_views ());
+            this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
+                    , this->context->get_physical_device ()
+                    , this->context->get_transfer_command_pool_reset ()
+                    , this->context->get_transfer_queue ()
+                    , DeferredShadingConfig {
+                    .extent = this->context->get_swapchain_extent (),
+                    .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
+                    .depth_format = this->context->get_depth_format (),
+                    .swapchain_format = this->context->get_swapchain_image_format (),
+                    .num_inflight_frames = this->context->get_total_frames (),
+                    .filter = VK_FILTER_LINEAR // TODO: try NEAREST
+                    }
+                    , this->context->get_swapchain_image_views ());
+        }
     };
 
     this->context->register_resizable (resize_hz_buffer);
     this->context->register_resizable (resize_g_buffer);
-    */
 }
 
 void SDFRasterizer::init_push_constants () {

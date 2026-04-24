@@ -2236,11 +2236,11 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
     }
 
     if (method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
-        this->init_forward_rendering_pipeline ("shaders/identity.vert.slang.spv", "shaders/blinn_phong.frag.slang.spv", VK_FRONT_FACE_CLOCKWISE);
+        this->init_forward_rendering_pipeline ("shaders/view_proj.vert.slang.spv", "shaders/blinn_phong.frag.slang.spv", VK_FRONT_FACE_CLOCKWISE);
     }
 
     if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeMesh) {
-        this->init_forward_rendering_pipeline ("shaders/identity.vert.slang.spv", "shaders/blinn_phong.frag.slang.spv", VK_FRONT_FACE_COUNTER_CLOCKWISE);
+        this->init_forward_rendering_pipeline ("shaders/view_proj.vert.slang.spv", "shaders/blinn_phong.frag.slang.spv", VK_FRONT_FACE_COUNTER_CLOCKWISE);
     }
 
     if (method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
@@ -2255,7 +2255,7 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
     }
 
     if (method == DrawMethod::SComTreeComputeDeferred || method == DrawMethod::SComTreeMeshDeferred) {
-        this->init_graphics_gbuffer_pipeline ("shaders/identity.vert.slang.spv", "shaders/gbuffer.frag.slang.spv");
+        this->init_graphics_gbuffer_pipeline ("shaders/view_proj.vert.slang.spv", "shaders/gbuffer.frag.slang.spv");
         this->init_graphics_lighting_pipeline ();
     }
 

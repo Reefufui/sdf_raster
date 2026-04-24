@@ -154,7 +154,7 @@ void generate_geometry (uint active_leaf_index) {
                     , sdf_values [corner_indices.y]);
 
                 Vertex vertex;
-                vertex.position = mul (pc.view_proj, float4 (position, 1.0f));
+                vertex.position = float4 (position, 1.0f);
 
                 const float h = voxel_size * 0.01f;
                 const float dx = eval_local_voxel_sdf (sdf_values, voxel_min_pos, voxel_size, position + float3 (h, 0, 0))

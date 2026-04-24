@@ -4,8 +4,14 @@
 
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 
+struct FragInput {
+    float4 position : TEXCOORD0;
+    float4 normal   : TEXCOORD1;
+    float4 color    : COLOR0;
+};
+
 [shader("fragment")]
-float4 main (Vertex input : FragmentInput) : SV_Target {
+float4 main (FragInput input : FragmentInput) : SV_Target {
     const float4 light_position = float4 (10.0f, 10.0f, 10.0f, 1.0f);
     const float4 light_color = float4 (1.0f, 1.0f, 1.0f, 1.0f);
 
@@ -26,7 +32,6 @@ float4 main (Vertex input : FragmentInput) : SV_Target {
     float specular_factor = pow (saturate (dot (R, view_dir)), shininess);
     float4 specular_term = light_color * specular_factor * specular_intensity_factor;
 
-    // return ambient_term + diffuse_term + specular_term;
-    return ambient_term + diffuse_term;
+    return ambient_term + diffuse_term + specular_term;
 }
 

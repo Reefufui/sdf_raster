@@ -64,7 +64,7 @@ private:
     void init_style ();
 
     void key_input (Settings& settings, SceneState& scene_state);
-    void handle_global_shortcuts ();
+    void handle_global_shortcuts (Settings& settings);
     void menu_bar (Settings& settings);
     void file_dialog ();
     void renderer_window (Settings& settings, const Stats& stats, SceneState& scene_state);
@@ -220,9 +220,15 @@ void UI::init (std::shared_ptr <VulkanContext> /*vulkan_context*/, std::shared_p
     this->file_browser.SetTypeFilters (this->scene_manager->get_registered_extensions ());
 }
 
-void UI::handle_global_shortcuts () {
+void UI::handle_global_shortcuts (Settings& settings) {
     if (ImGui::Shortcut (ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal)) {
         this->file_browser.Open ();
+    }
+    if (ImGui::Shortcut (ImGuiMod_Ctrl | ImGuiKey_1, ImGuiInputFlags_RouteGlobal)) {
+        settings.show_camera_window = !settings.show_camera_window;
+    }
+    if (ImGui::Shortcut (ImGuiMod_Ctrl | ImGuiKey_2, ImGuiInputFlags_RouteGlobal)) {
+        settings.show_renderer_window = !settings.show_renderer_window;
     }
 }
 
@@ -241,8 +247,10 @@ void UI::menu_bar (Settings& settings) {
         }
 
         if (ImGui::BeginMenu ("View")) {
-            if (ImGui::MenuItem ("Show Renderer Window", "", &settings.show_renderer_window)) { }
-            if (ImGui::MenuItem ("Show Camera Window", "", &settings.show_camera_window)) { }
+            ImGui::SetNextItemShortcut (ImGuiMod_Ctrl | ImGuiKey_2, ImGuiInputFlags_Tooltip);
+            if (ImGui::MenuItem ("Show Renderer Window", "Ctrl+2", &settings.show_renderer_window)) { }
+            ImGui::SetNextItemShortcut (ImGuiMod_Ctrl | ImGuiKey_1, ImGuiInputFlags_Tooltip);
+            if (ImGui::MenuItem ("Show Camera Window", "Ctrl+1", &settings.show_camera_window)) { }
             ImGui::EndMenu ();
         }
 
@@ -647,7 +655,7 @@ void UI::update (Settings& settings, const Stats& stats) {
         this->show_ui = settings.show_ui;
 
         if (this->show_ui) {
-            this->handle_global_shortcuts ();
+            this->handle_global_shortcuts (settings);
             this->menu_bar (settings);
             this->file_dialog ();
 
@@ -662,7 +670,7 @@ void UI::update (Settings& settings, const Stats& stats) {
         scene_state.camera.update ();
     } else {
         if (settings.show_ui) {
-            this->handle_global_shortcuts ();
+            this->handle_global_shortcuts (settings);
             this->menu_bar (settings);
             this->file_dialog ();
 

@@ -20,8 +20,10 @@
 [[vk::binding (0, 3)]] RWStructuredBuffer <LevelOfDetail> g_lod;
 
 struct MeshOutput {
-    float4 position : SV_Position;
-    Vertex vertex;
+    float4 clip_position  : SV_Position;
+    float4 position       : TEXCOORD0;
+    float4 normal         : TEXCOORD1;
+    float4 color          : COLOR0;
 };
 
 #define MAX_VERTS_PER_VOXEL 12
@@ -126,12 +128,14 @@ void generate_geometry (const NodeContext voxel, const uint vertex_offset, const
                      , leaf_node.values [corner_indices.x]
                      , leaf_node.values [corner_indices.y]);
 
-        Vertex vertex;
-        vertex.position = mul (pc.view_proj, float4 (position, 1.0f));
-        vertex.normal = float4 (sample_normal (position), 1.0f);
-        vertex.color = (pc.color_leafs == 1u) ? colors [voxel.node_index % COLORS_COUNT] : float4 (1.f);
-        s_vertices [vertex_offset + vertex_index].vertex = vertex;
-        s_vertices [vertex_offset + vertex_index].position = vertex.position;
+
+        MeshOutput v;
+        v.clip_position  = mul (pc.view_proj, float4 (position, 1.0f));
+        v.position       = float4 (position, 1.0f);
+        v.normal         = float4 (sample_normal (position), 1.0f);
+        v.color          = (pc.color_leafs == 1u) ? colors [voxel.node_index % COLORS_COUNT] : float4 (1.f);
+
+        s_vertices [vertex_offset + vertex_index] = v;
 
         vertex_index += 1;
         strides [i] = vertex_skipped;

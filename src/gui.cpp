@@ -10,6 +10,7 @@
 #include "application.hpp"
 #include "gui.hpp"
 #include "logger.hpp"
+#include "scenes/scene_state.hpp"
 #include "vk_images.h"
 
 namespace sdf_raster {
@@ -77,6 +78,7 @@ private:
     const float alpha = .8f;
 
     bool lock_occlusion_culling = false;
+    bool pending_config_notify = false;
 
     std::shared_ptr <SceneManager> scene_manager;
 };
@@ -209,9 +211,7 @@ void UI::init (std::shared_ptr <VulkanContext> /*vulkan_context*/, std::shared_p
     im_init_info.ApiVersion = VK_API_VERSION_1_4;
 
     ImGui_ImplGlfw_InitForVulkan (this->window, true);
-    LOG_TRACE ("[UI] Initing vulkan for imgui...");
     ImGui_ImplVulkan_Init (&im_init_info);
-    LOG_TRACE ("[UI] Inited vulkan for imgui.");
 
     this->init_style ();
 
@@ -362,14 +362,34 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
 
     ImGui::Text ("Screen size: %dx%d pixels", this->surface_extent.width, this->surface_extent.height);
 
-    ImGui::SeparatorText ("Common");
+    ImGui::SeparatorText ("Render Method");
 
-    if (scene_state.draw_method == DrawMethod::OctreeMesh || scene_state.draw_method == DrawMethod::OctreeCompute) {
-        bool use_mesh_shading = scene_state.draw_method == DrawMethod::OctreeMesh;
-        ImGui::Checkbox ("use mesh shading", &use_mesh_shading);
-        if (ImGui::IsItemHovered ()) {
-            ImGui::SetTooltip ("Directly sends generated primitives to rasterizer.");
+    auto scene = this->scene_manager->get_scene ();
+    if (scene) {
+        auto available_methods = scene->get_available_draw_methods ();
+        int current_method = 0;
+        for (int i = 0; i < static_cast<int>(available_methods.size ()); i++) {
+            if (scene_state.draw_method == available_methods [i]) {
+                current_method = i;
+                break;
+            }
         }
+        assert (std::find (available_methods.begin (), available_methods.end (), scene_state.draw_method) != available_methods.end ());
+
+        std::vector <const char*> method_name_ptrs;
+        method_name_ptrs.reserve (available_methods.size ());
+        for (auto method : available_methods) {
+            method_name_ptrs.push_back (draw_method_name (method).data ());
+        }
+
+        ImGui::BeginDisabled (scene_state.draw_method == DrawMethod::None);
+        if (ImGui::Combo ("##draw_method", &current_method, method_name_ptrs.data (), method_name_ptrs.size ())) {
+            scene_state.draw_method = available_methods [current_method];
+            this->pending_config_notify = true;
+        }
+        ImGui::EndDisabled ();
+    } else {
+        ImGui::Text ("No scene loaded");
     }
 
     ImGui::SeparatorText ("Level of Detail");
@@ -386,22 +406,17 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
     ImGui::SeparatorText ("Octree");
     ImGui::Text ("octree depth: %d/%d", scene_state.max_lod, scene_state.octree_depth);
 
-    int levels_remaining = scene_state.max_lod;
-
-    ImGui::InputInt ("cpu traversed", &scene_state.cpu_traversed);
+    ImGui::Text ("gpu traversed: %d", scene_state.max_lod - scene_state.cpu_traversed);
+    ImGui::Text ("cpu traversed:");
     if (ImGui::IsItemHovered ()) {
         ImGui::SetTooltip ("Levels to descend on cpu prior GPU.");
     }
-    scene_state.cpu_traversed = LiteMath::clamp (scene_state.cpu_traversed, 0, 5);
-    levels_remaining -= scene_state.cpu_traversed;
-
-    ImGui::BeginDisabled ();
-    ImGui::InputInt ("gpu descend", &scene_state.gpu_descend);
-    scene_state.gpu_descend = LiteMath::clamp (scene_state.gpu_descend, 0, LiteMath::min (5, levels_remaining));
-    levels_remaining -= scene_state.gpu_descend;
-
-    ImGui::InputInt ("gpu dfs", &levels_remaining);
-    ImGui::EndDisabled ();
+    for (int i = 0; i <= 5; i++) {
+        ImGui::SameLine ();
+        if (ImGui::RadioButton (std::to_string (i).c_str (), &scene_state.cpu_traversed, i)) {
+            this->pending_config_notify = true;
+        }
+    }
 
     ImGui::SeparatorText ("Culling");
 
@@ -660,6 +675,11 @@ void UI::update (Settings& settings, const Stats& stats) {
                 ImGui::End ();
             }
         }
+    }
+
+    if (this->pending_config_notify) {
+        this->scene_manager->notify (SceneEventType::CONFIG_CHANGED);
+        this->pending_config_notify = false;
     }
 
     this->previous_frame_settings = settings;

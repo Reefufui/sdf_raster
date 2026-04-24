@@ -1,6 +1,7 @@
 #include "scenes/octree/octree.hpp"
 
 #include "frustum_culling.hpp"
+#include "logger.hpp"
 #include "shader_common.hpp"
 
 #include <fstream>
@@ -61,7 +62,6 @@ bool SdfOctreeScene::load (const std::filesystem::path& path) {
 
     this->state = SceneState {
         .camera = Camera (),
-        .draw_method = DrawMethod::OctreeCompute,
         .name = path.stem ().string (),
         .path = path,
         .octree_depth = depth,
@@ -69,6 +69,7 @@ bool SdfOctreeScene::load (const std::filesystem::path& path) {
         .frustum_culling_level = depth,
         .occlusion_culling_level = depth
     };
+    this->set_current_draw_method (DrawMethod::OctreeCompute);
 
     this->invalidate_cache ();
 
@@ -80,7 +81,7 @@ SceneState& SdfOctreeScene::get_state () {
 }
 
 void SdfOctreeScene::set_state (const SceneState& scene_state) {
-    this->state = scene_state;
+    this->apply_state (scene_state);
 }
 
 const SdfOctree& SdfOctreeScene::get_octree_data () const {
@@ -181,6 +182,10 @@ std::vector <NodeContext> SdfOctreeScene::collect_visible_subtrees (const Frustu
     std::vector <NodeContext> visible;
     frustum_culling (this->cached_all_subtrees, frustum, visible);
     return visible;
+}
+
+std::span <const DrawMethod> SdfOctreeScene::get_available_draw_methods () const {
+    return this->available_methods;
 }
 
 } // sdf_raster

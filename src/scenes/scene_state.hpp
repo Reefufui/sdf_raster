@@ -27,24 +27,27 @@ struct SceneState {
     int occlusion_culling_level {16};
 };
 
+constexpr std::string_view draw_method_name (DrawMethod m) {
+    switch (m) {
+        case DrawMethod::None:                     return "None";
+        case DrawMethod::Explicit:                 return "Explicit Mesh via Forward Rendering";
+        case DrawMethod::ExplicitDeferred:         return "Explicit Mesh via Deferred Rendering";
+        case DrawMethod::OctreeCompute:            return "SDF-Octree via Compute Shaders";
+        case DrawMethod::OctreeMesh:               return "SDF-Octree via Mesh Shaders";
+        case DrawMethod::SComTreeCompute:          return "SComTree via Compute Shaders";
+        case DrawMethod::SComTreeComputeDeferred:  return "SComTree via Compute Shaders & Deferred Rendering";
+        case DrawMethod::SComTreeMesh:             return "SComTree via Mesh Shaders";
+        case DrawMethod::SComTreeMeshDeferred:     return "SComTree via Mesh Shaders & Deferred Rendering";
+    }
+    return "Unknown";
+}
+
 } // sdf_raster
 
 template <>
 struct std::formatter <sdf_raster::DrawMethod> : std::formatter <std::string_view> {
     auto format (sdf_raster::DrawMethod m, std::format_context& ctx) const {
-        std::string_view name = "Unknown";
-        switch (m) {
-            case sdf_raster::DrawMethod::None:                     name = "None"; break;
-            case sdf_raster::DrawMethod::Explicit:                 name = "Explicit Mesh via Forward Rendering"; break;
-            case sdf_raster::DrawMethod::ExplicitDeferred:         name = "Explicit Mesh via Deferred Rendering"; break;
-            case sdf_raster::DrawMethod::OctreeCompute:            name = "SDF-Octree via Compute Shaders"; break;
-            case sdf_raster::DrawMethod::OctreeMesh:               name = "SDF-Octree via Mesh Shaders"; break;
-            case sdf_raster::DrawMethod::SComTreeCompute:          name = "SComTree via Compute Shaders"; break;
-            case sdf_raster::DrawMethod::SComTreeComputeDeferred:  name = "SComTree via Compute Shaders & Deferred Rendering"; break;
-            case sdf_raster::DrawMethod::SComTreeMesh:             name = "SComTree via Mesh Shaders"; break;
-            case sdf_raster::DrawMethod::SComTreeMeshDeferred:     name = "SComTree via Mesh Shaders & Deferred Rendering"; break;
-        }
-        return std::formatter <std::string_view>::format (name, ctx);
+        return std::formatter <std::string_view>::format (sdf_raster::draw_method_name (m), ctx);
     }
 };
 

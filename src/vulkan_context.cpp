@@ -720,7 +720,6 @@ VkCommandBuffer VulkanContext::begin_frame (uint32_t frame_idx) {
     vkWaitForFences (this->device, 1, &this->frame_resources [frame_idx].cpu_wait_next_frame, VK_TRUE, UINT64_MAX);
 
     VkResult result = this->swapchain.AcquireNextImage (this->frame_resources [frame_idx].wait_before_color_attachment_output, &this->acquired_image_index);
-    LOG_TRACE ("in-flight frame: {}, swapchain image: {}", frame_idx, this->acquired_image_index);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || this->framebuffer_resized) {
         this->resize ();

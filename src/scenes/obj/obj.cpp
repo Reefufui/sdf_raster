@@ -141,13 +141,12 @@ bool ObjScene::load (const std::filesystem::path& path) {
 
     this->state = SceneState {
         .camera = Camera (),
-        // .draw_method = DrawMethod::Explicit,
-        .draw_method = DrawMethod::ExplicitDeferred,
         .name = path.stem ().string (),
         .path = path,
         .octree_depth = 0,
         .cpu_traversed = 0
     };
+    this->set_current_draw_method (DrawMethod::ExplicitDeferred);
     
     return true;
 }
@@ -157,7 +156,7 @@ SceneState& ObjScene::get_state () {
 }
 
 void ObjScene::set_state (const SceneState& scene_state) {
-    this->state = scene_state;
+    this->apply_state (scene_state);
 }
 
 const ObjModel& ObjScene::get_model_data () const {
@@ -167,6 +166,10 @@ const ObjModel& ObjScene::get_model_data () const {
 ObjScene::~ObjScene () {
     this->data.vertices.clear ();
     this->data.indices.clear ();
+}
+
+std::span <const DrawMethod> ObjScene::get_available_draw_methods () const {
+    return this->available_methods;
 }
 
 } // namespace sdf_raster

@@ -24,19 +24,24 @@ public:
 
     void set_state (const SceneState& scene_state) override;
 
+    std::span <const DrawMethod> get_available_draw_methods () const override;
+
     ~SdfOctreeScene () override;
 
     const SdfOctree& get_octree_data () const;
 
     std::vector <NodeContext> collect_visible_subtrees (const FrustumGeometry& frustum) const;
 
-private:
-    void invalidate_cache ();
+protected:
+    void invalidate_cache () override;
 
-    SceneState state;
+private:
     SdfOctree data;
 
     std::vector <NodeContext> cached_all_subtrees;
+    static inline constexpr std::array <DrawMethod, 2> available_methods = {{
+        DrawMethod::OctreeCompute, DrawMethod::OctreeMesh
+    }};
 };
 
 } // sdf_raster

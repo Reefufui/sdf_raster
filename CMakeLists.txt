@@ -170,6 +170,7 @@ add_executable(${PROJECT_NAME}
 
     src/scenes/obj/obj.cpp
     src/scenes/octree/octree.cpp
+    src/scenes/scene.cpp
     src/scenes/scene_manager.cpp
     src/scenes/scomtree/scomtree.cpp
     src/scenes/scomtree/utils.cpp
@@ -200,7 +201,7 @@ if (CMAKE_BUILD_TYPE MATCHES Debug)
     message (STATUS "Configuring for Debug build...")
     target_compile_options (${PROJECT_NAME} PRIVATE -g -O0 -Wall -Wextra -Wno-missing-field-initializers)
     target_link_options (${PROJECT_NAME} PRIVATE -g)
-    target_compile_definitions (${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE VULKAN_VALIDATION_LAYERS=1)
+    target_compile_definitions (${PROJECT_NAME} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE DEFAULT_SPDLOG_LEVEL=0 VULKAN_VALIDATION_LAYERS=1)
 elseif (CMAKE_BUILD_TYPE MATCHES Release)
     message (STATUS "Configuring for Release build...")
     target_compile_options (${PROJECT_NAME} PRIVATE -O3 -DNDEBUG -Wall -Wextra -Wno-missing-field-initializers)

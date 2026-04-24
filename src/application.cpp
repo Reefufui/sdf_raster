@@ -228,24 +228,23 @@ void Application::mouse_button_callback (GLFWwindow* window, int button, int act
     }
 }
 
-void Application::on_scene_event (SceneEventType type, const std::filesystem::path& path) {
-    LOG_INFO ("[Application] Received event: {} for scene {}", type == SceneEventType::LOADED ? "LOADED" : "UNLOADED", path.string ());
+void Application::on_scene_event (SceneEventType type, const std::filesystem::path& /*path*/) {
+    auto enqueue_render_config = [this] () {
+        std::shared_ptr <Scene> scene = this->scene_manager->get_scene ();
+        if (scene) {
+            RenderCommand command = [scene] (Renderer* renderer) {
+                if (SDFRasterizer* sdf_rasterizer = dynamic_cast <SDFRasterizer*> (renderer)) {
+                    sdf_rasterizer->apply_scene_config (scene);
+                }
+            };
+            std::lock_guard lock (this->render_command_mutex);
+            this->render_commands.push (std::move (command));
+        }
+    };
 
     switch (type) {
         case SceneEventType::LOADED: {
-            std::shared_ptr <Scene> scene = this->scene_manager->get_scene ();
-
-            if (scene) {
-                RenderCommand command = [scene] (Renderer* renderer) {
-                    if (SDFRasterizer* sdf_rasterizer = dynamic_cast <SDFRasterizer*> (renderer)) {
-                        sdf_rasterizer->set_scene (scene);
-                    }
-                };
-                std::lock_guard lock (this->render_command_mutex);
-                this->render_commands.push (std::move (command));
-            } else {
-                LOG_ERROR ("[Application] Error: Scene was reported loaded, but 'get_scene()' returned null!");
-            }
+            enqueue_render_config ();
 
             auto resize_camera = [&] () {
                 const auto extent = this->vulkan_context->get_swapchain_extent ();
@@ -260,6 +259,11 @@ void Application::on_scene_event (SceneEventType type, const std::filesystem::pa
         }
 
         case SceneEventType::UNLOADED: {
+            break;
+        }
+
+        case SceneEventType::CONFIG_CHANGED: {
+            enqueue_render_config ();
             break;
         }
     }

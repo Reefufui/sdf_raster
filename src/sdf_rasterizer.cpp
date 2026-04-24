@@ -2001,7 +2001,7 @@ void SDFRasterizer::process_commands (std::queue <RenderCommand>& commands, std:
     }
 }
 
-void SDFRasterizer::reset_scene () {
+void SDFRasterizer::release_render_resources () {
     vkDeviceWaitIdle (this->context->get_device ());
 
     this->current_scene.reset ();
@@ -2033,14 +2033,17 @@ void SDFRasterizer::reset_scene () {
     this->deferred_shading.reset ();
 }
 
-void SDFRasterizer::set_scene (std::shared_ptr <Scene> scene) {
+void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
     vkDeviceWaitIdle (this->context->get_device());
 
-    this->reset_scene ();
+    if (scene) {
+        scene->invalidate_cache ();
+    }
+    this->release_render_resources ();
     this->current_scene = scene;
 
     if (!this->current_scene) {
-        LOG_WARN ("[{}] 'set_scene' called with a null scene. Resources cleared.", RENDERER_NAME);
+        LOG_WARN ("[{}] 'apply_scene_config' called with a null scene. Resources cleared.", RENDERER_NAME);
         return;
     }
 
@@ -2063,7 +2066,7 @@ void SDFRasterizer::set_scene (std::shared_ptr <Scene> scene) {
     }
 
     if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
-        || method == DrawMethod::OctreeCompute) {
+        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
 	    this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
 	        , this->context->get_physical_device ()
 	        , this->context->get_copy_helper ()
@@ -2288,7 +2291,7 @@ void SDFRasterizer::shutdown () {
         this->frustum_draw_buffer.reset ();
     }
 
-    this->reset_scene ();
+    this->release_render_resources ();
 
     this->frustum_ds.reset ();
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->frustum_demo_pipeline, this->frustum_demo_pipeline_layout);

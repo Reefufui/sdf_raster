@@ -22,6 +22,7 @@ namespace sdf_raster {
 enum class SceneEventType {
     LOADED
     , UNLOADED
+    , CONFIG_CHANGED
 };
 
 using SceneEventCallback = std::function <void (SceneEventType type, const std::filesystem::path& scene_path)>;
@@ -63,6 +64,7 @@ public:
     }
 
     void subscribe (SceneEventCallback callback);
+    void notify (SceneEventType type);
 
 private:
     void notify (SceneEventType type, const std::filesystem::path& path);

@@ -48,6 +48,7 @@ private:
     std::vector <VkDeviceMemory> staging_buffer_memories {};
     std::vector <void*> subtrees_memory_mapped {};
     size_t subtree_count {};
+    VkDeviceSize mapped_memory_size {};
 
     VkBuffer nodes_buffer = VK_NULL_HANDLE;
     std::vector <VkBuffer> subtree_root_buffers;

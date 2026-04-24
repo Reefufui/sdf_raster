@@ -77,6 +77,8 @@ SdfOctreeDescriptorSetInfo::SdfOctreeDescriptorSetInfo (VkDevice device
         vkBindBufferMemory (this->device, this->subtree_roots_staging_buffers [i], this->staging_buffer_memories [i], 0);
         VK_CHECK_RESULT (vkMapMemory (this->device, this->staging_buffer_memories [i], 0, subtree_size, 0, &this->subtrees_memory_mapped [i]));
     }
+
+    this->mapped_memory_size = subtree_size;
 }
 
 SdfOctreeDescriptorSetInfo::~SdfOctreeDescriptorSetInfo () {
@@ -118,8 +120,7 @@ void SdfOctreeDescriptorSetInfo::update_subtree_root_buffer (const FrustumGeomet
     auto visible_subtrees = this->scene->collect_visible_subtrees (frustum);
     this->subtree_count = visible_subtrees.size ();
     if (this->subtree_count) {
-        assert (this->subtree_count < (1LL << (3 * this->scene->get_state ().cpu_traversed)));
-        memcpy (this->subtrees_memory_mapped [fif_index], visible_subtrees.data (), this->subtree_count * sizeof (NodeContext));
+        memcpy (this->subtrees_memory_mapped [fif_index], visible_subtrees.data (), this->mapped_memory_size);
     }
 }
 

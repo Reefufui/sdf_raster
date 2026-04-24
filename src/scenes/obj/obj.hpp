@@ -31,12 +31,16 @@ public:
     bool load (const std::filesystem::path& path) override;
     SceneState& get_state () override;
     void set_state (const SceneState& scene_state) override;
+    std::span <const DrawMethod> get_available_draw_methods () const override;
+    void invalidate_cache () override {}
 
     const ObjModel& get_model_data () const;
 
 private:
-    SceneState state;
     ObjModel data;
+    static inline constexpr std::array <DrawMethod, 2> available_methods = {{
+        DrawMethod::Explicit, DrawMethod::ExplicitDeferred
+    }};
 };
 
 } // namespace sdf_raster

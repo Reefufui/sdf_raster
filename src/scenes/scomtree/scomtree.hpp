@@ -28,6 +28,8 @@ public:
 
     void set_state (const SceneState& scene_state) override;
 
+    std::span <const DrawMethod> get_available_draw_methods () const override;
+
     ~SComTreeScene () override;
 
     const SComTree& get_octree_data () const;
@@ -40,13 +42,17 @@ public:
 
     Mesh generate_voxel_mesh () const;
 
-private:
-    void invalidate_cache ();
+protected:
+    void invalidate_cache () override;
 
-    SceneState state;
+private:
     SComTree data;
 
     std::vector <SComTreeStackElement> cached_all_subtrees;
+    static inline constexpr std::array <DrawMethod, 4> available_methods = {{
+        DrawMethod::SComTreeCompute, DrawMethod::SComTreeComputeDeferred,
+        DrawMethod::SComTreeMesh, DrawMethod::SComTreeMeshDeferred
+    }};
 };
 
 } // sdf_raster

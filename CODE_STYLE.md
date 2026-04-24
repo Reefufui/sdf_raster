@@ -140,6 +140,21 @@ void foo ()
 #include <stdexcept>
 ```
 
+## Type Conversions
+
+Use `static_cast` for explicit type conversions. Always put spaces around the cast:
+
+```cpp
+// GOOD
+for (int i = 0; i < static_cast <int> (vec.size ()); i++) {
+    process (vec [i]);
+}
+
+// BAD
+for (int i = 0; i < (int)vec.size(); i++) { }
+for (int i = 0; i < int(vec.size()); i++) { }
+```
+
 ## Commit Messages
 
 Follow conventional commits style:

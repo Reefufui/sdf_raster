@@ -82,7 +82,7 @@ SceneState& SComTreeScene::get_state () {
 }
 
 void SComTreeScene::set_state (const SceneState& scene_state) {
-    this->state = scene_state;
+    this->apply_state (scene_state);
 }
 
 const SComTree& SComTreeScene::get_octree_data () const {
@@ -326,20 +326,6 @@ void traverse_scomtree_core (const Header& header, const std::vector <uint32_t>&
 
         d = 1.0f / float (cur.p_size.y & 0xFFFF);
 
-        std::string indent (top * 4, ' ');
-
-        if (child_has_data == 0) {
-            LOG_TRACE ("{}Child {}: No data", indent, child_n);
-        } else if (child_is_leaf > 0) {
-            LiteMath::float3 pf2 = LiteMath::float3 (
-                float (cur.p_size.x >> 16)    + (((child_n & 4) > 0) ? 1.0f : 0.5f)
-                , float (cur.p_size.x & 0xFFFF) + (((child_n & 2) > 0) ? 1.0f : 0.5f)
-                , float (cur.p_size.y >> 16)    + (((child_n & 1) > 0) ? 1.0f : 0.5f));
-            LOG_TRACE ("{}Leaf {}: pos={}", indent, child_n, pf2 * d);
-        } else {
-            LOG_TRACE ("{}Node {}: Entering... (d={})", indent, child_n, d);
-        }
-
         if (child_has_data == 0) {
             const uint32_t next_child = child + 1;
             if (next_child >= 8) {
@@ -578,6 +564,10 @@ std::vector <SComTreeStackElement> SComTreeScene::collect_visible_subtrees (cons
     std::vector <SComTreeStackElement> visible;
     frustum_culling (this->cached_all_subtrees, frustum, visible);
     return visible;
+}
+
+std::span <const DrawMethod> SComTreeScene::get_available_draw_methods () const {
+    return this->available_methods;
 }
 
 } // sdf_raster

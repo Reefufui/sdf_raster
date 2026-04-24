@@ -69,7 +69,7 @@ void SceneManager::load_scene (const std::filesystem::path& path) {
         }
 
         this->cached_scene_states [current_path] = current->get_state ();
-        this->notify (SceneEventType::UNLOADED, current_path);
+        this->notify (SceneEventType::UNLOADED);
         this->managed_scene = std::monostate {};
 
     }
@@ -92,7 +92,7 @@ void SceneManager::load_scene (const std::filesystem::path& path) {
                 this->is_loading = false;
             }
 
-            this->notify (SceneEventType::LOADED, path);
+            this->notify (SceneEventType::LOADED);
         } else {
             LOG_ERROR ("[{}] Failed to load: {}", SCENE_MANAGER_NAME, path.string ());
             {
@@ -115,10 +115,10 @@ void SceneManager::subscribe (SceneEventCallback callback) {
     this->subscribers.push_back (std::move (callback));
 }
 
-void SceneManager::notify (SceneEventType type, const std::filesystem::path& path) {
+void SceneManager::notify (SceneEventType type) {
     for (const auto& callback : this->subscribers) {
         if (callback) {
-            callback (type, path);
+            callback (type, {});
         }
     }
 }

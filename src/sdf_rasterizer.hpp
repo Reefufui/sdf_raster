@@ -38,12 +38,12 @@ public:
     void render (VkCommandBuffer cmd_buff) override;
     void shutdown () override;
     void process_commands (std::queue <RenderCommand>& commands, std::mutex& mutex) override;
-    void set_scene (std::shared_ptr <Scene> scene);
+    void apply_scene_config (std::shared_ptr <Scene> scene);
     const Stats& get_stats () override;
 
 private:
     void init_push_constants ();
-    void reset_scene ();
+    void release_render_resources ();
 
     void init_compute_hz_buffer_pipeline ();
     void init_compute_prepare_indirect_pipeline ();

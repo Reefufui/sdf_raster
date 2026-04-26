@@ -64,7 +64,7 @@ void GUIApplication::run () {
     }
 
     try {
-        const uint32_t frames_in_flight = this->vulkan_context->get_total_frames ();
+        const uint32_t frames_in_flight = this->presentation_context->get_total_frames ();
         for (uint32_t i = 0; !glfwWindowShouldClose (this->window); i = (i + 1) % frames_in_flight) {
             glfwPollEvents ();
 
@@ -74,7 +74,7 @@ void GUIApplication::run () {
                 continue;
             }
 
-            auto cmd_buff = this->vulkan_context->begin_frame (i);
+            auto cmd_buff = this->presentation_context->begin_frame (i);
             if (cmd_buff == VK_NULL_HANDLE) {
                 continue;
             }
@@ -85,9 +85,9 @@ void GUIApplication::run () {
             this->renderer->update (i, this->settings);
 
             this->renderer->render (cmd_buff);
-            gui::draw (this->vulkan_context->get_swapchain_image_index (), cmd_buff);
+            gui::draw (this->presentation_context->get_swapchain_image_index (), cmd_buff);
 
-            this->vulkan_context->end_frame (cmd_buff, i);
+            this->presentation_context->end_frame (cmd_buff, i);
         }
     } catch (...) {
         cleanup ();
@@ -121,13 +121,12 @@ void GUIApplication::init_vulkan () {
         throw std::runtime_error ("Vulkan not supported.");
     }
     this->vulkan_context = std::make_shared <VulkanContext> ();
+    this->vulkan_context->init ();
 
-    int width, height;
-    glfwGetWindowSize (this->window, &width, &height);
-    this->vulkan_context->init (this->window, width, height);
+    this->presentation_context = std::make_shared <PresentationContext> (this->vulkan_context, this->window);
 
     auto resize_camera = [&] () {
-        const auto extent = this->vulkan_context->get_swapchain_extent ();
+        const auto extent = this->presentation_context->get_swapchain_extent ();
         const float height = static_cast <float> (extent.height);
         const float width = static_cast <float> (extent.width);
         auto scene = this->scene_manager->get_scene ();
@@ -141,12 +140,12 @@ void GUIApplication::init_vulkan () {
         init_gui ();
     };
 
-    this->vulkan_context->register_resizable (resize_camera);
-    this->vulkan_context->register_resizable (resize_gui);
+    this->presentation_context->register_resizable (resize_camera);
+    this->presentation_context->register_resizable (resize_gui);
 }
 
 void GUIApplication::init_renderer () {
-    this->renderer = std::make_unique <SDFRasterizer> (this->vulkan_context);
+    this->renderer = std::make_unique <SDFRasterizer> (this->vulkan_context, this->presentation_context);
     this->renderer->init ();
 }
 
@@ -158,10 +157,10 @@ void GUIApplication::init_gui () {
         .physical_device = this->vulkan_context->get_physical_device (),
         .graphics_queue = this->vulkan_context->get_graphics_queue (),
         .graphics_queue_family_index = this->vulkan_context->get_graphics_queue_family_index (),
-        .swapchain_image_views = this->vulkan_context->get_swapchain_image_views (),
-        .surface_extent = this->vulkan_context->get_swapchain_extent (),
-        .surface_format = this->vulkan_context->get_swapchain_image_format (),
-        .depth_format = this->vulkan_context->get_depth_format (),
+        .swapchain_image_views = this->presentation_context->get_swapchain_image_views (),
+        .surface_extent = this->presentation_context->get_swapchain_extent (),
+        .surface_format = this->presentation_context->get_swapchain_image_format (),
+        .depth_format = this->presentation_context->get_depth_format (),
     };
 
     gui::init (vulkan_context, scene_manager, init_info, this->settings);
@@ -191,9 +190,15 @@ void GUIApplication::cleanup () {
         this->renderer->shutdown ();
     }
 
+    if (this->presentation_context) {
+        this->presentation_context->shutdown ();
+    }
+    this->presentation_context.reset ();
+
     if (this->vulkan_context) {
         this->vulkan_context->shutdown ();
     }
+    this->vulkan_context.reset ();
 
     if (this->window) {
         glfwDestroyWindow (this->window);
@@ -203,7 +208,7 @@ void GUIApplication::cleanup () {
 
 void GUIApplication::framebuffer_resize_callback (GLFWwindow* window, int, int) {
     auto app = get_app_ptr (window);
-    app->vulkan_context->set_resized_flag ();
+    app->presentation_context->set_resized_flag ();
 }
 
 void GUIApplication::mouse_button_callback (GLFWwindow* window, int button, int action, int) {
@@ -244,7 +249,7 @@ void GUIApplication::on_scene_event (SceneEventType type, const std::filesystem:
             enqueue_render_config ();
 
             auto resize_camera = [&] () {
-                const auto extent = this->vulkan_context->get_swapchain_extent ();
+                const auto extent = this->presentation_context->get_swapchain_extent ();
                 const float height = static_cast <float> (extent.height);
                 const float width = static_cast <float> (extent.width);
                 this->scene_manager->get_scene ()->get_state ().camera.set_aspect_ratio (width / height);

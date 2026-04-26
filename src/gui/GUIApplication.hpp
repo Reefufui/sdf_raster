@@ -1,6 +1,7 @@
 #pragma once
 
 #include "camera.hpp"
+#include "presentation_context.hpp"
 #include "renderer.hpp"
 #include "scenes/scene_manager.hpp"
 #include "sdf_octree.hpp"
@@ -49,6 +50,7 @@ private:
     } user_data;
 
     std::shared_ptr <VulkanContext> vulkan_context;
+    std::shared_ptr <PresentationContext> presentation_context;
     std::shared_ptr <SceneManager> scene_manager;
 
     std::unique_ptr <Renderer> renderer;

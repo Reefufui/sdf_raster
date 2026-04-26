@@ -1,6 +1,7 @@
 #pragma once
 
 #include "shader_common.hpp" // DeferredLightingPushConstants
+#include "gui/presentation_context.hpp"
 
 #include <vk_descriptor_sets.h> // DescriptorMaker
 #include <vk_images.h> // VulkanImageMem
@@ -12,7 +13,6 @@ struct DeferredShadingConfig {
     VkExtent2D extent;
     std::vector <VkFormat> gbuffer_formats;
     VkFormat depth_format;
-    VkFormat swapchain_format;
     uint32_t num_inflight_frames;
     VkFilter filter = VK_FILTER_LINEAR;
 };
@@ -20,7 +20,7 @@ struct DeferredShadingConfig {
 class DeferredShading {
 public:
     DeferredShading (VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue queue
-        , const DeferredShadingConfig& config, const std::vector <VkImageView>& swapchain_views);
+        , const DeferredShadingConfig& config, std::shared_ptr <sdf_raster::PresentationContext> a_presentation);
     ~DeferredShading ();
 
     DeferredShading (const DeferredShading&) = delete;
@@ -60,5 +60,6 @@ private:
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
     DeferredLightingPushConstants push_constants;
+    std::shared_ptr <sdf_raster::PresentationContext> presentation_context;
 };
 

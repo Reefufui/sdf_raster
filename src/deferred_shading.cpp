@@ -244,9 +244,10 @@ void warmup_gbuffer_images (VkDevice device, VkCommandPool command_pool, VkQueue
 }
 
 DeferredShading::DeferredShading (VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue queue
-    , const DeferredShadingConfig& config, const std::vector <VkImageView>& swapchain_views) : device (device) {
+    , const DeferredShadingConfig& config, std::shared_ptr <sdf_raster::PresentationContext> a_presentation) : device (device)
+    , presentation_context (std::move (a_presentation)) {
     this->gbuffer_pass = create_gbuffer_render_pass (device, config.gbuffer_formats, config.depth_format);
-    this->lighting_pass = create_lighting_render_pass (device, config.swapchain_format);
+    this->lighting_pass = create_lighting_render_pass (device, this->presentation_context->get_swapchain_image_format ());
 
     this->gbuffer_cascades.resize (config.num_inflight_frames);
     for (uint32_t i = 0; i < config.num_inflight_frames; ++i) {
@@ -259,8 +260,10 @@ DeferredShading::DeferredShading (VkDevice device, VkPhysicalDevice physical_dev
         warmup_gbuffer_images (device, command_pool, queue, gbuffer_images);
     }
 
-    this->lighting_framebuffers.resize (swapchain_views.size ());
-    for (size_t i = 0; i < swapchain_views.size (); ++i) {
+    uint32_t swapchain_image_count = this->presentation_context->get_swapchain_image_count ();
+    this->lighting_framebuffers.resize (swapchain_image_count);
+    auto swapchain_views = this->presentation_context->get_swapchain_image_views ();
+    for (size_t i = 0; i < swapchain_image_count; ++i) {
         this->lighting_framebuffers [i] = create_lighting_framebuffer (device
             , this->lighting_pass, config.extent, swapchain_views [i]);
     }

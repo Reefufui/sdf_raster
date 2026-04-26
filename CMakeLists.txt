@@ -177,6 +177,7 @@ add_executable(${PROJECT_NAME}
 
     src/cli/CLIApplication.cpp
     src/gui/GUIApplication.cpp
+    src/gui/presentation_context.cpp
 )
 
 target_include_directories (${PROJECT_NAME} PRIVATE

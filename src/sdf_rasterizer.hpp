@@ -4,6 +4,7 @@
 #include "camera.hpp"
 #include "deferred_shading.hpp"
 #include "dummy_ds.hpp"
+#include "gui/presentation_context.hpp"
 #include "indirect_dispatch.hpp"
 #include "lod.hpp"
 #include "marching_cubes_lookup_table.hpp"
@@ -31,7 +32,7 @@ namespace sdf_raster {
 
 class SDFRasterizer : public Renderer {
 public:
-    explicit SDFRasterizer (std::shared_ptr <VulkanContext> vulkan_context);
+    SDFRasterizer (std::shared_ptr <VulkanContext> a_core, std::shared_ptr <PresentationContext> a_presentation);
     ~SDFRasterizer ();
 
     void init () override;
@@ -92,6 +93,7 @@ private:
         , VkImageLayout levels_dst_layout , VkPipelineStageFlagBits levels_dst_stage);
 
     std::shared_ptr <VulkanContext> context {nullptr};
+    std::shared_ptr <PresentationContext> presentation_context {nullptr};
 
     std::unique_ptr <SComTreeTreeDescriptorSetInfo> sdf_scomtree_ds {};
     std::unique_ptr <SdfOctreeDescriptorSetInfo> sdf_octree_ds {};

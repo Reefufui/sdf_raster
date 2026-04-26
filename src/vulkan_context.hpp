@@ -4,23 +4,15 @@
 #include <vector>
 
 #include "vk_context.h"
-#include "vk_images.h"
-#include "vk_swapchain.h"
 #include "vk_utils.h"
-
-#include <GLFW/glfw3.h> // NOTE: must be included after Vulkan
-
-struct GLFWwindow;
 
 namespace sdf_raster {
 
 class VulkanContext {
 public:
-    void init (int a_width, int a_height);
-    void init (GLFWwindow* window, int width, int height);
+    void init ();
     void shutdown ();
 
-    // getters
     inline bool is_initialized () const { return this->initialized; };
     inline VkInstance get_instance () const { return this->instance; }
     inline VkPhysicalDevice get_physical_device () const { return this->physical_device; }
@@ -36,33 +28,7 @@ public:
     inline VkQueue get_transfer_queue () const { return this->transfer_queue; }
     inline uint32_t get_graphics_queue_family_index () const { return this->device_queue_ids.graphics; }
     inline std::shared_ptr <vk_utils::ICopyEngine> get_copy_helper () const { return this->copy_helper; }
-
-    inline VkExtent2D get_swapchain_extent () const { return this->swapchain.GetExtent (); }
-    inline VkFormat get_swapchain_image_format () const { return this->swapchain.GetFormat (); }
-    inline VkRenderPass get_render_pass () const { return this->main.render_pass; }
-    inline VkRenderPass get_render_pass_after () const { return this->after.render_pass; }
-    inline VkFramebuffer get_swapchain_framebuffer () const { return this->main.framebuffer [this->acquired_image_index]; }
-    inline VkFramebuffer get_swapchain_framebuffer_after () const { return this->after.framebuffer [this->acquired_image_index]; }
-    inline const vk_utils::VulkanImageMem& get_depth_buffer () const { return this->depth_buffers [this->acquired_image_index]; }
-    inline VkImageView get_swapchain_image_view (uint32_t i) const { return this->swapchain.GetAttachment (i).view; }
-    inline uint32_t get_swapchain_image_count () const { return this->swapchain.GetImageCount (); }
-    inline uint32_t get_swapchain_image_index () const { return this->acquired_image_index; }
-    inline VkFormat get_depth_format () const { return this->depth_format; }
     inline bool get_use_mesh_shading () const { return this->use_mesh_shading; }
-
-    inline std::vector <VkImageView> get_swapchain_image_views () {
-        std::vector <VkImageView> swapchain_image_views (this->swapchain.GetImageCount ());
-        for (size_t i = 0; i < swapchain_image_views.size (); i++) {
-            swapchain_image_views [i] = this->get_swapchain_image_view (i);
-        }
-        return swapchain_image_views;
-    }
-
-    VkCommandBuffer begin_frame (uint32_t frame_idx);
-    void end_frame (VkCommandBuffer command_buffer, uint32_t frame_idx);
-    inline uint32_t get_total_frames () { return this->max_frames_in_flight; }
-    void register_resizable (std::function <void ()> f) { this->resizable_callbacks.push_back (f); };
-    void set_resized_flag () { this->framebuffer_resized = true; }
 
 private:
     void create_instance ();
@@ -70,18 +36,6 @@ private:
     void create_device ();
     void create_command_pools ();
     void get_device_queues ();
-    void create_swapchain (uint32_t width, uint32_t height);
-    VkRenderPass create_render_pass (VkAttachmentLoadOp load_op);
-    void create_frame_resources ();
-    void create_depth_buffers ();
-
-    void destroy_swapchain ();
-    void destroy_depth_buffers ();
-    void destroy_framebuffers ();
-    void destroy_frame_resources ();
-
-    void resize ();
-    std::vector <VkFramebuffer> create_framebuffers (VkRenderPass a_render_pass);
 
 #ifdef VULKAN_VALIDATION_LAYERS
     void setup_debug_utils_messenger ();
@@ -101,43 +55,12 @@ private:
     VkQueue compute_queue = VK_NULL_HANDLE;
     VkQueue transfer_queue = VK_NULL_HANDLE;
     VkQueue graphics_queue = VK_NULL_HANDLE;
-    VkQueue present_queue = VK_NULL_HANDLE;
     std::shared_ptr <vk_utils::ICopyEngine> copy_helper = nullptr;
-
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-    GLFWwindow* window = nullptr;
-
-    VulkanSwapChain swapchain;
-    std::vector <vk_utils::VulkanImageMem> depth_buffers;
-    VkFormat depth_format;
-    std::vector <VkSemaphore> gpu_ready_to_present;
-    size_t frames_in_swapchain = 3;
-    uint32_t acquired_image_index;
-    bool framebuffer_resized = false;
-
-    struct FrameResources {
-        VkFence cpu_wait_next_frame = VK_NULL_HANDLE;
-        VkSemaphore wait_before_color_attachment_output = VK_NULL_HANDLE;
-        VkSemaphore wait_before_depth_copy = VK_NULL_HANDLE;
-        VkCommandBuffer command_buffer = VK_NULL_HANDLE;
-    };
-    std::vector <FrameResources> frame_resources;
-    const size_t max_frames_in_flight = 2;
-
-    struct RenderPassResources {
-        std::vector <VkFramebuffer> framebuffer;
-        VkRenderPass render_pass = VK_NULL_HANDLE;
-    };
-    RenderPassResources main;
-    RenderPassResources after;
 
     bool use_mesh_shading;
     VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties;
-
-    std::vector <std::function <void ()>> resizable_callbacks;
 
     bool initialized = false;
 };
 
 }
-

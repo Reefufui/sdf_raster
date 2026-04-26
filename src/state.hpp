@@ -13,6 +13,7 @@ struct LightingSettings {
     LiteMath::float3 light_pos   = {5.f, 5.f, 5.f};
     LiteMath::float3 light_color = {1.f, 1.f, 1.f};
     LiteMath::float3 fog_color   = {0.25f, 0.25f, 0.25f};
+    LiteMath::float4 clear_color = {0.25f, 0.25f, 0.25f, 1.f};
 
     float ambient_strength  = 0.1f;
     float specular_strength = 0.4f;

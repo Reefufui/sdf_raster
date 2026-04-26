@@ -1044,6 +1044,7 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
     this->push_constants.occlusion_culling_level = scene_state.occlusion_culling_level;
     this->push_constants.frustum_culling_level = scene_state.frustum_culling_level;
     this->push_constants.color_leafs = settings.color_leafs;
+    this->clear_color = settings.lighting.clear_color;
 
     if (this->deferred_shading) {
         auto& lighting_pc = this->deferred_shading->push_constants_ref ();

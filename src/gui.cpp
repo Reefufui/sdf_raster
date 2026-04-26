@@ -509,6 +509,11 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
             ImGui::SetTooltip ("Fog color blended with lit color by depth.");
         }
 
+        ImGui::ColorEdit4 ("clear color", &lighting.clear_color.x);
+        if (ImGui::IsItemHovered ()) {
+            ImGui::SetTooltip ("Background clear color.");
+        }
+
         ImGui::DragFloat ("fog start", &lighting.fog_start, 0.0001f, 0.0f, 1.0f, "%.4f");
         ImGui::DragFloat ("fog end", &lighting.fog_end, 0.0001f, 0.0f, 1.0f, "%.4f");
         if (ImGui::IsItemHovered ()) {
@@ -531,6 +536,7 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
             lighting.light_pos          = LiteMath::float3 (5.0f, 5.0f, 5.0f);
             lighting.light_color        = LiteMath::float3 (1.0f, 1.0f, 1.0f);
             lighting.fog_color          = LiteMath::float3 (0.25f, 0.25f, 0.25f);
+            lighting.clear_color        = LiteMath::float4 (0.25f, 0.25f, 0.25f, 1.0f);
             lighting.ambient_strength   = 0.1f;
             lighting.specular_strength  = 0.4f;
             lighting.shininess          = 64.0f;

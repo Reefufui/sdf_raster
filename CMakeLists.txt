@@ -153,6 +153,7 @@ add_executable(${PROJECT_NAME}
     src/application.cpp
     src/camera.cpp
     src/deferred_shading.cpp
+    src/dummy_ds.cpp
     src/frustum_culling.cpp
     src/gui.cpp
     src/indirect_dispatch.cpp

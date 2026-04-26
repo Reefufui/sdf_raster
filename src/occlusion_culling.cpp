@@ -51,9 +51,9 @@ HZBufferDescriptorSetInfo::HZBufferDescriptorSetInfo (VkDevice device
 
     vk_utils::DescriptorTypesVec pool_sizes = {
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, max_frames_in_flight }
-        , { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2 * mip_lvls * max_frames_in_flight }
+        , { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, (2 * mip_lvls + 1) * max_frames_in_flight }
     };
-    this->desc_maker = std::make_unique <vk_utils::DescriptorMaker> (device, pool_sizes, max_frames_in_flight + (mip_lvls - 1) * max_frames_in_flight);
+    this->desc_maker = std::make_unique <vk_utils::DescriptorMaker> (device, pool_sizes, max_frames_in_flight + mip_lvls * max_frames_in_flight);
 
     for (size_t frame_idx = 0; frame_idx < max_frames_in_flight; ++frame_idx) {
         HZBufferDescriptorSetInfo::FrameResources& f = this->frame_resources [frame_idx];
@@ -88,6 +88,10 @@ HZBufferDescriptorSetInfo::HZBufferDescriptorSetInfo (VkDevice device
             this->desc_maker->BindImage (1, f.gen_image_views [i + 1], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
             this->desc_maker->BindEnd (&f.gen_descriptor_sets [i], &this->gen_descriptor_set_layout);
         }
+
+        this->desc_maker->BindBegin (shader_stage_flags);
+        this->desc_maker->BindImage (0, f.gen_image_views [0], VK_NULL_HANDLE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_GENERAL);
+        this->desc_maker->BindEnd (&f.base_level_descriptor_set, &this->base_level_descriptor_set_layout);
 
         this->desc_maker->BindBegin (shader_stage_flags);
         this->desc_maker->BindImage (0, f.hz_buffer.view, this->sampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);

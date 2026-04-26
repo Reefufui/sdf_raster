@@ -8,6 +8,8 @@
 [[vk::binding (2, 0)]] Sampler2D tex_albedo;
 [[vk::binding (3, 0)]] Sampler2D tex_depth;
 
+[[vk::binding (0, 1)]] RWTexture2D <float> hz_buffer;
+
 [shader ("fragment")]
 float4 main (float4 sv_pos : SV_Position) : SV_Target {
     uint width, height, mipLevels;
@@ -49,6 +51,10 @@ float4 main (float4 sv_pos : SV_Position) : SV_Target {
         position = tex_position.Sample (offset_uv).xyz;
         albedo = tex_albedo.Sample (offset_uv);
         depth = bestNeighborDepth;
+    }
+
+    if (pc.enable_hz_write != 0) {
+        hz_buffer [int2 (sv_pos.xy)] = depth;
     }
 
     if (depth == 1.f) {

@@ -98,6 +98,8 @@ struct DeferredLightingPushConstants {
 
     float  fog_start;          // 0.999 default
     float  fog_end;            // 1.0 default
+
+    uint   enable_hz_write;    // 0 default
 };
 
 struct SComTreeHeader {

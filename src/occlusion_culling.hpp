@@ -23,12 +23,14 @@ public:
 
     VkDescriptorSetLayout get_gen_layout () const { return this->gen_descriptor_set_layout; }
     VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
+    VkDescriptorSetLayout get_base_level_layout () const { return this->base_level_descriptor_set_layout; }
 
     struct FrameResources {
         VkImage prev_depth_image = VK_NULL_HANDLE;
         LiteMath::float4x4 prev_view_proj;
 
-        std::vector <VkDescriptorSet> gen_descriptor_sets;
+        VkDescriptorSet base_level_descriptor_set = VK_NULL_HANDLE; // NOTE: [0] mip image
+        std::vector <VkDescriptorSet> gen_descriptor_sets; // NOTE: [lvl] & [lvl+1] mip image
         std::vector <VkImageView> gen_image_views;
 
         VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
@@ -47,6 +49,7 @@ private:
     std::unique_ptr <vk_utils::DescriptorMaker> desc_maker; 
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
     VkDescriptorSetLayout gen_descriptor_set_layout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout base_level_descriptor_set_layout = VK_NULL_HANDLE;
 
     std::vector <FrameResources> frame_resources;
     VkDeviceMemory transition_memory = VK_NULL_HANDLE;

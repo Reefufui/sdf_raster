@@ -3,6 +3,7 @@
 #include "active_leafs.hpp"
 #include "camera.hpp"
 #include "deferred_shading.hpp"
+#include "dummy_ds.hpp"
 #include "indirect_dispatch.hpp"
 #include "lod.hpp"
 #include "marching_cubes_lookup_table.hpp"
@@ -71,7 +72,6 @@ private:
     void draw_frustum_demo (VkCommandBuffer cmd_buff);
     void forward_rendering (VkCommandBuffer cmd_buff);
     void geometry_barrier (VkCommandBuffer cmd_buff);
-    void hz_buffer_barrier (VkCommandBuffer cmd_buff);
     void marching_cubes_octree (VkCommandBuffer cmd_buff);
     void marching_cubes_scomtree (VkCommandBuffer cmd_buff);
     void prepare_draw_indirect (VkCommandBuffer cmd_buff);
@@ -80,6 +80,16 @@ private:
     void traverse_octree (VkCommandBuffer cmd_buff);
     void traverse_scomtree (VkCommandBuffer cmd_buff);
     void update_frustum_buffer (const Camera& camera);
+
+    void hz_buffer_barrier (VkCommandBuffer cmd_buff
+        , VkImageLayout base_level_src_layout , VkPipelineStageFlagBits base_level_src_stage
+        , VkImageLayout base_level_dst_layout , VkPipelineStageFlagBits base_level_dst_stage);
+
+    void hz_buffer_barrier (VkCommandBuffer cmd_buff
+        , VkImageLayout base_level_src_layout , VkPipelineStageFlagBits base_level_src_stage
+        , VkImageLayout base_level_dst_layout , VkPipelineStageFlagBits base_level_dst_stage
+        , VkImageLayout levels_src_layout , VkPipelineStageFlagBits levels_src_stage
+        , VkImageLayout levels_dst_layout , VkPipelineStageFlagBits levels_dst_stage);
 
     std::shared_ptr <VulkanContext> context {nullptr};
 
@@ -93,6 +103,7 @@ private:
     std::unique_ptr <FrustumDescriptorSetInfo> frustum_ds {};
     std::unique_ptr <IndirectDescriptorSetInfo> indirect_dispatch_ds {};
     std::unique_ptr <LODDescriptorSetInfo> lod_ds {};
+    std::unique_ptr <DummyDescriptorSetInfo> dummy_ds {};
 
     VkPipeline mesh_shading_octree_pipeline {VK_NULL_HANDLE};
     VkPipeline mesh_shading_scomtree_pipeline {VK_NULL_HANDLE};

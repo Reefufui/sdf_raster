@@ -1,4 +1,4 @@
-// mip_max_pooling.comp.slang
+// hz_buffer.comp.slang
 
 #include "shader_common.hpp"
 

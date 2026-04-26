@@ -4,8 +4,8 @@
 #include <chrono>
 #include <thread>
 
-#include "application.hpp"
-#include "gui.hpp"
+#include "gui/GUIApplication.hpp"
+#include "gui/imgui_overlay.hpp"
 #include "logger.hpp"
 #include "scenes/obj/obj.hpp"
 #include "scenes/octree/octree.hpp"
@@ -14,7 +14,7 @@
 
 namespace sdf_raster {
 
-Application::Application ()
+GUIApplication::GUIApplication ()
     : user_data ({this}) {
     try {
         SessionState session;
@@ -32,14 +32,12 @@ Application::Application ()
     }
 }
 
-Application::~Application () {
+GUIApplication::~GUIApplication () {
     this->settings.window_maximized = glfwGetWindowAttrib (this->window, GLFW_MAXIMIZED);
     glfwGetWindowSize (window, &this->settings.window_width, &this->settings.window_height);
     glfwSetWindowShouldClose (this->window, true);
 
     {
-        // NOTE: We should destroy renderer prior to saving scene states
-        // If we want it to return camera captured during frustum demo.
         this->settings.frustum_view = false;
         if (this->renderer) {
             this->renderer->shutdown ();
@@ -59,10 +57,10 @@ Application::~Application () {
     cleanup ();
 }
 
-void Application::run () {
+void GUIApplication::run () {
     if (!this->renderer) {
         cleanup ();
-        throw std::logic_error ("[Application::run] renderer is not inited");
+        throw std::logic_error ("[GUIApplication::run] renderer is not inited");
     }
 
     try {
@@ -84,7 +82,7 @@ void Application::run () {
             gui::update (this->settings, this->renderer->get_stats ());
 
             this->renderer->process_commands (this->render_commands, this->render_command_mutex);
-            this->renderer->update (i, this->settings); // TODO: update everything through 'process_commands'
+            this->renderer->update (i, this->settings);
 
             this->renderer->render (cmd_buff);
             gui::draw (this->vulkan_context->get_swapchain_image_index (), cmd_buff);
@@ -97,7 +95,7 @@ void Application::run () {
     }
 }
 
-void Application::init_window () {
+void GUIApplication::init_window () {
     glfwInit ();
     glfwWindowHint (GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint (GLFW_RESIZABLE, GLFW_TRUE);
@@ -118,7 +116,7 @@ void Application::init_window () {
     this->settings.disabled_cursor = false;
 }
 
-void Application::init_vulkan () {
+void GUIApplication::init_vulkan () {
     if (!glfwVulkanSupported ()) {
         throw std::runtime_error ("Vulkan not supported.");
     }
@@ -147,13 +145,12 @@ void Application::init_vulkan () {
     this->vulkan_context->register_resizable (resize_gui);
 }
 
-void Application::init_renderer () {
+void GUIApplication::init_renderer () {
     this->renderer = std::make_unique <SDFRasterizer> (this->vulkan_context);
     this->renderer->init ();
 }
 
-void Application::init_gui () {
-    // TODO: pass vulkan_context to gui. init it the same way as renderer
+void GUIApplication::init_gui () {
     gui::InitInfo init_info {
         .device = this->vulkan_context->get_device (),
         .window = this->window,
@@ -170,7 +167,7 @@ void Application::init_gui () {
     gui::init (vulkan_context, scene_manager, init_info, this->settings);
 }
 
-void Application::init_scene_manager (const SessionState& session) {
+void GUIApplication::init_scene_manager (const SessionState& session) {
     this->scene_manager = std::make_unique <SceneManager> ();
     this->scene_manager->register_scene_type <ObjScene> (".obj");
     this->scene_manager->register_scene_type <SComTreeScene> (".scomtree");
@@ -187,7 +184,7 @@ void Application::init_scene_manager (const SessionState& session) {
     }
 }
 
-void Application::cleanup () {
+void GUIApplication::cleanup () {
     gui::cleanup (this->settings);
 
     if (this->renderer) {
@@ -204,13 +201,13 @@ void Application::cleanup () {
     glfwTerminate ();
 }
 
-void Application::framebuffer_resize_callback (GLFWwindow* window, int, int) {
+void GUIApplication::framebuffer_resize_callback (GLFWwindow* window, int, int) {
     auto app = get_app_ptr (window);
     app->vulkan_context->set_resized_flag ();
 }
 
-void Application::mouse_button_callback (GLFWwindow* window, int button, int action, int) {
-    Application* app = get_app_ptr (window);
+void GUIApplication::mouse_button_callback (GLFWwindow* window, int button, int action, int) {
+    GUIApplication* app = get_app_ptr (window);
     if (!app) return;
 
     if (app->settings.disabled_cursor) {
@@ -228,7 +225,7 @@ void Application::mouse_button_callback (GLFWwindow* window, int button, int act
     }
 }
 
-void Application::on_scene_event (SceneEventType type, const std::filesystem::path& /*path*/) {
+void GUIApplication::on_scene_event (SceneEventType type, const std::filesystem::path& /*path*/) {
     auto enqueue_render_config = [this] () {
         std::shared_ptr <Scene> scene = this->scene_manager->get_scene ();
         if (scene) {
@@ -253,7 +250,7 @@ void Application::on_scene_event (SceneEventType type, const std::filesystem::pa
                 this->scene_manager->get_scene ()->get_state ().camera.set_aspect_ratio (width / height);
             };
 
-            resize_camera (); // TODO: class method
+            resize_camera ();
 
             break;
         }
@@ -269,9 +266,8 @@ void Application::on_scene_event (SceneEventType type, const std::filesystem::pa
     }
 }
 
-Application* Application::get_app_ptr (GLFWwindow* window) {
+GUIApplication* GUIApplication::get_app_ptr (GLFWwindow* window) {
     return static_cast<UserData*>(glfwGetWindowUserPointer(window))->app;
 }
 
 }
-

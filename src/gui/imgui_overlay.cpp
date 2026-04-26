@@ -7,10 +7,14 @@
 #include "imgui_impl_vulkan.h"
 #include "imfilebrowser.h"
 
-#include "application.hpp"
-#include "gui.hpp"
+#include "gui/GUIApplication.hpp"
+#include "gui/imgui_overlay.hpp"
 #include "logger.hpp"
+#include "renderer.hpp"
+#include "scenes/scene_manager.hpp"
 #include "scenes/scene_state.hpp"
+#include "state.hpp"
+#include "vulkan_context.hpp"
 #include "vk_images.h"
 
 namespace sdf_raster {

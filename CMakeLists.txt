@@ -150,12 +150,11 @@ add_library (LiteMath::LiteImage ALIAS LiteImage)
 
 add_executable(${PROJECT_NAME}
     src/active_leafs.cpp
-    src/application.cpp
     src/camera.cpp
     src/deferred_shading.cpp
     src/dummy_ds.cpp
     src/frustum_culling.cpp
-    src/gui.cpp
+    src/gui/imgui_overlay.cpp
     src/indirect_dispatch.cpp
     src/lod.cpp
     src/logger.cpp
@@ -175,6 +174,9 @@ add_executable(${PROJECT_NAME}
     src/scenes/scene_manager.cpp
     src/scenes/scomtree/scomtree.cpp
     src/scenes/scomtree/utils.cpp
+
+    src/cli/CLIApplication.cpp
+    src/gui/GUIApplication.cpp
 )
 
 target_include_directories (${PROJECT_NAME} PRIVATE

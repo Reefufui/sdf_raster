@@ -1,5 +1,6 @@
 #pragma once
 
+#include "renderer.hpp"
 #include "vulkan_context.hpp"
 #include <vector>
 #include <string>
@@ -11,6 +12,7 @@ struct GLFWwindow;
 namespace sdf_raster {
 
 struct Settings;
+class SceneManager;
 
 namespace gui {
 

@@ -17,10 +17,10 @@
 
 namespace sdf_raster {
 
-class Application {
+class GUIApplication {
 public:
-    Application ();
-    ~Application ();
+    GUIApplication ();
+    ~GUIApplication ();
 
     void run ();
 
@@ -32,7 +32,7 @@ private:
     void init_gui ();
     void init_scene_manager (const SessionState& session);
 
-    static Application* get_app_ptr (GLFWwindow* window);
+    static GUIApplication* get_app_ptr (GLFWwindow* window);
     static void framebuffer_resize_callback (GLFWwindow* window, int width, int height);
     static void mouse_button_callback (GLFWwindow* a_window, int button, int action, int mods);
 
@@ -45,7 +45,7 @@ private:
     SdfOctree scene;
 
     struct UserData {
-        Application* app;
+        GUIApplication* app;
     } user_data;
 
     std::shared_ptr <VulkanContext> vulkan_context;
@@ -57,4 +57,3 @@ private:
 };
 
 }
-

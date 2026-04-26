@@ -1,7 +1,6 @@
 #include "sdf_rasterizer.hpp"
 
-#include "application.hpp"
-#include "gui.hpp"
+#include "gui/imgui_overlay.hpp"
 #include "logger.hpp"
 #include "scenes/obj/obj.hpp"
 #include "scenes/octree/octree.hpp"

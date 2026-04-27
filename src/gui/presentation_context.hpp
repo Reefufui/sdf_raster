@@ -33,9 +33,6 @@ public:
         }
         return views;
     }
-    inline VkImageView get_swapchain_image_view (uint32_t a_index) const {
-        return this->swapchain.GetAttachment (a_index).view;
-    }
 
     VkCommandBuffer begin_frame (uint32_t a_frame_index);
     void end_frame (VkCommandBuffer a_cmd_buff, uint32_t a_frame_index);
@@ -61,7 +58,6 @@ public:
     inline void set_resized_flag () { this->framebuffer_resized = true; }
 
     inline VkQueue get_present_queue () const { return this->present_queue; }
-    inline std::shared_ptr <VulkanContext> get_context () const { return this->context; }
 
 private:
     void create_surface ();

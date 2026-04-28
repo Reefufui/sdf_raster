@@ -1,8 +1,9 @@
+// scenes/scomtree/scomtree.hpp
 #pragma once
 
-#include "mesh.hpp"
+#include "data/mesh.hpp"
 #include "scenes/scene_state.hpp"
-#include "scenes/scene.hpp"
+#include "scenes/base/scene.hpp"
 #include "scenes/scomtree/header.hpp"
 
 #include <cstdint>

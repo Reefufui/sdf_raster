@@ -1,3 +1,4 @@
+// scenes/scomtree/defs.hpp
 #pragma once
 
 namespace sdf_raster {

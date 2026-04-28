@@ -1,6 +1,7 @@
+// scenes/scene_state.hpp
 #pragma once
 
-#include "camera.hpp"
+#include "engine/camera.hpp"
 
 #include <filesystem>
 #include <string>

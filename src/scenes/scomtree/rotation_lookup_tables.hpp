@@ -1,3 +1,4 @@
+// scenes/scomtree/rotation_lookup_tables.hpp
 #include <LiteMath.h>
 
 namespace sdf_raster {

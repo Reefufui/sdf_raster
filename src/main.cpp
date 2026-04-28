@@ -1,8 +1,9 @@
+// main.cpp
 #include <string>
 #include <vector>
 
-#include "gui/GUIApplication.hpp"
-#include "cli/CLIApplication.hpp"
+#include "application/gui/gui_application.hpp"
+#include "application/cli/cli_application.hpp"
 #include "logger.hpp"
 
 int main (int argc, char* argv[]) {

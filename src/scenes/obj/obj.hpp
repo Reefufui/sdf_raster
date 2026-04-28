@@ -1,7 +1,8 @@
+// scenes/obj/obj.hpp
 #pragma once
 
 #include "scenes/scene_state.hpp"
-#include "scenes/scene.hpp"
+#include "scenes/base/scene.hpp"
 
 #include "shader_common.hpp"
 

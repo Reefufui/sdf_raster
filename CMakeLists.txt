@@ -149,35 +149,37 @@ target_link_libraries (LiteImage PUBLIC LiteMath)
 add_library (LiteMath::LiteImage ALIAS LiteImage)
 
 add_executable(${PROJECT_NAME}
-    src/active_leafs.cpp
-    src/camera.cpp
-    src/deferred_shading.cpp
-    src/dummy_ds.cpp
-    src/frustum_culling.cpp
-    src/gui/imgui_overlay.cpp
-    src/indirect_dispatch.cpp
-    src/lod.cpp
+    src/engine/camera.cpp
+    src/engine/deferred_shading.cpp
+    src/engine/utils/frustum_culling.cpp
     src/logger.cpp
-    src/main.cpp
-    src/marching_cubes_lookup_table.cpp
-    src/mesh.cpp
-    src/occlusion_culling.cpp
-    src/sdf_octree.cpp
-    src/sdf_rasterizer.cpp
-    src/sdf_scomtree.cpp
+    src/data/mesh.cpp
+    src/engine/sdf_rasterizer.cpp
     src/state.cpp
-    src/vulkan_context.cpp
+    src/vulkan/context/vulkan_context.cpp
+    src/vulkan/presentation/presentation_context.cpp
 
     src/scenes/obj/obj.cpp
     src/scenes/octree/octree.cpp
-    src/scenes/scene.cpp
-    src/scenes/scene_manager.cpp
+    src/scenes/base/scene.cpp
+    src/scenes/base/scene_manager.cpp
     src/scenes/scomtree/scomtree.cpp
     src/scenes/scomtree/utils.cpp
 
-    src/cli/CLIApplication.cpp
-    src/gui/GUIApplication.cpp
-    src/gui/presentation_context.cpp
+    src/resources/frustum.cpp
+    src/resources/hz_buffer.cpp
+    src/resources/dummy_ds.cpp
+    src/resources/indirect_dispatch.cpp
+    src/resources/marching_cubes_lookup_table.cpp
+    src/resources/lod.cpp
+    src/resources/active_leafs.cpp
+    src/resources/sdf_octree.cpp
+    src/resources/sdf_scomtree.cpp
+
+    src/main.cpp
+src/application/gui/gui_application.cpp
+    src/application/gui/imgui_overlay.cpp
+    src/application/cli/cli_application.cpp
 )
 
 target_include_directories (${PROJECT_NAME} PRIVATE

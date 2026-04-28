@@ -1,8 +1,9 @@
+// scenes/scomtree/scomtree.cpp
 #include "scenes/scomtree/scomtree.hpp"
 
-#include "frustum_culling.hpp"
+#include "engine/utils/frustum_culling.hpp"
 #include "logger.hpp"
-#include "marching_cubes_lookup_table.hpp"
+#include "data/marching_cubes_data.hpp"
 #include "scenes/scomtree/defs.hpp"
 #include "scenes/scomtree/rotation_lookup_tables.hpp"
 #include "scenes/scomtree/utils.hpp"

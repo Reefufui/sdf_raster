@@ -1,3 +1,4 @@
+// state.hpp
 #pragma once
 
 #include "scenes/scene_state.hpp"

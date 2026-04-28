@@ -1,6 +1,7 @@
+// scenes/octree/octree.cpp
 #include "scenes/octree/octree.hpp"
 
-#include "frustum_culling.hpp"
+#include "engine/utils/frustum_culling.hpp"
 #include "logger.hpp"
 #include "shader_common.hpp"
 

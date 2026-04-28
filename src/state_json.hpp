@@ -1,3 +1,4 @@
+// state_json.hpp
 // settings_json.hpp
 #pragma once
 

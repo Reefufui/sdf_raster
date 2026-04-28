@@ -1,0 +1,59 @@
+// resources/sdf_octree.hpp
+
+#pragma once
+
+#include "scenes/octree/octree.hpp"
+
+#include "shader_common.hpp"
+
+#include <LiteMath.h>
+#include <vk_copy.h>
+#include <vk_descriptor_sets.h>
+#include <vk_utils.h>
+
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace sdf_raster {
+
+class SdfOctreeDescriptorSetInfo {
+public:
+    SdfOctreeDescriptorSetInfo (VkDevice device
+        , VkPhysicalDevice physical_device
+        , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
+        , VkShaderStageFlags shader_stage_flags
+        , std::shared_ptr <SdfOctreeScene> scene
+        , size_t max_frames_in_flight);
+    ~SdfOctreeDescriptorSetInfo ();
+
+    VkDescriptorSet get_descriptor_set (uint32_t fif_index) const { return this->descriptor_sets [fif_index]; }
+    VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
+
+    void update_subtree_root_buffer (const FrustumGeometry& frustum, uint32_t fif_index);
+    VkBuffer get_subtree_root_buffer (uint32_t fif_index) const { return this->subtree_root_buffers [fif_index]; }
+    VkBuffer get_subtree_root_staging_buffer (uint32_t fif_index) const { return this->subtree_roots_staging_buffers [fif_index]; }
+    size_t get_subtree_count () const { return this->subtree_count; }
+
+private:
+    VkDevice device = VK_NULL_HANDLE;
+
+    std::unique_ptr <vk_utils::DescriptorMaker> desc_maker; 
+    std::vector <VkDescriptorSet> descriptor_sets;
+    VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
+
+    std::shared_ptr <SdfOctreeScene> scene {};
+    std::vector <VkBuffer> subtree_roots_staging_buffers {};
+    std::vector <VkDeviceMemory> staging_buffer_memories {};
+    std::vector <void*> subtrees_memory_mapped {};
+    size_t subtree_count {};
+    VkDeviceSize mapped_memory_size {};
+
+    VkBuffer nodes_buffer = VK_NULL_HANDLE;
+    std::vector <VkBuffer> subtree_root_buffers;
+
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+};
+
+} // sdf_raster

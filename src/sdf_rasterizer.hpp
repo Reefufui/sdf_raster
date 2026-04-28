@@ -76,21 +76,20 @@ private:
     void marching_cubes_octree (VkCommandBuffer cmd_buff);
     void marching_cubes_scomtree (VkCommandBuffer cmd_buff);
     void prepare_draw_indirect (VkCommandBuffer cmd_buff);
+    void prepare_hzbuffer (VkCommandBuffer cmd_buff);
     void prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size);
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
     void traverse_octree (VkCommandBuffer cmd_buff);
     void traverse_scomtree (VkCommandBuffer cmd_buff);
     void update_frustum_buffer (const Camera& camera);
 
-    void hz_buffer_barrier (VkCommandBuffer cmd_buff
-        , VkImageLayout base_level_src_layout , VkPipelineStageFlagBits base_level_src_stage
-        , VkImageLayout base_level_dst_layout , VkPipelineStageFlagBits base_level_dst_stage);
-
-    void hz_buffer_barrier (VkCommandBuffer cmd_buff
-        , VkImageLayout base_level_src_layout , VkPipelineStageFlagBits base_level_src_stage
-        , VkImageLayout base_level_dst_layout , VkPipelineStageFlagBits base_level_dst_stage
-        , VkImageLayout levels_src_layout , VkPipelineStageFlagBits levels_src_stage
-        , VkImageLayout levels_dst_layout , VkPipelineStageFlagBits levels_dst_stage);
+    struct LayoutStageAccess {
+        VkImageLayout layout;
+        VkPipelineStageFlagBits stage;
+        VkAccessFlags access;
+    };
+    void hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src, LayoutStageAccess dst);
+    void hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src_base, LayoutStageAccess dst_base, LayoutStageAccess src_levels, LayoutStageAccess dst_levels);
 
     std::shared_ptr <VulkanContext> context {nullptr};
     std::shared_ptr <PresentationContext> presentation_context {nullptr};

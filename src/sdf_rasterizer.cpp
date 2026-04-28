@@ -1229,34 +1229,6 @@ void SDFRasterizer::copy_depth (VkCommandBuffer cmd_buff) {
             , 0, nullptr
             , 1, &depth_to_attachment);
     }
-
-    VkImageSubresourceRange first_mip_lvl {};
-    first_mip_lvl.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    first_mip_lvl.baseMipLevel = 0;
-    first_mip_lvl.levelCount = 1;
-    first_mip_lvl.baseArrayLayer = 0;
-    first_mip_lvl.layerCount = 1;
-
-    VkImageMemoryBarrier hz_buffer_to_shader_read = {};
-    hz_buffer_to_shader_read.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    hz_buffer_to_shader_read.pNext = nullptr;
-    hz_buffer_to_shader_read.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    hz_buffer_to_shader_read.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    hz_buffer_to_shader_read.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    hz_buffer_to_shader_read.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    hz_buffer_to_shader_read.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    hz_buffer_to_shader_read.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    hz_buffer_to_shader_read.image = f.hz_buffer.image;
-    hz_buffer_to_shader_read.subresourceRange = first_mip_lvl;
-
-    vkCmdPipelineBarrier (cmd_buff
-        , VK_PIPELINE_STAGE_TRANSFER_BIT
-        , VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-        , 0
-        , 0, nullptr
-        , 0, nullptr
-        , 1, &hz_buffer_to_shader_read
-    );
 }
 
 void SDFRasterizer::copy_subtrees (VkCommandBuffer cmd_buff) {
@@ -1358,33 +1330,6 @@ void SDFRasterizer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
                 , 1, &barrier);
         }
     }
-
-    VkImageSubresourceRange all_mip_lvls;
-    all_mip_lvls.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    all_mip_lvls.baseMipLevel = 0;
-    all_mip_lvls.levelCount = f.hz_buffer.mipLvls;
-    all_mip_lvls.baseArrayLayer = 0;
-    all_mip_lvls.layerCount = 1;
-
-    VkImageMemoryBarrier barr = {};
-    barr.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barr.pNext = nullptr;
-    barr.srcAccessMask = 0;
-    barr.dstAccessMask = 0;
-    barr.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barr.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barr.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barr.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barr.subresourceRange = all_mip_lvls;
-    barr.image = f.hz_buffer.image;
-
-    vkCmdPipelineBarrier (cmd_buff
-         , VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-         , VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-         , 0
-         , 0, nullptr
-         , 0, nullptr
-         , 1, &barr);
 }
 
 void SDFRasterizer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
@@ -1410,6 +1355,87 @@ void SDFRasterizer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
         1, &buffer_barrier,
         0, nullptr
     );
+}
+
+void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src, LayoutStageAccess dst) {
+    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
+
+    VkImageSubresourceRange base_level_range {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1
+    };
+
+    VkImageMemoryBarrier base_level_barrier {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = src.access,
+        .dstAccessMask = dst.access,
+        .oldLayout = src.layout,
+        .newLayout = dst.layout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = f.hz_buffer.image,
+        .subresourceRange = base_level_range
+    };
+
+    vkCmdPipelineBarrier (cmd_buff, src.stage, dst.stage, 0, 0, nullptr, 0, nullptr, 1, &base_level_barrier);
+}
+
+void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src_base, LayoutStageAccess dst_base, LayoutStageAccess src_levels, LayoutStageAccess dst_levels) {
+    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
+
+    VkImageSubresourceRange base_level_range {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1
+    };
+
+    VkImageSubresourceRange levels_range {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 1,
+        .levelCount = f.hz_buffer.mipLvls - 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1
+    };
+
+    VkImageMemoryBarrier base_level_barrier {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = src_base.access,
+        .dstAccessMask = dst_base.access,
+        .oldLayout = src_base.layout,
+        .newLayout = dst_base.layout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = f.hz_buffer.image,
+        .subresourceRange = base_level_range
+    };
+
+    VkImageMemoryBarrier levels_barrier {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = src_levels.access,
+        .dstAccessMask = dst_levels.access,
+        .oldLayout = src_levels.layout,
+        .newLayout = dst_levels.layout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = f.hz_buffer.image,
+        .subresourceRange = levels_range
+    };
+
+    std::array <VkImageMemoryBarrier, 2> barriers {base_level_barrier, levels_barrier};
+
+    vkCmdPipelineBarrier (cmd_buff
+        , src_base.stage | src_levels.stage
+        , dst_base.stage | dst_levels.stage
+        , 0, 0, nullptr, 0, nullptr
+        , static_cast <uint32_t> (barriers.size ()), barriers.data ());
 }
 
 void SDFRasterizer::traverse_octree (VkCommandBuffer cmd_buff) {
@@ -1458,73 +1484,6 @@ void SDFRasterizer::traverse_scomtree (VkCommandBuffer cmd_buff) {
     vkCmdDispatch (cmd_buff, 1, 1, subtree_root_count); // TODO: direct descend with (8, 8, <cpu_roots>)
 }
 
-void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff
-    , VkImageLayout base_level_src_layout , VkPipelineStageFlagBits base_level_src_stage
-    , VkImageLayout base_level_dst_layout , VkPipelineStageFlagBits base_level_dst_stage) {
-    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
-
-    VkImageMemoryBarrier first_lvl_as_depth_dst = {};
-    first_lvl_as_depth_dst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    first_lvl_as_depth_dst.pNext = nullptr;
-    first_lvl_as_depth_dst.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    first_lvl_as_depth_dst.dstAccessMask = 0;
-    first_lvl_as_depth_dst.oldLayout = base_level_src_layout;
-    first_lvl_as_depth_dst.newLayout = base_level_dst_layout;
-    first_lvl_as_depth_dst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    first_lvl_as_depth_dst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    first_lvl_as_depth_dst.image = f.hz_buffer.image;
-    first_lvl_as_depth_dst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    first_lvl_as_depth_dst.subresourceRange.baseMipLevel = 0;
-    first_lvl_as_depth_dst.subresourceRange.levelCount = 1;
-    first_lvl_as_depth_dst.subresourceRange.baseArrayLayer = 0;
-    first_lvl_as_depth_dst.subresourceRange.layerCount = 1;
-
-    vkCmdPipelineBarrier (cmd_buff
-        , base_level_src_stage
-        , base_level_dst_stage
-        , 0
-        , 0, nullptr
-        , 0, nullptr
-        , 1, &first_lvl_as_depth_dst
-    );
-}
-
-void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff
-    , VkImageLayout base_level_src_layout, VkPipelineStageFlagBits base_level_src_stage
-    , VkImageLayout base_level_dst_layout, VkPipelineStageFlagBits base_level_dst_stage
-    , VkImageLayout levels_src_layout, VkPipelineStageFlagBits levels_src_stage
-    , VkImageLayout levels_dst_layout, VkPipelineStageFlagBits levels_dst_stage) {
-    HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
-
-    this->hz_buffer_barrier (cmd_buff
-        , base_level_src_layout, base_level_src_stage
-        , base_level_dst_layout, base_level_dst_stage);
-
-    VkImageMemoryBarrier levels = {};
-    levels.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    levels.pNext = nullptr;
-    levels.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    levels.dstAccessMask = 0;
-    levels.oldLayout = levels_src_layout;
-    levels.newLayout = levels_dst_layout;
-    levels.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    levels.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    levels.image = f.hz_buffer.image;
-    levels.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    levels.subresourceRange.baseMipLevel = 1;
-    levels.subresourceRange.levelCount = f.hz_buffer.mipLvls - 1;
-    levels.subresourceRange.baseArrayLayer = 0;
-    levels.subresourceRange.layerCount = 1;
-
-    vkCmdPipelineBarrier (cmd_buff
-        , levels_src_stage
-        , levels_dst_stage
-        , 0
-        , 0, nullptr
-        , 0, nullptr
-        , 1, &levels);
-}
-
 void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size) {
     assert (this->context && "required for 'prepare_indirect'");
     assert (this->active_leafs_ds && "required for 'prepare_indirect'");
@@ -1570,6 +1529,33 @@ void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgro
         , 0, nullptr
         , 0, nullptr
         );
+}
+
+void SDFRasterizer::prepare_hzbuffer (VkCommandBuffer cmd_buff) {
+    assert (this->hz_buffer_ds && "required for 'prepare_hzbuffer");
+
+    this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->presentation_context->get_depth_buffer ().image;
+    this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
+
+    this->hz_buffer_barrier (cmd_buff
+        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = 0}
+        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = 0});
+
+    this->copy_depth (cmd_buff);
+
+    this->hz_buffer_barrier (cmd_buff
+        , {.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .stage = VK_PIPELINE_STAGE_TRANSFER_BIT, .access = VK_ACCESS_TRANSFER_WRITE_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
+
+    this->compute_hz_buffer (cmd_buff);
+
+    this->hz_buffer_barrier (cmd_buff
+        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
 }
 
 void SDFRasterizer::marching_cubes_octree (VkCommandBuffer cmd_buff) {
@@ -1873,7 +1859,15 @@ void SDFRasterizer::deferred_rendering (VkCommandBuffer cmd_buff) {
 void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     if (this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image != VK_NULL_HANDLE) {
         this->copy_depth (cmd_buff);
+        this->hz_buffer_barrier (cmd_buff
+            , {.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .stage = VK_PIPELINE_STAGE_TRANSFER_BIT, .access = VK_ACCESS_TRANSFER_WRITE_BIT}
+            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
         this->compute_hz_buffer (cmd_buff);
+        this->hz_buffer_barrier (cmd_buff
+           , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+           , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+           , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+           , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
     } else {
         LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
         this->push_constants.occlusion_culling_level = false;
@@ -1944,29 +1938,16 @@ void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 
     this->hz_buffer_barrier (cmd_buff
-        , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-        , VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
-        , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-        , VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
-
-    if (!this->frustum_draw_buffer) {
-        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->presentation_context->get_depth_buffer ().image;
-        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
-    }
+        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = 0}
+        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = 0});
 }
 
 void SDFRasterizer::raster_scomtree_via_mesh_shading (VkCommandBuffer /*cmd_buff*/) {
 }
 
 void SDFRasterizer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
-    if (this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image != VK_NULL_HANDLE) {
-        this->copy_depth (cmd_buff);
-        this->compute_hz_buffer (cmd_buff);
-    } else {
-        LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
-        this->push_constants.occlusion_culling_level = false;
-    }
-
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
@@ -1978,29 +1959,12 @@ void SDFRasterizer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff)
     this->geometry_barrier (cmd_buff);
     this->forward_rendering (cmd_buff);
 
-    this->hz_buffer_barrier (cmd_buff
-        , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-        , VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
-        , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-        , VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
-
     if (!this->frustum_draw_buffer) {
-        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->presentation_context->get_depth_buffer ().image;
-        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
+        this->prepare_hzbuffer (cmd_buff);
     }
 }
 
 void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
-    if (this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image != VK_NULL_HANDLE) {
-        if (!this->deferred_shading) {
-            this->copy_depth (cmd_buff);
-        }
-        this->compute_hz_buffer (cmd_buff);
-    } else {
-        LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
-        this->push_constants.occlusion_culling_level = false;
-    }
-
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
@@ -2012,28 +1976,31 @@ void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buf
     this->geometry_barrier (cmd_buff);
 
     if (this->deferred_shading) {
+        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->presentation_context->get_depth_buffer ().image;
+        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
+
         this->hz_buffer_barrier (cmd_buff
-            , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-            , VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-            , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-            , VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+            , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+            , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
 
         this->deferred_rendering (cmd_buff);
-    } else {
-        this->forward_rendering (cmd_buff);
 
         this->hz_buffer_barrier (cmd_buff
-            , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-            , VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
-            , VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-            , VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
-    }
+            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
 
-    if (!this->frustum_draw_buffer) {
-        // NOTE: while rendering via 'deferred_shading' this depth buffer is not used. we use the one in gbuffer instead
-        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->presentation_context->get_depth_buffer ().image;
+        this->compute_hz_buffer (cmd_buff);
 
-        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
+        this->hz_buffer_barrier (cmd_buff
+            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+            , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+            , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
+    } else {
+        this->forward_rendering (cmd_buff);
+        this->prepare_hzbuffer (cmd_buff);
     }
 }
 

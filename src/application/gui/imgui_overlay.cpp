@@ -471,7 +471,10 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
     }
 
     ImGui::SeparatorText ("Lighting");
-    ImGui::Checkbox ("color leafs", &settings.color_leafs);
+    const char* color_modes [] = { "White", "Unique Data", "LOD" };
+    int color_leafs_int = static_cast <int> (settings.color_leafs);
+    ImGui::Combo ("color leafs", &color_leafs_int, color_modes, IM_ARRAYSIZE (color_modes));
+    settings.color_leafs = static_cast <uint> (color_leafs_int);
 
     auto& lighting = settings.lighting;
 

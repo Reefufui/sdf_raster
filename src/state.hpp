@@ -31,7 +31,7 @@ struct Settings {
 
     std::filesystem::path scenes_directory {std::filesystem::current_path ()};
 
-    bool color_leafs = false;
+    uint color_leafs = 0;
     bool frustum_view = false;
     bool disabled_cursor = true;
 

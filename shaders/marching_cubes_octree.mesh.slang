@@ -133,7 +133,13 @@ void generate_geometry (const NodeContext voxel, const uint vertex_offset, const
         v.clip_position  = mul (pc.view_proj, float4 (position, 1.0f));
         v.position       = float4 (position, 1.0f);
         v.normal         = float4 (sample_normal (position), 1.0f);
-        v.color          = (pc.color_leafs == 1u) ? colors [voxel.node_index % COLORS_COUNT] : float4 (1.f);
+        if (pc.color_leafs == 1u) {
+            v.color = colors [voxel.node_index % COLORS_COUNT];
+        } else if (pc.color_leafs == 2u) {
+            v.color = voxel_size_color (voxel.voxel_size, pc.min_voxel_size, pc.max_voxel_size);
+        } else {
+            v.color = float4 (1.f);
+        }
 
         s_vertices [vertex_offset + vertex_index] = v;
 

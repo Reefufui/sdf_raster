@@ -2,6 +2,16 @@
 
 static const uint COLORS_COUNT = 64;
 
+float4 voxel_size_color (float voxel_size, float min_size, float max_size) {
+    float t = log2 (voxel_size / min_size) / log2 (max_size / min_size);
+    t = clamp (t, 0.0f, 1.0f);
+    if (t < 0.5f) {
+        return lerp (float4 (0,1,0,1), float4 (1,1,0,1), t * 2.0f);
+    } else {
+        return lerp (float4 (1,1,0,1), float4 (1,0,0,1), (t - 0.5f) * 2.0f);
+    }
+}
+
 static const float4 colors [COLORS_COUNT] = {
     // === 1. Мягкие нейтральные и пастельные основы ===
     float4(0.96, 0.76, 0.76, 1.0),   // 00 - Нежно-розовый / Пудровый (Light Pink / Powder)

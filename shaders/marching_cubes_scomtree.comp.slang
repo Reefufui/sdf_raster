@@ -166,7 +166,14 @@ void generate_geometry (uint active_leaf_index) {
                 const float3 norm = normalize (float3 (dx, dy, dz));
 
                 vertex.normal = { norm.x, norm.y, norm.z, 0.0f };
-                vertex.color = (pc.color_leafs == 1u) ? colors [link_data % COLORS_COUNT] : float4 (1.f);
+
+                if (pc.color_leafs == 1u) {
+                    vertex.color = colors [link_data % COLORS_COUNT];
+                } else if (pc.color_leafs == 2u) {
+                    vertex.color = voxel_size_color (voxel_size, pc.min_voxel_size, pc.max_voxel_size);
+                } else {
+                    vertex.color = float4 (1.f);
+                }
 
                 g_vertices [voxel_vertices_offset + i] = vertex;
 

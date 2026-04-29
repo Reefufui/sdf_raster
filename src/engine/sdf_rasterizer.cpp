@@ -1051,6 +1051,8 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
     this->push_constants.occlusion_culling_level = scene_state.occlusion_culling_level;
     this->push_constants.frustum_culling_level = scene_state.frustum_culling_level;
     this->push_constants.color_leafs = settings.color_leafs;
+    this->push_constants.max_voxel_size = 2.0f / std::pow (2.0f, scene_state.cpu_traversed);
+    this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, scene_state.octree_depth);
     this->clear_color = settings.lighting.clear_color;
 
     if (this->deferred_shading) {

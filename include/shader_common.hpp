@@ -82,6 +82,8 @@ struct PushConstantsData {
     alignas (4)  uint occlusion_culling_level;
     alignas (4)  uint frustum_culling_level;
     alignas (4)  uint color_leafs;
+    alignas (4)  float min_voxel_size;
+    alignas (4)  float max_voxel_size;
 };
 
 struct DeferredLightingPushConstants {

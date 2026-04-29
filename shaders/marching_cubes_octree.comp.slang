@@ -128,7 +128,13 @@ void generate_geometry (uint active_leaf_index) {
         Vertex vertex;
         vertex.position = float4 (position, 1.0f);
         vertex.normal = float4 (sample_normal (position), 1.0f);
-        vertex.color = (pc.color_leafs == 1u) ? colors [context.node_index % COLORS_COUNT] : float4 (1.f);
+        if (pc.color_leafs == 1u) {
+            vertex.color = colors [context.node_index % COLORS_COUNT];
+        } else if (pc.color_leafs == 2u) {
+            vertex.color = voxel_size_color (context.voxel_size, pc.min_voxel_size, pc.max_voxel_size);
+        } else {
+            vertex.color = float4 (1.f);
+        }
         g_vertices [vertices_offset + i] = vertex;
 
         edge_bit <<= 1;

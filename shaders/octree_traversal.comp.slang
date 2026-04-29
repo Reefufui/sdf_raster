@@ -102,12 +102,17 @@ void dfs_octree (NodeContext root, uint lod) {
 
         float3 child_coord = coord_stack [dfs_level - 1] + child_corner_offset;
 
+        float3 child_center = child_coord + float3 (child_voxel_size * 0.5f);
+        uint child_lod = (pc.lod_mode == 1)
+            ? calc_lod_for_node (child_center, pc.subtree_root_level, pc.max_lod)
+            : lod;
+
         float max_dim;
         if (!is_visible_node (dfs_root_level + dfs_level, child_coord, child_voxel_size, max_dim)) {
             continue;
         }
 
-        if (child_node.offset == 0 || dfs_root_level + dfs_level == lod) { // leaf
+        if (child_node.offset == 0 || dfs_root_level + dfs_level == child_lod) { // leaf
             NodeContext context;
             context.voxel_size = child_voxel_size;
             context.min_corner_x = child_coord.x;
@@ -134,7 +139,18 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext curren
         uint child_index = path [direct_level];
         SdfOctreeNode parent_node = g_octree_data [current_context.node_index];
 
-        if (parent_node.offset == 0 || direct_root_level + direct_level == lod) {
+        const float node_size = current_context.voxel_size / 2.f;
+
+        float3 child_center = float3 (
+            current_context.min_corner_x + ((child_index >> 0) & 1) * node_size + node_size * 0.5f,
+            current_context.min_corner_y + ((child_index >> 1) & 1) * node_size + node_size * 0.5f,
+            current_context.min_corner_z + ((child_index >> 2) & 1) * node_size + node_size * 0.5f
+        );
+        uint node_lod = (pc.lod_mode == 1)
+            ? calc_lod_for_node (child_center, pc.subtree_root_level, pc.max_lod)
+            : lod;
+
+        if (parent_node.offset == 0 || direct_root_level + direct_level == node_lod) {
             [unroll]
             for (; direct_level < MAX_DIRECT_DESCEND_PATH; ++direct_level) {
                 if (path [direct_level] != 0u) {
@@ -143,8 +159,6 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext curren
             }
             return true;
         }
-
-        const float node_size = current_context.voxel_size / 2.f;
 
         current_context.voxel_size = node_size;
         current_context.min_corner_x += (((child_index >> 0) & 1) * node_size);
@@ -163,30 +177,43 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext curren
     return true;
 }
 
-uint get_lod (bool store) {
-    const float min_distance = pc.near_plane;
-    const float max_distance = pc.far_plane;
+uint calc_lod_for_node (float3 node_pos, uint subtree_root_level, uint max_lod) {
+    const float min_distance = pc.min_lod_distance;
+    const float max_distance = pc.max_lod_distance;
+    const uint min_lod = subtree_root_level;
+
+    const float distance = length (node_pos - pc.camera_pos.xyz);
+
+    if (distance <= min_distance) {
+        return max_lod;
+    }
+    if (distance >= max_distance) {
+        return min_lod;
+    }
+
+    const float normalized_distance = (distance - min_distance) / (max_distance - min_distance);
+    const uint lod = min_lod + uint (round ((1.f - normalized_distance) * (max_lod - min_lod)));
+
+    return lod;
+}
+
+uint get_global_lod () {
+    const float distance = length (pc.camera_pos.xyz);
+    const float min_distance = pc.min_lod_distance;
+    const float max_distance = pc.max_lod_distance;
     const uint min_lod = pc.subtree_root_level;
     const uint max_lod = pc.max_lod;
 
-    const float distance = distance (float3 (0, 0, 0), pc.camera_pos.xyz);
-
     if (distance < min_distance) {
         return max_lod;
-    } else if (distance > max_distance) {
+    }
+    if (distance > max_distance) {
         return min_lod;
     }
 
     const float normalized_distance = (distance - min_distance) / (max_distance - min_distance);
     const float current_lod_float = float (min_lod) + ((1.f - normalized_distance) * (float)(max_lod - min_lod));
-    const uint lod = uint (round (current_lod_float));
-
-    if (store) {
-        g_lod [0].lod = lod;
-        g_lod [0].distance = distance;
-    }
-
-    return lod;
+    return uint (round (current_lod_float));
 }
 
 [shader ("compute")]
@@ -195,7 +222,7 @@ void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : 
     NodeContext current_context = g_roots [gi.z];
     const uint path [MAX_DIRECT_DESCEND_PATH] = {gi.y, gi.x, gti.z, gti.y, gti.x};
     bool force_process_voxel = false;
-    uint lod = get_lod (dti.x == 0 && dti.y == 0 && dti.z == 0);
+    uint lod = get_global_lod ();
 
     if (descend_path (path, current_context, lod, force_process_voxel)) {
         SdfOctreeNode node = g_octree_data [current_context.node_index];

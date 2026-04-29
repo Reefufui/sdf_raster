@@ -24,8 +24,6 @@
 
 [[vk::binding (0, 4)]] RWStructuredBuffer <VkDrawIndexedIndirectCommand> g_draw_indexed_indirect_command;
 
-[[vk::binding (0, 5)]] RWStructuredBuffer <LevelOfDetail> g_lod;
-
 static const float eps = 1e-6f;
 
 float3 interpolate (float3 p1, float3 p2, float valp1, float valp2) {
@@ -37,14 +35,12 @@ float3 interpolate (float3 p1, float3 p2, float valp1, float valp2) {
     return lerp (p1, p2, mu);
 }
 
-float sample_sdf (const float3 p) {
+float sample_sdf (const float3 p, float target_voxel_size) {
     SdfOctreeNode node = g_octree_data [0];
     float3 min_corner = {-1.0f, -1.0f, -1.0f};
     float voxel_size = 2.0f;
-    uint level = 0;
 
-    while (node.offset != 0 && level < g_lod [0].lod) {
-        level += 1;
+    while (node.offset != 0 && voxel_size > target_voxel_size) {
         float half = voxel_size * 0.5f;
         uint child_index = 0;
         if (p.x >= min_corner.x + half) {
@@ -76,10 +72,10 @@ float sample_sdf (const float3 p) {
     return lerp (c0, c1, local.z);
 }
 
-float3 sample_normal (float3 p) {
-    float dx = sample_sdf (p + float3 (eps, 0, 0)) - sample_sdf (p - float3 (eps, 0, 0));
-    float dy = sample_sdf (p + float3 (0, eps, 0)) - sample_sdf (p - float3 (0, eps, 0));
-    float dz = sample_sdf (p + float3 (0, 0, eps)) - sample_sdf (p - float3 (0, 0, eps));
+float3 sample_normal (const float3 p, const float3 position, float voxel_size) {
+    float dx = sample_sdf (p + float3 (eps, 0, 0), voxel_size) - sample_sdf (p - float3 (eps, 0, 0), voxel_size);
+    float dy = sample_sdf (p + float3 (0, eps, 0), voxel_size) - sample_sdf (p - float3 (0, eps, 0), voxel_size);
+    float dz = sample_sdf (p + float3 (0, 0, eps), voxel_size) - sample_sdf (p - float3 (0, 0, eps), voxel_size);
     return normalize (float3 (dx, dy, dz) / (2 * eps));
 }
 
@@ -127,7 +123,7 @@ void generate_geometry (uint active_leaf_index) {
 
         Vertex vertex;
         vertex.position = float4 (position, 1.0f);
-        vertex.normal = float4 (sample_normal (position), 1.0f);
+        vertex.normal = float4 (sample_normal (position, position, context.voxel_size), 1.0f);
         if (pc.color_leafs == 1u) {
             vertex.color = colors [context.node_index % COLORS_COUNT];
         } else if (pc.color_leafs == 2u) {

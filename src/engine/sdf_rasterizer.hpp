@@ -169,6 +169,7 @@ private:
 
     FrustumGeometry frustum {};
     std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer {nullptr};
+    LiteMath::float4 frozen_camera_pos {};
 
     PushConstantsData push_constants {};
     Stats stats {};

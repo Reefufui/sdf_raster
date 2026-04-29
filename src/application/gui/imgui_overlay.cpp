@@ -415,6 +415,29 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
         scene_state.max_lod = LiteMath::max (scene_state.max_lod, scene_state.cpu_traversed);
     }
 
+    ImGui::SeparatorText ("LOD Selection");
+    const char* lod_mode_items[] = { "Fixed LOD for the whole model", "Dynamic LOD for each node" };
+    int current_lod_mode = (scene_state.lod_mode == LODMode::Global) ? 0 : 1;
+    if (ImGui::Combo ("##LODMode", &current_lod_mode, lod_mode_items, IM_ARRAYSIZE (lod_mode_items))) {
+        scene_state.lod_mode = (current_lod_mode == 0) ? LODMode::Global : LODMode::PerNode;
+        this->pending_config_notify = true;
+    }
+
+    ImGui::Text ("LOD distance range:");
+    if (ImGui::IsItemHovered ()) {
+        ImGui::SetTooltip ("Distance range for LOD selection. Near plane=%.2f, Far plane=%.2f", scene_state.camera.get_near_plane (), scene_state.camera.get_far_plane ());
+    }
+    ImGui::DragFloatRange2 ("##LODDistance", &scene_state.min_lod_distance, &scene_state.max_lod_distance, 0.1f, scene_state.camera.get_near_plane (), scene_state.camera.get_far_plane (), "min:%.2f", "max:%.2f");
+    if (scene_state.min_lod_distance < scene_state.camera.get_near_plane ()) {
+        scene_state.min_lod_distance = scene_state.camera.get_near_plane ();
+    }
+    if (scene_state.max_lod_distance > scene_state.camera.get_far_plane ()) {
+        scene_state.max_lod_distance = scene_state.camera.get_far_plane ();
+    }
+    if (scene_state.min_lod_distance > scene_state.max_lod_distance) {
+        scene_state.min_lod_distance = scene_state.max_lod_distance;
+    }
+
     ImGui::SeparatorText ("Octree");
     ImGui::Text ("octree depth: %d/%d", scene_state.max_lod, scene_state.octree_depth);
 

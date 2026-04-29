@@ -188,7 +188,6 @@ void SDFRasterizer::init_marching_cubes_octree_pipeline () {
     assert (this->marching_cubes_lookup_table_ds && "required for 'marching_cubes_octree_pipeline'");
     assert (this->active_leafs_ds && "required for 'marching_cubes_octree_pipeline'");
     assert (this->draw_indexed_indirect_command_ds && "required for 'marching_cubes_octree_pipeline'");
-    assert (this->lod_ds && "required for 'marching_cubes_octree_pipeline'");
 
     vk_utils::ComputePipelineMaker compute_pipeline_maker;
     compute_pipeline_maker.LoadShader (this->context->get_device (), "shaders/marching_cubes_octree.comp.slang.spv");
@@ -198,7 +197,6 @@ void SDFRasterizer::init_marching_cubes_octree_pipeline () {
             , this->marching_cubes_lookup_table_ds->get_layout ()
             , this->active_leafs_ds->get_layout ()
             , this->draw_indexed_indirect_command_ds->get_layout ()
-            , this->lod_ds->get_layout ()
         }, sizeof (PushConstantsData));
     this->marching_cubes_octree_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
@@ -1013,6 +1011,7 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
         LOG_INFO ("[{}] Frustum view mode: OFF.", RENDERER_NAME);
     } else if (settings.frustum_view && !this->frustum_draw_buffer) {
         this->clear_color = this->clear_color * 0.5f;
+        this->frozen_camera_pos = LiteMath::to_float4 (scene_state.camera.get_position (), 1.0f);
         this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()
@@ -1043,7 +1042,11 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
     }
 
     this->push_constants.view_proj = scene_state.camera.get_view_projection_matrix ();
-    this->push_constants.camera_pos = LiteMath::to_float4 (scene_state.camera.get_position (), 1.0f);
+    if (settings.frustum_view && this->frustum_draw_buffer) {
+        this->push_constants.camera_pos = this->frozen_camera_pos;
+    } else {
+        this->push_constants.camera_pos = LiteMath::to_float4 (scene_state.camera.get_position (), 1.0f);
+    }
     this->push_constants.far_plane = scene_state.camera.get_far_plane ();
     this->push_constants.near_plane = scene_state.camera.get_near_plane ();
     this->push_constants.max_lod = scene_state.max_lod;
@@ -1051,6 +1054,9 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
     this->push_constants.occlusion_culling_level = scene_state.occlusion_culling_level;
     this->push_constants.frustum_culling_level = scene_state.frustum_culling_level;
     this->push_constants.color_leafs = settings.color_leafs;
+    this->push_constants.lod_mode = (scene_state.lod_mode == LODMode::PerNode) ? 1u : 0u;
+    this->push_constants.min_lod_distance = scene_state.min_lod_distance;
+    this->push_constants.max_lod_distance = scene_state.max_lod_distance;
     this->push_constants.max_voxel_size = 2.0f / std::pow (2.0f, scene_state.cpu_traversed);
     this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, scene_state.octree_depth);
     this->clear_color = settings.lighting.clear_color;
@@ -1578,17 +1584,15 @@ void SDFRasterizer::marching_cubes_octree (VkCommandBuffer cmd_buff) {
     assert (this->marching_cubes_lookup_table_ds && "required for 'marching_cubes_octree'");
     assert (this->active_leafs_ds && "required for 'marching_cubes_octree'");
     assert (this->draw_indexed_indirect_command_ds && "required for 'marching_cubes_octree'");
-    assert (this->lod_ds && "required for 'marching_cubes_octree'");
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->marching_cubes_octree_pipeline);
 
-    std::array <VkDescriptorSet, 6> ds = {
+    std::array <VkDescriptorSet, 5> ds = {
         this->sdf_octree_ds->get_descriptor_set (this->frame_index),
         this->mesh_ds->get_descriptor_set (this->frame_index),
         this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index),
         this->active_leafs_ds->get_descriptor_set (this->frame_index),
-        this->draw_indexed_indirect_command_ds->get_descriptor_set (this->frame_index),
-        this->lod_ds->get_descriptor_set (this->frame_index)
+        this->draw_indexed_indirect_command_ds->get_descriptor_set (this->frame_index)
     };
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->marching_cubes_octree_pipeline_layout,

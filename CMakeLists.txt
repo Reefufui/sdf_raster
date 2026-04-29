@@ -151,6 +151,7 @@ add_library (LiteMath::LiteImage ALIAS LiteImage)
 add_executable(${PROJECT_NAME}
     src/engine/camera.cpp
     src/engine/deferred_shading.cpp
+    src/engine/forward_shading.cpp
     src/engine/utils/frustum_culling.cpp
     src/logger.cpp
     src/data/mesh.cpp
@@ -177,7 +178,7 @@ add_executable(${PROJECT_NAME}
     src/resources/sdf_scomtree.cpp
 
     src/main.cpp
-src/application/gui/gui_application.cpp
+    src/application/gui/gui_application.cpp
     src/application/gui/imgui_overlay.cpp
     src/application/cli/cli_application.cpp
 )

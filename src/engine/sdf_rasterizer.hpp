@@ -2,6 +2,7 @@
 #pragma once
 
 #include "deferred_shading.hpp"
+#include "forward_shading.hpp"
 #include "vulkan/presentation/presentation_context.hpp"
 #include "renderer.hpp"
 #include "scenes/base/scene.hpp"
@@ -23,8 +24,6 @@
 #include "shader_common.hpp"
 #include "state.hpp"
 #include "vk_descriptor_sets.h"
-
-#include <GLFW/glfw3.h>
 
 #include <functional>
 #include <memory>
@@ -72,7 +71,7 @@ private:
 
     void clear_geometry (VkCommandBuffer cmd_buff);
     void compute_hz_buffer (VkCommandBuffer cmd_buff);
-    void copy_depth (VkCommandBuffer cmd_buff);
+    void copy_forward_rendered_depth (VkCommandBuffer cmd_buff);
     void copy_subtrees (VkCommandBuffer cmd_buff);
     void deferred_rendering (VkCommandBuffer cmd_buff);
     void draw_frustum_demo (VkCommandBuffer cmd_buff);
@@ -81,7 +80,7 @@ private:
     void marching_cubes_octree (VkCommandBuffer cmd_buff);
     void marching_cubes_scomtree (VkCommandBuffer cmd_buff);
     void prepare_draw_indirect (VkCommandBuffer cmd_buff);
-    void prepare_hzbuffer (VkCommandBuffer cmd_buff);
+    void prepare_hzbuffer_after_forward_rendering (VkCommandBuffer cmd_buff);
     void prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size);
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
     void traverse_octree (VkCommandBuffer cmd_buff);
@@ -141,6 +140,7 @@ private:
     std::shared_ptr <Scene> current_scene {};
 
     std::unique_ptr <DeferredShading> deferred_shading {};
+    std::unique_ptr <ForwardShading> forward_shading {};
 
     void raster_octree_via_compute_shading (VkCommandBuffer cmd_buff);
     void raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff);

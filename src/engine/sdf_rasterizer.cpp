@@ -1,7 +1,6 @@
 // engine/sdf_rasterizer.cpp
 #include "sdf_rasterizer.hpp"
 
-#include "application/gui/imgui_overlay.hpp"
 #include "logger.hpp"
 #include "scenes/obj/obj.hpp"
 #include "scenes/octree/octree.hpp"
@@ -41,17 +40,19 @@ void SDFRasterizer::init () {
     this->frustum_ds = std::make_unique <FrustumDescriptorSetInfo> (this->context->get_device ()
         , this->context->get_physical_device ()
         , VK_SHADER_STAGE_COMPUTE_BIT
-        , this->presentation_context->get_total_frames ());
+        , this->presentation_context->get_max_frames_in_flight ());
 
-    this->init_frustum_demo_pipeline (); // TODO: init when asked to?
+    this->forward_shading = std::make_unique <ForwardShading> (this->context->get_device ()
+        , this->context->get_physical_device ()
+        , this->presentation_context);
 
     this->dummy_ds = std::make_unique <DummyDescriptorSetInfo> (this->context->get_device ()
         , this->context->get_physical_device ()
         , this->context->get_transfer_command_pool_reset ()
         , this->context->get_transfer_queue ()
         , VK_SHADER_STAGE_ALL
-        , this->presentation_context->get_swapchain_extent ()
-        , this->presentation_context->get_total_frames ());
+        , this->presentation_context->get_extent ()
+        , this->presentation_context->get_max_frames_in_flight ());
 
     this->register_resizable ();
 }
@@ -66,12 +67,22 @@ void SDFRasterizer::register_resizable () {
                 , this->context->get_transfer_command_pool_reset ()
                 , this->context->get_transfer_queue ()
                 , VK_SHADER_STAGE_COMPUTE_BIT
-                , this->presentation_context->get_swapchain_extent ()
-                , this->presentation_context->get_total_frames ());
+                , this->presentation_context->get_extent ()
+                , this->presentation_context->get_max_frames_in_flight ());
         }
     };
 
-    auto resize_g_buffer = [&] () {
+    auto resize_forward_shading = [&] () {
+        if (this->forward_shading) {
+            this->forward_shading.reset ();
+
+            this->forward_shading = std::make_unique <ForwardShading> (this->context->get_device ()
+                    , this->context->get_physical_device ()
+                    , this->presentation_context);
+        }
+    };
+
+    auto resize_deferred_shading = [&] () {
         if (this->deferred_shading) {
             this->deferred_shading.reset ();
 
@@ -80,10 +91,7 @@ void SDFRasterizer::register_resizable () {
                     , this->context->get_transfer_command_pool_reset ()
                     , this->context->get_transfer_queue ()
                     , DeferredShadingConfig {
-                    .extent = this->presentation_context->get_swapchain_extent (),
                     .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
-                    .depth_format = this->presentation_context->get_depth_format (),
-                    .num_inflight_frames = this->presentation_context->get_total_frames (),
                     .filter = VK_FILTER_LINEAR
                     }
                     , this->presentation_context);
@@ -91,7 +99,8 @@ void SDFRasterizer::register_resizable () {
     };
 
     this->presentation_context->register_resizable (resize_hz_buffer);
-    this->presentation_context->register_resizable (resize_g_buffer);
+    this->presentation_context->register_resizable (resize_forward_shading);
+    this->presentation_context->register_resizable (resize_deferred_shading);
 }
 
 void SDFRasterizer::init_push_constants () {
@@ -220,6 +229,7 @@ void SDFRasterizer::init_marching_cubes_scomtree_pipeline () {
 
 void SDFRasterizer::init_forward_rendering_pipeline (const std::string& vert_shader_path, const std::string& frag_shader_path, VkFrontFace front_face) {
     assert (this->context && "required for 'init_forward_rendering_pipeline'");
+    assert (this->forward_shading && "required for 'init_forward_rendering_pipeline'");
 
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
@@ -286,7 +296,7 @@ void SDFRasterizer::init_forward_rendering_pipeline (const std::string& vert_sha
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-    auto extent = this->presentation_context->get_swapchain_extent ();
+    auto extent = this->presentation_context->get_extent ();
 
     VkViewport viewport {};
     viewport.x = 0.0f;
@@ -366,10 +376,7 @@ void SDFRasterizer::init_forward_rendering_pipeline (const std::string& vert_sha
     pipelineInfo.pDynamicState = &dynamicState;
 
     pipelineInfo.layout = this->forward_rendering_pipeline_layout;
-    if (this->presentation_context->get_render_pass () == VK_NULL_HANDLE) {
-        throw std::runtime_error ("Render Pass is not initialized!");
-    }
-    pipelineInfo.renderPass = this->presentation_context->get_render_pass ();
+    pipelineInfo.renderPass = this->forward_shading->get_render_pass ();
     pipelineInfo.subpass = 0;
 
     VK_CHECK_RESULT (vkCreateGraphicsPipelines (this->context->get_device ()
@@ -456,7 +463,7 @@ void SDFRasterizer::init_graphics_gbuffer_pipeline (const std::string& vert_shad
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-    auto extent = this->presentation_context->get_swapchain_extent ();
+    auto extent = this->presentation_context->get_extent ();
 
     VkViewport viewport {};
     viewport.x = 0.0f;
@@ -536,9 +543,6 @@ void SDFRasterizer::init_graphics_gbuffer_pipeline (const std::string& vert_shad
     pipelineInfo.pDynamicState = &dynamicState;
 
     pipelineInfo.layout = this->graphics_gbuffer_pipeline_layout;
-    if (this->presentation_context->get_render_pass () == VK_NULL_HANDLE) {
-        throw std::runtime_error ("Render Pass is not initialized!");
-    }
     pipelineInfo.renderPass = this->deferred_shading->get_gbuffer_pass ();
     pipelineInfo.subpass = 0;
 
@@ -608,7 +612,7 @@ void SDFRasterizer::init_graphics_lighting_pipeline () {
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
     };
 
-    auto extent = this->presentation_context->get_swapchain_extent ();
+    auto extent = this->presentation_context->get_extent ();
     VkViewport viewport = {0.0f, 0.0f, static_cast <float> (extent.width), static_cast <float> (extent.height), 0.0f, 1.0f};
     VkRect2D scissor = {{0, 0}, extent};
 
@@ -679,9 +683,10 @@ void SDFRasterizer::init_graphics_lighting_pipeline () {
 
 void SDFRasterizer::init_mesh_shading_octree_pipeline () {
     assert (this->context && "required for 'mesh_shading_octree_pipeline'");
-    assert (this->sdf_octree_ds && "required for 'mesh_shading_octree_pipeline'");
-    assert (this->marching_cubes_lookup_table_ds && "required for 'mesh_shading_octree_pipeline'");
     assert (this->active_leafs_ds && "required for 'mesh_shading_octree_pipeline'");
+    assert (this->forward_shading && "required for 'mesh_shading_octree_pipeline'"); // TODO: support deferred_shading
+    assert (this->marching_cubes_lookup_table_ds && "required for 'mesh_shading_octree_pipeline'");
+    assert (this->sdf_octree_ds && "required for 'mesh_shading_octree_pipeline'");
 
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
@@ -725,7 +730,7 @@ void SDFRasterizer::init_mesh_shading_octree_pipeline () {
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-    auto extent = this->presentation_context->get_swapchain_extent ();
+    auto extent = this->presentation_context->get_extent ();
 
     VkViewport viewport {};
     viewport.x = 0.0f;
@@ -804,10 +809,7 @@ void SDFRasterizer::init_mesh_shading_octree_pipeline () {
     pipelineInfo.pDynamicState = &dynamicState;
 
     pipelineInfo.layout = this->mesh_shading_octree_pipeline_layout;
-    if (this->presentation_context->get_render_pass () == VK_NULL_HANDLE) {
-        throw std::runtime_error ("Render Pass is not initialized!");
-    }
-    pipelineInfo.renderPass = this->presentation_context->get_render_pass ();
+    pipelineInfo.renderPass = this->forward_shading->get_render_pass ();
     pipelineInfo.subpass = 0;
 
     VK_CHECK_RESULT (vkCreateGraphicsPipelines (this->context->get_device ()
@@ -838,6 +840,7 @@ void SDFRasterizer::init_mesh_shading_scomtree_pipeline () {
 void SDFRasterizer::init_frustum_demo_pipeline () {
     assert (this->context && "required for 'frustum_demo_pipeline'");
     assert (this->frustum_ds && "required for 'frustum_demo_pipeline'");
+    assert (this->forward_shading || this->deferred_shading && "required for 'init_frustum_demo_pipeline");
 
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
@@ -890,7 +893,7 @@ void SDFRasterizer::init_frustum_demo_pipeline () {
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-    auto extent = this->presentation_context->get_swapchain_extent ();
+    auto extent = this->presentation_context->get_extent ();
 
     VkViewport viewport {};
     viewport.x = 0.0f;
@@ -969,10 +972,14 @@ void SDFRasterizer::init_frustum_demo_pipeline () {
     pipelineInfo.pDynamicState = &dynamicState;
 
     pipelineInfo.layout = this->frustum_demo_pipeline_layout;
-    if (this->presentation_context->get_render_pass () == VK_NULL_HANDLE) {
-        throw std::runtime_error ("Render Pass is not initialized!");
+    if (this->forward_shading) {
+        pipelineInfo.renderPass = this->forward_shading->get_render_pass_after ();
+    } else if (this->deferred_shading) {
+        pipelineInfo.renderPass = this->deferred_shading->get_render_pass_after ();
+    } else {
+        assert (false);
     }
-    pipelineInfo.renderPass = this->presentation_context->get_render_pass ();
+
     pipelineInfo.subpass = 0;
 
     VK_CHECK_RESULT (vkCreateGraphicsPipelines (this->context->get_device ()
@@ -1130,7 +1137,10 @@ void SDFRasterizer::clear_geometry (VkCommandBuffer cmd_buff) {
     );
 }
 
-void SDFRasterizer::copy_depth (VkCommandBuffer cmd_buff) {
+void SDFRasterizer::copy_forward_rendered_depth (VkCommandBuffer cmd_buff) {
+    assert (this->forward_shading && "required for 'copy_forward_rendered_depth'");
+    assert (this->hz_buffer_ds && "required for 'copy_forward_rendered_depth'");
+
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
 
     if (!this->frustum_draw_buffer && this->push_constants.occlusion_culling_level) {
@@ -1143,7 +1153,7 @@ void SDFRasterizer::copy_depth (VkCommandBuffer cmd_buff) {
         depth_to_src.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         depth_to_src.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         depth_to_src.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        depth_to_src.image = f.prev_depth_image;
+        depth_to_src.image = this->forward_shading->get_depth_image ();
         depth_to_src.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         depth_to_src.subresourceRange.baseMipLevel = 0;
         depth_to_src.subresourceRange.levelCount = 1;
@@ -1173,7 +1183,7 @@ void SDFRasterizer::copy_depth (VkCommandBuffer cmd_buff) {
         };
 
         vkCmdCopyImageToBuffer (cmd_buff
-            , f.prev_depth_image
+            , this->forward_shading->get_depth_image ()
             , VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
             , f.transition_buffer
             , 1, &buffer_image_copy_region);
@@ -1215,7 +1225,7 @@ void SDFRasterizer::copy_depth (VkCommandBuffer cmd_buff) {
         depth_to_attachment.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depth_to_attachment.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         depth_to_attachment.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        depth_to_attachment.image = f.prev_depth_image;
+        depth_to_attachment.image = this->forward_shading->get_depth_image ();
         depth_to_attachment.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         depth_to_attachment.subresourceRange.baseMipLevel = 0;
         depth_to_attachment.subresourceRange.levelCount = 1;
@@ -1532,10 +1542,10 @@ void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgro
         );
 }
 
-void SDFRasterizer::prepare_hzbuffer (VkCommandBuffer cmd_buff) {
-    assert (this->hz_buffer_ds && "required for 'prepare_hzbuffer");
+void SDFRasterizer::prepare_hzbuffer_after_forward_rendering (VkCommandBuffer cmd_buff) {
+    assert (this->hz_buffer_ds && "required for 'prepare_hzbuffer_after_forward_rendering");
+    assert (this->forward_shading && "required for 'prepare_hzbuffer_after_forward_rendering");
 
-    this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->presentation_context->get_depth_buffer ().image;
     this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
 
     this->hz_buffer_barrier (cmd_buff
@@ -1544,7 +1554,7 @@ void SDFRasterizer::prepare_hzbuffer (VkCommandBuffer cmd_buff) {
         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
         , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = 0});
 
-    this->copy_depth (cmd_buff);
+    this->copy_forward_rendered_depth (cmd_buff);
 
     this->hz_buffer_barrier (cmd_buff
         , {.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .stage = VK_PIPELINE_STAGE_TRANSFER_BIT, .access = VK_ACCESS_TRANSFER_WRITE_BIT}
@@ -1673,8 +1683,10 @@ void SDFRasterizer::geometry_barrier (VkCommandBuffer cmd_buff) {
 
 void SDFRasterizer::forward_rendering (VkCommandBuffer cmd_buff) {
     assert (this->context && "required for 'forward_rendering'");
+    assert (this->forward_shading && "required for 'forward_rendering'");
 
-    const auto extent = this->presentation_context->get_swapchain_extent ();
+    const auto extent = this->presentation_context->get_extent ();
+    const uint32_t swap_index = this->presentation_context->get_swapchain_image_index ();
 
     std::array <VkClearValue, 2> clear_values {};
     clear_values [0].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.f}};
@@ -1682,8 +1694,8 @@ void SDFRasterizer::forward_rendering (VkCommandBuffer cmd_buff) {
 
     VkRenderPassBeginInfo render_pass_info {};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = this->presentation_context->get_render_pass ();
-    render_pass_info.framebuffer = this->presentation_context->get_swapchain_framebuffer ();
+    render_pass_info.renderPass = this->forward_shading->get_render_pass ();
+    render_pass_info.framebuffer = this->forward_shading->get_framebuffer (swap_index);
     render_pass_info.renderArea.offset = {0, 0};
     render_pass_info.renderArea.extent = extent;
     render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
@@ -1691,10 +1703,10 @@ void SDFRasterizer::forward_rendering (VkCommandBuffer cmd_buff) {
 
     vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
-    if (this->mesh_ds && this->draw_indexed_indirect_command_ds) {
-        assert (this->forward_rendering_pipeline != VK_NULL_HANDLE && "required for 'forward_rendering'");
-        assert (this->forward_rendering_pipeline_layout != VK_NULL_HANDLE && "required for 'forward_rendering'");
+    assert (!(this->mesh_ds && !this->draw_indexed_indirect_command_ds) && "either both set (render) or not set (just clear) for 'forward_rendering'");
+    assert (!(!this->mesh_ds && this->draw_indexed_indirect_command_ds) && "either both set (render) or not set (just clear) for 'forward_rendering'");
 
+    if (this->mesh_ds && this->draw_indexed_indirect_command_ds) {
         VkViewport viewport {};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
@@ -1725,14 +1737,27 @@ void SDFRasterizer::forward_rendering (VkCommandBuffer cmd_buff) {
 }
 
 void SDFRasterizer::draw_frustum_demo (VkCommandBuffer cmd_buff) {
-    const auto extent = this->presentation_context->get_swapchain_extent ();
+    assert (this->frustum_demo_pipeline && "required for 'draw_frustum_demo'");
+    assert (this->frustum_demo_pipeline_layout && "required for 'draw_frustum_demo'");
+    assert (this->frustum_draw_buffer && "required for 'draw_frustum_demo'");
+    assert (this->presentation_context && "required for 'draw_frustum_demo'");
+    assert (this->forward_shading || this->deferred_shading && "required for 'draw_frustum_demo'");
+
+    const auto extent = this->presentation_context->get_extent ();
+    const uint32_t swap_index = this->presentation_context->get_swapchain_image_index ();
 
     VkRenderPassBeginInfo render_pass_info {};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = this->presentation_context->get_render_pass_after ();
-    render_pass_info.framebuffer = this->presentation_context->get_swapchain_framebuffer_after ();
     render_pass_info.renderArea.offset = {0, 0};
     render_pass_info.renderArea.extent = extent;
+
+    if (this->forward_shading) {
+        render_pass_info.renderPass = this->forward_shading->get_render_pass_after ();
+        render_pass_info.framebuffer = this->forward_shading->get_framebuffer_after (swap_index);
+    } else if (this->deferred_shading) {
+        render_pass_info.renderPass = this->deferred_shading->get_render_pass_after ();
+        render_pass_info.framebuffer = this->deferred_shading->get_framebuffer_after (swap_index);
+    }
 
     vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -1774,7 +1799,7 @@ void SDFRasterizer::deferred_rendering (VkCommandBuffer cmd_buff) {
     assert (this->graphics_lighting_pipeline_layout != VK_NULL_HANDLE && "required for 'deferred_shading'");
     assert (this->mesh_ds && "required for 'deferred_rendering'");
 
-    const auto extent = this->presentation_context->get_swapchain_extent ();
+    const auto extent = this->presentation_context->get_extent ();
     const uint32_t fif_idx = this->frame_index;
     const uint32_t swap_idx = this->presentation_context->get_swapchain_image_index ();
 
@@ -1794,7 +1819,7 @@ void SDFRasterizer::deferred_rendering (VkCommandBuffer cmd_buff) {
     VkRenderPassBeginInfo gbuffer_pass_info {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = this->deferred_shading->get_gbuffer_pass (),
-        .framebuffer = this->deferred_shading->get_gbuffer_fb (fif_idx),
+        .framebuffer = this->deferred_shading->get_gbuffer_fb (),
         .renderArea = {{0, 0}, extent},
         .clearValueCount = static_cast <uint32_t> (gbuffer_clears.size ()),
         .pClearValues = gbuffer_clears.data ()
@@ -1839,7 +1864,7 @@ void SDFRasterizer::deferred_rendering (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_lighting_pipeline);
 
     std::vector <VkDescriptorSet> ds {};
-    ds.push_back (this->deferred_shading->get_descriptor_set (fif_idx));
+    ds.push_back (this->deferred_shading->get_descriptor_set ());
     if (this->hz_buffer_ds) {
         ds.push_back (this->hz_buffer_ds->frame_resources_ref (fif_idx).base_level_descriptor_set);
     } else {
@@ -1858,21 +1883,12 @@ void SDFRasterizer::deferred_rendering (VkCommandBuffer cmd_buff) {
 }
 
 void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
-    if (this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image != VK_NULL_HANDLE) {
-        this->copy_depth (cmd_buff);
-        this->hz_buffer_barrier (cmd_buff
-            , {.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .stage = VK_PIPELINE_STAGE_TRANSFER_BIT, .access = VK_ACCESS_TRANSFER_WRITE_BIT}
-            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
-        this->compute_hz_buffer (cmd_buff);
-        this->hz_buffer_barrier (cmd_buff
-           , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
-           , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
-           , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
-           , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
-    } else {
-        LOG_WARN ("[{}] No previous depth image (likely first/resized frame). Occlusion culling skipped.", RENDERER_NAME);
-        this->push_constants.occlusion_culling_level = false;
-    }
+    assert (this->sdf_octree_ds && "required for 'raster_octree_via_mesh_shading'");
+    assert (this->marching_cubes_lookup_table_ds && "required for 'raster_octree_via_mesh_shading'");
+    assert (this->active_leafs_ds && "required for 'raster_octree_via_mesh_shading'");
+    assert (this->lod_ds && "required for 'raster_octree_via_mesh_shading'");
+    assert (this->indirect_dispatch_ds && "required for 'raster_octree_via_mesh_shading'");
+    assert (this->forward_shading && "required for 'raster_octree_via_mesh_shading'"); // TODO: add deferred_shading variant
 
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
@@ -1888,7 +1904,8 @@ void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
         return;
     }
 
-    const auto extent = this->presentation_context->get_swapchain_extent ();
+    const auto extent = this->presentation_context->get_extent ();
+    const uint32_t swap_index = this->presentation_context->get_swapchain_image_index ();
 
     std::array <VkClearValue, 2> clear_values {};
     clear_values [0].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.0f}};
@@ -1896,8 +1913,8 @@ void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
 
     VkRenderPassBeginInfo render_pass_info {};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = this->presentation_context->get_render_pass ();
-    render_pass_info.framebuffer = this->presentation_context->get_swapchain_framebuffer ();
+    render_pass_info.renderPass = this->forward_shading->get_render_pass ();
+    render_pass_info.framebuffer = this->forward_shading->get_framebuffer (swap_index);
     render_pass_info.renderArea.offset = {0, 0};
     render_pass_info.renderArea.extent = extent;
     render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
@@ -1961,7 +1978,7 @@ void SDFRasterizer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff)
     this->forward_rendering (cmd_buff);
 
     if (!this->frustum_draw_buffer) {
-        this->prepare_hzbuffer (cmd_buff);
+        this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
     }
 }
 
@@ -1977,7 +1994,6 @@ void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buf
     this->geometry_barrier (cmd_buff);
 
     if (this->deferred_shading) {
-        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_depth_image = this->presentation_context->get_depth_buffer ().image;
         this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
 
         this->hz_buffer_barrier (cmd_buff
@@ -2001,7 +2017,7 @@ void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buf
             , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
     } else {
         this->forward_rendering (cmd_buff);
-        this->prepare_hzbuffer (cmd_buff);
+        this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
     }
 }
 
@@ -2059,6 +2075,7 @@ void SDFRasterizer::release_render_resources () {
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_hz_buffer_pipeline, this->compute_hz_buffer_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->compute_prepare_indirect_pipeline, this->compute_prepare_indirect_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->forward_rendering_pipeline, this->forward_rendering_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->frustum_demo_pipeline, this->frustum_demo_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_gbuffer_pipeline, this->graphics_gbuffer_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->graphics_lighting_pipeline, this->graphics_lighting_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->marching_cubes_octree_pipeline, this->marching_cubes_octree_pipeline_layout);
@@ -2067,6 +2084,7 @@ void SDFRasterizer::release_render_resources () {
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->traverse_octree_pipeline, this->traverse_octree_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->traverse_scomtree_pipeline, this->traverse_scomtree_pipeline_layout);
 
+    this->forward_shading.reset ();
     this->deferred_shading.reset ();
 }
 
@@ -2092,10 +2110,7 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , this->context->get_transfer_command_pool_reset ()
             , this->context->get_transfer_queue ()
             , DeferredShadingConfig {
-                .extent = this->presentation_context->get_swapchain_extent (),
                 .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
-                .depth_format = this->presentation_context->get_depth_format (),
-                .num_inflight_frames = this->presentation_context->get_total_frames (),
                 .filter = VK_FILTER_LINEAR
             }
             , this->presentation_context);
@@ -2109,7 +2124,7 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
 	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
 	        , this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS
 	        , this->push_constants.active_leafs_max_count * MAX_LEAF_PRIMS * 3
-	        , this->presentation_context->get_total_frames ());
+	        , this->presentation_context->get_max_frames_in_flight ());
     }
 
     if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
@@ -2125,7 +2140,7 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , this->context->get_transfer_command_pool_reset ()
             , this->context->get_transfer_queue ()
             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-            , this->presentation_context->get_swapchain_extent ()
+            , this->presentation_context->get_extent ()
             , 2);
 
         this->indirect_dispatch_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
@@ -2159,6 +2174,12 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , VK_SHADER_STAGE_COMPUTE_BIT
             , sizeof (VkDrawIndexedIndirectCommand)
             , 2);
+    }
+
+    if (!this->deferred_shading) {
+        this->forward_shading = std::make_unique <ForwardShading> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->presentation_context);
     }
 
     if (auto octree_scene = std::dynamic_pointer_cast <SdfOctreeScene> (scene)) {
@@ -2235,7 +2256,7 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , this->context->get_copy_helper ()
             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
             , scomtree_scene
-            , this->presentation_context->get_total_frames ()
+            , this->presentation_context->get_max_frames_in_flight ()
         );
 
 	    LOG_INFO ("[{}] Created gpu resources for sdf-scomtree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
@@ -2294,6 +2315,8 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
         this->init_mesh_shading_octree_pipeline ();
     }
 
+    this->init_frustum_demo_pipeline ();
+
     auto it = std::ranges::find_if (draw_strategies, [method] (const MethodTrait& t) { return t.method == method; });
     if (it != draw_strategies.end ()) {
         if (it->needs_mesh_shading && !this->context->get_use_mesh_shading ()) {
@@ -2326,7 +2349,6 @@ void SDFRasterizer::shutdown () {
 
     this->dummy_ds.reset ();
     this->frustum_ds.reset ();
-    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->frustum_demo_pipeline, this->frustum_demo_pipeline_layout);
 }
 
 } // namespace sdf_raster

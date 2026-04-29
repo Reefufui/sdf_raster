@@ -28,7 +28,6 @@ public:
     VkDescriptorSetLayout get_base_level_layout () const { return this->base_level_descriptor_set_layout; }
 
     struct FrameResources {
-        VkImage prev_depth_image = VK_NULL_HANDLE;
         LiteMath::float4x4 prev_view_proj;
 
         VkDescriptorSet base_level_descriptor_set = VK_NULL_HANDLE;

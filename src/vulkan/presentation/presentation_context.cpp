@@ -3,7 +3,6 @@
 #include "logger.hpp"
 
 #include <algorithm>
-#include <array>
 #include <limits>
 #include <stdexcept>
 
@@ -16,14 +15,6 @@ PresentationContext::PresentationContext (std::shared_ptr <VulkanContext> a_cont
     int width, height;
     glfwGetFramebufferSize (this->window, &width, &height);
     this->create_swapchain (static_cast <uint32_t> (width), static_cast <uint32_t> (height));
-    if (!vk_utils::getSupportedDepthFormat (this->context->get_physical_device (), {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &this->depth_format)) {
-        throw std::runtime_error ("couldn't find supported depth format");
-    }
-    this->main.render_pass = this->create_render_pass (VK_ATTACHMENT_LOAD_OP_CLEAR);
-    this->after.render_pass = this->create_render_pass (VK_ATTACHMENT_LOAD_OP_NONE);
-    this->create_depth_buffers ();
-    this->main.framebuffer = this->create_framebuffers (this->main.render_pass);
-    this->after.framebuffer = this->create_framebuffers (this->after.render_pass);
     this->create_frame_resources ();
     this->initialized = true;
 }
@@ -42,21 +33,11 @@ void PresentationContext::shutdown () {
         LOG_WARN ("[PresentationContext] Vulkan device was VK_NULL_HANDLE during shutdown. Resources might not have been created.");
     } else {
         LOG_INFO ("[PresentationContext] Waiting for the GPU to go idle to shutdown application.");
+        this->on_before_device_wait_idle ();
         vkDeviceWaitIdle (this->context->get_device ());
 
-        this->destroy_depth_buffers ();
-        this->destroy_framebuffers ();
         this->destroy_swapchain ();
         this->destroy_frame_resources ();
-
-        if (this->main.render_pass != VK_NULL_HANDLE) {
-            vkDestroyRenderPass (this->context->get_device (), this->main.render_pass, nullptr);
-            this->main.render_pass = VK_NULL_HANDLE;
-        }
-        if (this->after.render_pass != VK_NULL_HANDLE) {
-            vkDestroyRenderPass (this->context->get_device (), this->after.render_pass, nullptr);
-            this->after.render_pass = VK_NULL_HANDLE;
-        }
     }
 
     if (this->surface != VK_NULL_HANDLE) {
@@ -101,141 +82,6 @@ void PresentationContext::create_swapchain (uint32_t width, uint32_t height) {
 
     const auto extent = this->swapchain.GetExtent ();
     LOG_INFO ("[PresentationContext] Created {} swapchain images with size ({}, {}).", this->frames_in_swapchain, extent.width, extent.height);
-}
-
-VkRenderPass PresentationContext::create_render_pass (VkAttachmentLoadOp load_op) {
-    VkAttachmentDescription color_attachment {};
-    color_attachment.format = this->swapchain.GetFormat ();
-    color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    color_attachment.loadOp = load_op;
-    color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference color_attachment_ref {};
-    color_attachment_ref.attachment = 0;
-    color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    assert (this->depth_format != VK_FORMAT_UNDEFINED);
-
-    VkAttachmentDescription depth_attachment {};
-    depth_attachment.format = this->depth_format;
-    depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depth_attachment.loadOp = load_op;
-    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference depth_attachment_ref {};
-    depth_attachment_ref.attachment = 1;
-    depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass {};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &color_attachment_ref;
-    subpass.pDepthStencilAttachment = &depth_attachment_ref;
-
-    std::array <VkSubpassDependency, 2> dependencies;
-
-    dependencies [0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies [0].dstSubpass = 0;
-    dependencies [0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencies [0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependencies [0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencies [0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependencies [0].dependencyFlags = 0;
-
-    dependencies [1].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies [1].dstSubpass = 0;
-    dependencies [1].srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencies [1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencies [1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencies [1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencies [1].dependencyFlags = 0;
-
-    std::array <VkAttachmentDescription, 2> attachments = {color_attachment, depth_attachment};
-
-    VkRenderPassCreateInfo render_pass_info {};
-    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    render_pass_info.attachmentCount = static_cast <uint32_t> (attachments.size ());
-    render_pass_info.pAttachments = attachments.data ();
-    render_pass_info.subpassCount = 1;
-    render_pass_info.pSubpasses = &subpass;
-    render_pass_info.dependencyCount = static_cast <uint32_t> (dependencies.size ());
-    render_pass_info.pDependencies = dependencies.data ();
-
-    VkRenderPass created_render_pass;
-    VK_CHECK_RESULT (vkCreateRenderPass (this->context->get_device (), &render_pass_info, nullptr, &created_render_pass));
-    return created_render_pass;
-}
-
-void PresentationContext::create_depth_buffers () {
-    assert (this->depth_format != VK_FORMAT_UNDEFINED);
-
-    const uint32_t width = this->swapchain.GetExtent ().width;
-    const uint32_t height = this->swapchain.GetExtent ().height;
-    assert (width > 0 && height > 0);
-
-    bool recreated = false;
-    if (this->depth_buffers.size ()) {
-        recreated = true;
-        this->destroy_depth_buffers ();
-    }
-
-    this->depth_buffers.resize (this->frames_in_swapchain);
-
-    const VkImageUsageFlags usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    VkImageCreateInfo create_info = vk_utils::defaultImageCreateInfo (width, height, this->depth_format, usage, 1);
-
-    for (size_t i = 0; i < this->frames_in_swapchain; ++i) {
-        this->depth_buffers [i].format = this->depth_format;
-
-        VK_CHECK_RESULT (vkCreateImage (this->context->get_device (), &create_info, nullptr, &this->depth_buffers [i].image));
-        vkGetImageMemoryRequirements (this->context->get_device (), this->depth_buffers [i].image, &this->depth_buffers [i].memReq);
-
-        VkMemoryAllocateInfo mem_alloc {};
-        mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        mem_alloc.allocationSize = this->depth_buffers [i].memReq.size;
-        mem_alloc.memoryTypeIndex = vk_utils::findMemoryType (this->depth_buffers [i].memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, this->context->get_physical_device ());
-        VK_CHECK_RESULT (vkAllocateMemory (this->context->get_device (), &mem_alloc, nullptr, &this->depth_buffers [i].mem));
-        VK_CHECK_RESULT (vkBindImageMemory (this->context->get_device (), this->depth_buffers [i].image, this->depth_buffers [i].mem, 0));
-
-        VkImageViewCreateInfo depth_attachment = vk_utils::defaultImageViewCreateInfo (this->depth_buffers [i].image, this->depth_format, 1, VK_IMAGE_ASPECT_DEPTH_BIT);
-        VK_CHECK_RESULT (vkCreateImageView (this->context->get_device (), &depth_attachment, nullptr, &this->depth_buffers [i].view));
-    }
-
-    LOG_INFO ("[PresentationContext] {} {} depth buffers with size ({}, {}).", (recreated) ? "Recreated" : "Created", this->frames_in_swapchain, width, height);
-}
-
-std::vector <VkFramebuffer> PresentationContext::create_framebuffers (VkRenderPass a_render_pass) {
-    std::array <VkImageView, 2> attachments;
-
-    VkFramebufferCreateInfo framebuffer_info = {};
-    framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebuffer_info.renderPass = a_render_pass;
-    framebuffer_info.width = this->swapchain.GetExtent ().width;
-    framebuffer_info.height = this->swapchain.GetExtent ().height;
-    framebuffer_info.layers = 1;
-    framebuffer_info.attachmentCount = static_cast <uint32_t> (attachments.size ());
-    framebuffer_info.pAttachments = attachments.data ();
-
-    uint32_t framebuffers_count = this->swapchain.GetImageCount ();
-    std::vector <VkFramebuffer> framebuffers (framebuffers_count);
-
-    for (uint32_t i = 0; i < framebuffers_count; i++) {
-        assert (this->swapchain.GetAttachment (i).view != VK_NULL_HANDLE);
-        assert (this->depth_buffers [i].view != VK_NULL_HANDLE);
-        attachments [0] = this->swapchain.GetAttachment (i).view;
-        attachments [1] = this->depth_buffers [i].view;
-        VK_CHECK_RESULT (vkCreateFramebuffer (this->context->get_device (), &framebuffer_info, nullptr, &framebuffers [i]));
-    }
-
-    return framebuffers;
 }
 
 void PresentationContext::create_frame_resources () {
@@ -369,10 +215,6 @@ void PresentationContext::resize () {
     vkDeviceWaitIdle (this->context->get_device ());
 
     this->create_swapchain (static_cast <uint32_t> (width), static_cast <uint32_t> (height));
-    this->create_depth_buffers ();
-    this->destroy_framebuffers ();
-    this->main.framebuffer = this->create_framebuffers (this->main.render_pass);
-    this->after.framebuffer = this->create_framebuffers (this->after.render_pass);
     this->create_frame_resources ();
 
     for (const auto& callback : this->resizable_callbacks) {
@@ -392,25 +234,6 @@ void PresentationContext::destroy_swapchain () {
     this->gpu_ready_to_present.clear ();
 }
 
-void PresentationContext::destroy_depth_buffers () {
-    for (size_t i = 0; i < this->depth_buffers.size (); ++i) {
-        vk_utils::deleteImg (this->context->get_device (), &this->depth_buffers [i]);
-    }
-    this->depth_buffers.clear ();
-}
-
-void PresentationContext::destroy_framebuffers () {
-    for (auto framebuffer : this->main.framebuffer) {
-        if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer (this->context->get_device (), framebuffer, nullptr);
-    }
-    for (auto framebuffer : this->after.framebuffer) {
-        if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer (this->context->get_device (), framebuffer, nullptr);
-    }
-
-    this->main.framebuffer.clear ();
-    this->after.framebuffer.clear ();
-}
-
 void PresentationContext::destroy_frame_resources () {
     for (size_t i = 0; i < this->max_frames_in_flight; i++) {
         vkDestroySemaphore (this->context->get_device (), this->frame_resources [i].wait_before_color_attachment_output, nullptr);
@@ -420,4 +243,4 @@ void PresentationContext::destroy_frame_resources () {
     this->frame_resources.clear ();
 }
 
-}
+} // namespace sdf_raster

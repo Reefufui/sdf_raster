@@ -63,7 +63,7 @@ void GUIApplication::run () {
     }
 
     try {
-        const uint32_t frames_in_flight = this->presentation_context->get_total_frames ();
+        const uint32_t frames_in_flight = this->presentation_context->get_max_frames_in_flight ();
         for (uint32_t i = 0; !glfwWindowShouldClose (this->window); i = (i + 1) % frames_in_flight) {
             glfwPollEvents ();
 
@@ -125,7 +125,7 @@ void GUIApplication::init_vulkan () {
     this->presentation_context = std::make_shared <PresentationContext> (this->vulkan_context, this->window);
 
     auto resize_camera = [&] () {
-        const auto extent = this->presentation_context->get_swapchain_extent ();
+        const auto extent = this->presentation_context->get_extent ();
         const float height = static_cast <float> (extent.height);
         const float width = static_cast <float> (extent.width);
         auto scene = this->scene_manager->get_scene ();
@@ -157,9 +157,8 @@ void GUIApplication::init_gui () {
         .graphics_queue = this->vulkan_context->get_graphics_queue (),
         .graphics_queue_family_index = this->vulkan_context->get_graphics_queue_family_index (),
         .swapchain_image_views = this->presentation_context->get_swapchain_image_views (),
-        .surface_extent = this->presentation_context->get_swapchain_extent (),
+        .surface_extent = this->presentation_context->get_extent (),
         .surface_format = this->presentation_context->get_swapchain_image_format (),
-        .depth_format = this->presentation_context->get_depth_format (),
     };
 
     gui::init (vulkan_context, scene_manager, init_info, this->settings);
@@ -248,7 +247,7 @@ void GUIApplication::on_scene_event (SceneEventType type, const std::filesystem:
             enqueue_render_config ();
 
             auto resize_camera = [&] () {
-                const auto extent = this->presentation_context->get_swapchain_extent ();
+                const auto extent = this->presentation_context->get_extent ();
                 const float height = static_cast <float> (extent.height);
                 const float width = static_cast <float> (extent.width);
                 this->scene_manager->get_scene ()->get_state ().camera.set_aspect_ratio (width / height);

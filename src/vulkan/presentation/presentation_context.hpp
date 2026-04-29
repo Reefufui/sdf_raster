@@ -18,13 +18,14 @@ namespace sdf_raster {
 class PresentationContext {
 public:
     PresentationContext (std::shared_ptr <VulkanContext> a_context, GLFWwindow* a_window);
-    ~PresentationContext ();
+    virtual ~PresentationContext ();
 
-    void shutdown ();
+    virtual void shutdown ();
+    virtual void on_before_device_wait_idle () {}
 
     inline bool is_initialized () const { return this->initialized; }
 
-    inline VkExtent2D get_swapchain_extent () const { return this->swapchain.GetExtent (); }
+    inline VkExtent2D get_extent () const { return this->swapchain.GetExtent (); }
     inline VkFormat get_swapchain_image_format () const { return this->swapchain.GetFormat (); }
     inline uint32_t get_swapchain_image_count () const { return this->swapchain.GetImageCount (); }
     inline std::vector <VkImageView> get_swapchain_image_views () {
@@ -37,21 +38,8 @@ public:
 
     VkCommandBuffer begin_frame (uint32_t a_frame_index);
     void end_frame (VkCommandBuffer a_cmd_buff, uint32_t a_frame_index);
-    inline uint32_t get_total_frames () const { return this->max_frames_in_flight; }
+    inline uint32_t get_max_frames_in_flight () const { return this->max_frames_in_flight; }
     inline uint32_t get_swapchain_image_index () const { return this->acquired_image_index; }
-
-    inline VkRenderPass get_render_pass () const { return this->main.render_pass; }
-    inline VkRenderPass get_render_pass_after () const { return this->after.render_pass; }
-    inline VkFramebuffer get_swapchain_framebuffer () const {
-        return this->main.framebuffer [this->acquired_image_index];
-    }
-    inline VkFramebuffer get_swapchain_framebuffer_after () const {
-        return this->after.framebuffer [this->acquired_image_index];
-    }
-    inline const vk_utils::VulkanImageMem& get_depth_buffer () const {
-        return this->depth_buffers [this->acquired_image_index];
-    }
-    inline VkFormat get_depth_format () const { return this->depth_format; }
 
     inline void register_resizable (std::function <void ()> a_func) {
         this->resizable_callbacks.push_back (a_func);
@@ -59,21 +47,17 @@ public:
     inline void set_resized_flag () { this->framebuffer_resized = true; }
 
     inline VkQueue get_present_queue () const { return this->present_queue; }
+    inline VkPhysicalDevice get_physical_device () const { return this->context->get_physical_device (); }
+    inline VkDevice get_device () const { return this->context->get_device (); }
 
-private:
+protected:
+    void resize ();
+
     void create_surface ();
     void create_swapchain (uint32_t a_width, uint32_t a_height);
-    VkRenderPass create_render_pass (VkAttachmentLoadOp a_load_op);
-    void create_depth_buffers ();
-    std::vector <VkFramebuffer> create_framebuffers (VkRenderPass a_render_pass);
     void create_frame_resources ();
-
     void destroy_swapchain ();
-    void destroy_depth_buffers ();
-    void destroy_framebuffers ();
     void destroy_frame_resources ();
-
-    void resize ();
 
     std::shared_ptr <VulkanContext> context = nullptr;
     GLFWwindow* window = nullptr;
@@ -82,8 +66,6 @@ private:
 
     VulkanSwapChain swapchain;
     VkQueue present_queue = VK_NULL_HANDLE;
-    std::vector <vk_utils::VulkanImageMem> depth_buffers;
-    VkFormat depth_format;
     std::vector <VkSemaphore> gpu_ready_to_present;
     size_t frames_in_swapchain = 3;
     uint32_t acquired_image_index = 0;
@@ -97,13 +79,6 @@ private:
     };
     std::vector <FrameResources> frame_resources;
     const size_t max_frames_in_flight = 2;
-
-    struct RenderPassResources {
-        std::vector <VkFramebuffer> framebuffer;
-        VkRenderPass render_pass = VK_NULL_HANDLE;
-    };
-    RenderPassResources main;
-    RenderPassResources after;
 
     std::vector <std::function <void ()>> resizable_callbacks;
 

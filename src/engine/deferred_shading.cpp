@@ -5,6 +5,7 @@
 
 #include <vk_utils.h> // VK_CHECK_RESULT
 
+#include <array>
 #include <utility> // pair
 
 namespace {
@@ -111,6 +112,81 @@ VkRenderPass create_lighting_render_pass (VkDevice device, VkFormat swapchain_fo
     return rp;
 }
 
+VkRenderPass create_after_render_pass (VkDevice device, VkFormat depth_format, VkFormat swapchain_format) {
+    std::array <VkAttachmentDescription, 2> attachments = {{
+        {
+            .format = swapchain_format,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_NONE,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+        },
+        {
+            .format = depth_format,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_NONE,
+            .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+            .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+        }
+    }};
+
+    VkAttachmentReference color_ref {
+        .attachment = 0,
+        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+    };
+
+    VkAttachmentReference depth_ref {
+        .attachment = 1,
+        .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+    };
+
+    VkSubpassDescription subpass {
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_ref,
+        .pDepthStencilAttachment = &depth_ref
+    };
+
+    std::array<VkSubpassDependency, 2> dependencies = {{
+        {
+            .srcSubpass = VK_SUBPASS_EXTERNAL,
+            .dstSubpass = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+        },
+        {
+            .srcSubpass = VK_SUBPASS_EXTERNAL,
+            .dstSubpass = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+        }
+    }};
+
+    VkRenderPassCreateInfo ci {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = static_cast <uint32_t> (attachments.size ()),
+        .pAttachments = attachments.data (),
+        .subpassCount = 1,
+        .pSubpasses = &subpass,
+        .dependencyCount = static_cast <uint32_t> (dependencies.size ()),
+        .pDependencies = dependencies.data ()
+    };
+
+    VkRenderPass rp;
+    VK_CHECK_RESULT (vkCreateRenderPass (device, &ci, nullptr, &rp));
+    return rp;
+}
+
 std::vector <vk_utils::VulkanImageMem> create_gbuffer_images (VkDevice device, VkPhysicalDevice physical_device
     , VkExtent2D extent, std::vector <VkFormat> gbuffer_formats, VkFormat depth_format) {
     std::vector <vk_utils::VulkanImageMem> color_images;
@@ -175,6 +251,25 @@ VkFramebuffer create_lighting_framebuffer (VkDevice device
     VkFramebuffer lighting_fb;
     VK_CHECK_RESULT (vkCreateFramebuffer (device, &fb_ci, nullptr, &lighting_fb));
     return lighting_fb;
+}
+
+VkFramebuffer create_after_framebuffer (VkDevice device
+    , VkRenderPass after_render_pass, VkExtent2D extent, VkImageView depth_view, VkImageView swapchain_view) {
+    std::array attachments = {swapchain_view, depth_view};
+
+    VkFramebufferCreateInfo fb_ci {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .renderPass = after_render_pass,
+        .attachmentCount = static_cast <uint32_t> (attachments.size ()),
+        .pAttachments = attachments.data (),
+        .width = extent.width,
+        .height = extent.height,
+        .layers = 1
+    };
+
+    VkFramebuffer after_fb;
+    VK_CHECK_RESULT (vkCreateFramebuffer (device, &fb_ci, nullptr, &after_fb));
+    return after_fb;
 }
 
 VkSampler create_gbuffer_sampler (VkDevice device, VkFilter filter) {
@@ -247,40 +342,40 @@ void warmup_gbuffer_images (VkDevice device, VkCommandPool command_pool, VkQueue
 DeferredShading::DeferredShading (VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue queue
     , const DeferredShadingConfig& config, std::shared_ptr <sdf_raster::PresentationContext> a_presentation) : device (device)
     , presentation_context (std::move (a_presentation)) {
-    this->gbuffer_pass = create_gbuffer_render_pass (device, config.gbuffer_formats, config.depth_format);
-    this->lighting_pass = create_lighting_render_pass (device, this->presentation_context->get_swapchain_image_format ());
-
-    this->gbuffer_cascades.resize (config.num_inflight_frames);
-    for (uint32_t i = 0; i < config.num_inflight_frames; ++i) {
-        auto& gbuffer_images = this->gbuffer_cascades [i].images;
-        auto& framebuffer = this->gbuffer_cascades [i].framebuffer;
-
-        gbuffer_images = create_gbuffer_images (device, physical_device
-            , config.extent, config.gbuffer_formats, config.depth_format);
-        framebuffer = create_gbuffer_framebuffer (device, this->gbuffer_pass, config.extent, gbuffer_images);
-        warmup_gbuffer_images (device, command_pool, queue, gbuffer_images);
+    VkExtent2D extent = this->presentation_context->get_extent ();
+    VkFormat depth_format;
+    if (!vk_utils::getSupportedDepthFormat (physical_device, {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &depth_format)) {
+        throw std::runtime_error ("couldn't find supported depth format");
     }
 
+    this->gbuffer_pass = create_gbuffer_render_pass (device, config.gbuffer_formats, depth_format);
+    this->lighting_pass = create_lighting_render_pass (device, this->presentation_context->get_swapchain_image_format ());
+    this->after_pass = create_after_render_pass (device, depth_format, this->presentation_context->get_swapchain_image_format ());
+
+    this->g_buffer = create_gbuffer_images (device, physical_device, extent, config.gbuffer_formats, depth_format);
+    this->g_buffer_framebuffer = create_gbuffer_framebuffer (device, this->gbuffer_pass, extent, this->g_buffer);
+    warmup_gbuffer_images (device, command_pool, queue, this->g_buffer);
+
     uint32_t swapchain_image_count = this->presentation_context->get_swapchain_image_count ();
-    this->lighting_framebuffers.resize (swapchain_image_count);
     auto swapchain_views = this->presentation_context->get_swapchain_image_views ();
+
+    this->lighting_framebuffers.resize (swapchain_image_count);
+    this->after_framebuffers.resize (swapchain_image_count);
     for (size_t i = 0; i < swapchain_image_count; ++i) {
-        this->lighting_framebuffers [i] = create_lighting_framebuffer (device
-            , this->lighting_pass, config.extent, swapchain_views [i]);
+        assert (this->g_buffer.back ().aspectMask == VK_IMAGE_ASPECT_DEPTH_BIT && "last image of g_buffer must be depth buffer");
+        this->lighting_framebuffers [i] = create_lighting_framebuffer (device, this->lighting_pass, extent, swapchain_views [i]);
+        this->after_framebuffers [i] = create_after_framebuffer (device, this->after_pass, extent, this->g_buffer.back ().view, swapchain_views [i]);
     }
 
     this->sampler = create_gbuffer_sampler (device, config.filter);
 
     vk_utils::DescriptorTypesVec pool_sizes = {
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, (config.gbuffer_formats.size () + 1) * config.num_inflight_frames }
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, config.gbuffer_formats.size () + 1 }
     };
-    this->desc_maker = std::make_unique <vk_utils::DescriptorMaker> (device, pool_sizes, config.num_inflight_frames);
-
-    for (uint32_t i = 0; i < config.num_inflight_frames; ++i) {
-        auto desc_res = init_gbuffer_descriptor_set (this->sampler, this->gbuffer_cascades [i].images, this->desc_maker);
-        this->descriptor_sets.push_back (desc_res.first);
-        this->descriptor_set_layout = desc_res.second;
-    }
+    this->desc_maker = std::make_unique <vk_utils::DescriptorMaker> (device, pool_sizes, 1);
+    auto desc_res = init_gbuffer_descriptor_set (this->sampler, this->g_buffer, this->desc_maker);
+    this->descriptor_set = desc_res.first;
+    this->descriptor_set_layout = desc_res.second;
 }
 
 DeferredShading::~DeferredShading () {
@@ -288,26 +383,25 @@ DeferredShading::~DeferredShading () {
 
     this->desc_maker.reset ();
 
-    for (auto& cascade : this->gbuffer_cascades) {
-        if (cascade.framebuffer != VK_NULL_HANDLE) {
-            vkDestroyFramebuffer (this->device, cascade.framebuffer, nullptr);
-        }
-
-        if (!cascade.images.empty () && cascade.images [0].mem != VK_NULL_HANDLE) {
-            vkFreeMemory (device, cascade.images [0].mem, nullptr);
-        }
-
-        if (!cascade.images.empty () && cascade.images.back ().mem != VK_NULL_HANDLE) {
-            // NOTE: depth was allocated sepparately
-            vkFreeMemory (device, cascade.images.back ().mem, nullptr);
-        }
-
-        for (auto& img : cascade.images) {
-            img.mem = VK_NULL_HANDLE; // NOTE: free'd manualy
-            vk_utils::deleteImg (device, &img);
-        }
+    if (this->g_buffer_framebuffer != VK_NULL_HANDLE) {
+        vkDestroyFramebuffer (this->device, this->g_buffer_framebuffer, nullptr);
     }
-    this->gbuffer_cascades.clear ();
+
+    if (!this->g_buffer.empty () && this->g_buffer [0].mem != VK_NULL_HANDLE) {
+        // NOTE: this->g_buffer [0] is enough, as we allocated one memory for all colored image.
+        vkFreeMemory (device, this->g_buffer [0].mem, nullptr);
+    }
+
+    assert (this->g_buffer.back ().aspectMask == VK_IMAGE_ASPECT_DEPTH_BIT && "last image of g_buffer must be depth buffer");
+    if (!this->g_buffer.empty () && this->g_buffer.back ().mem != VK_NULL_HANDLE) {
+        // NOTE: depth was allocated sepparately
+        vkFreeMemory (device, this->g_buffer.back ().mem, nullptr);
+    }
+
+    for (auto& img : this->g_buffer) {
+        img.mem = VK_NULL_HANDLE; // NOTE: free'd manualy
+        vk_utils::deleteImg (device, &img);
+    }
 
     for (auto fb : this->lighting_framebuffers) {
         if (fb != VK_NULL_HANDLE) {
@@ -316,13 +410,22 @@ DeferredShading::~DeferredShading () {
     }
     this->lighting_framebuffers.clear ();
 
+    for (auto fb : this->after_framebuffers) {
+        if (fb != VK_NULL_HANDLE) {
+            vkDestroyFramebuffer (this->device, fb, nullptr);
+        }
+    }
+    this->after_framebuffers.clear ();
+
     if (this->sampler != VK_NULL_HANDLE) vkDestroySampler (this->device, this->sampler, nullptr);
     if (this->gbuffer_pass != VK_NULL_HANDLE) vkDestroyRenderPass (this->device, this->gbuffer_pass, nullptr);
     if (this->lighting_pass != VK_NULL_HANDLE) vkDestroyRenderPass (this->device, this->lighting_pass, nullptr);
+    if (this->after_pass != VK_NULL_HANDLE) vkDestroyRenderPass (this->device, this->after_pass, nullptr);
 
     this->sampler = VK_NULL_HANDLE;
     this->gbuffer_pass = VK_NULL_HANDLE;
     this->lighting_pass = VK_NULL_HANDLE;
+    this->after_pass = VK_NULL_HANDLE;
     this->device = VK_NULL_HANDLE;
 }
 
@@ -337,20 +440,24 @@ DeferredShading& DeferredShading::operator= (DeferredShading&& other) noexcept {
         this->device = other.device;
         this->gbuffer_pass = other.gbuffer_pass;
         this->lighting_pass = other.lighting_pass;
+        this->after_pass = other.after_pass;
         this->sampler = other.sampler;
+        this->descriptor_set = other.descriptor_set;
         this->descriptor_set_layout = other.descriptor_set_layout;
 
-        this->gbuffer_cascades = std::move (other.gbuffer_cascades);
+        this->g_buffer = std::move (other.g_buffer);
         this->lighting_framebuffers = std::move (other.lighting_framebuffers);
-        this->descriptor_sets = std::move (other.descriptor_sets);
+        this->after_framebuffers = std::move (other.after_framebuffers);
         this->desc_maker = std::move (other.desc_maker);
 
         other.device = VK_NULL_HANDLE;
         other.gbuffer_pass = VK_NULL_HANDLE;
         other.lighting_pass = VK_NULL_HANDLE;
+        other.after_pass = VK_NULL_HANDLE;
         other.sampler = VK_NULL_HANDLE;
         other.descriptor_set_layout = VK_NULL_HANDLE;
     }
     return *this;
 }
+
 

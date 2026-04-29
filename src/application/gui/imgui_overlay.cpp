@@ -160,11 +160,6 @@ void UI::init (std::shared_ptr <VulkanContext> /*vulkan_context*/, std::shared_p
     assert (info.physical_device != VK_NULL_HANDLE && "InitInfo.physical_device must be valid.");
     assert (info.graphics_queue != VK_NULL_HANDLE && "InitInfo.graphics_queue must be valid.");
     assert (info.graphics_queue_family_index != UINT32_MAX && "InitInfo.graphics_queue_family_index must be valid."); // UINT32_MAX обычно означает недействительный индекс
-    // TODO: swapchain fields moved to PresentationContext
-    // assert (!info.swapchain_image_views.empty() && "InitInfo.swapchain_image_views must not be empty.");
-    // assert (info.surface_extent.width > 0 && info.surface_extent.height > 0 && "InitInfo.surface_extent must be valid.");
-    // assert (info.surface_format != VK_FORMAT_UNDEFINED && "InitInfo.surface_format must be defined.");
-    // assert (info.depth_format != VK_FORMAT_UNDEFINED && "InitInfo.depth_format must be defined.");
 
     this->device = info.device;
     this->window = info.window;
@@ -175,7 +170,12 @@ void UI::init (std::shared_ptr <VulkanContext> /*vulkan_context*/, std::shared_p
     this->swapchain_image_views = info.swapchain_image_views;
     this->surface_extent = info.surface_extent;
     this->surface_format = info.surface_format;
-    this->depth_format = info.depth_format;
+
+    VkFormat depth_format;
+    if (!vk_utils::getSupportedDepthFormat (physical_device, {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &depth_format)) {
+        throw std::runtime_error ("couldn't find supported depth format");
+    }
+    this->depth_format = depth_format;
 
     this->create_depth_buffer ();
     this->create_render_pass ();

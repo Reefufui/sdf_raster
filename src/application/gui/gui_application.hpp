@@ -2,7 +2,6 @@
 #pragma once
 
 #include "../../engine/camera.hpp"
-#include "../../vulkan/presentation/presentation_context.hpp"
 #include "../../engine/renderer.hpp"
 #include "../../scenes/base/scene_manager.hpp"
 #include "../../scenes/octree/octree.hpp"

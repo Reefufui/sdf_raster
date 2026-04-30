@@ -1,5 +1,5 @@
-// engine/sdf_rasterizer.cpp
-#include "sdf_rasterizer.hpp"
+// engine/renderer.cpp
+#include "renderer.hpp"
 
 #include "logger.hpp"
 #include "scenes/obj/obj.hpp"
@@ -18,20 +18,15 @@
 
 namespace sdf_raster {
 
-#define RENDERER_NAME "SDFRasterizer"
+#define RENDERER_NAME "Renderer"
 
-SDFRasterizer::SDFRasterizer (std::shared_ptr <VulkanContext> context, std::shared_ptr <RenderTarget> render_target)
+Renderer::Renderer (std::shared_ptr <VulkanContext> context, std::shared_ptr <RenderTarget> render_target)
     : context (context)
     , render_target (render_target) {
     if (!this->context) {
         throw std::invalid_argument("VulkanContext cannot be null.");
     }
-}
 
-SDFRasterizer::~SDFRasterizer () {
-}
-
-void SDFRasterizer::init () {
     if (!this->context || !this->context->is_initialized ()) {
         throw std::runtime_error ("VulkanContext is not initialized before renderer init.");
     }
@@ -63,7 +58,28 @@ void SDFRasterizer::init () {
     }
 }
 
-void SDFRasterizer::destroy_pipelines () {
+Renderer::~Renderer () {
+    vkDeviceWaitIdle (this->context->get_device ());
+
+    if (!this->context || !this->context->is_initialized ()) {
+        LOG_ERROR ("Vulkan context is already missing");
+        return;
+    }
+
+    if (this->frustum_draw_buffer) {
+        if (this->current_scene) {
+            this->current_scene->get_state ().camera = this->frustum_draw_buffer->get_camera ();
+        }
+        this->frustum_draw_buffer.reset ();
+    }
+
+    this->release_render_resources ();
+
+    this->dummy_ds.reset ();
+    this->frustum_ds.reset ();
+}
+
+void Renderer::destroy_pipelines () {
     if (!this->context) {
         return;
     }
@@ -83,7 +99,7 @@ void SDFRasterizer::destroy_pipelines () {
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->traverse_scomtree_pipeline, this->traverse_scomtree_pipeline_layout);
 }
 
-void SDFRasterizer::create_required_pipelines () {
+void Renderer::create_required_pipelines () {
     if (!this->current_scene) {
         return;
     }
@@ -139,7 +155,7 @@ void SDFRasterizer::create_required_pipelines () {
     this->init_frustum_demo_pipeline ();
 }
 
-void SDFRasterizer::resize () {
+void Renderer::resize () {
         this->destroy_pipelines ();
 
         if (this->hz_buffer_ds) {
@@ -175,7 +191,7 @@ void SDFRasterizer::resize () {
 
 }
 
-void SDFRasterizer::init_push_constants () {
+void Renderer::init_push_constants () {
     VkPhysicalDeviceProperties device_properties;
     vkGetPhysicalDeviceProperties (this->context->get_physical_device (), &device_properties);
     const uint32_t max_push_constant_size = device_properties.limits.maxPushConstantsSize;
@@ -189,7 +205,7 @@ void SDFRasterizer::init_push_constants () {
     this->push_constants.active_leafs_max_count = 999999; // TODO: settings
 }
 
-void SDFRasterizer::init_compute_hz_buffer_pipeline () {
+void Renderer::init_compute_hz_buffer_pipeline () {
     assert (this->context && "required for 'traverse_octree_pipeline'");
     assert (this->hz_buffer_ds && "required for 'compute_hz_buffer_pipeline'");
 
@@ -201,7 +217,7 @@ void SDFRasterizer::init_compute_hz_buffer_pipeline () {
     this->compute_hz_buffer_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
-void SDFRasterizer::init_traverse_octree_pipeline () {
+void Renderer::init_traverse_octree_pipeline () {
     assert (this->context && "required for 'traverse_octree_pipeline'");
     assert (this->sdf_octree_ds && "required for 'traverse_octree_pipeline'");
     assert (this->active_leafs_ds && "required for 'traverse_octree_pipeline'");
@@ -220,7 +236,7 @@ void SDFRasterizer::init_traverse_octree_pipeline () {
     this->traverse_octree_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
-void SDFRasterizer::init_traverse_scomtree_pipeline () {
+void Renderer::init_traverse_scomtree_pipeline () {
     assert (this->context && "required for 'traverse_scomtree_pipeline'");
     assert (this->sdf_scomtree_ds && "required for 'traverse_scomtree_pipeline'");
     assert (this->active_leafs_ds && "required for 'traverse_scomtree_pipeline'");
@@ -239,7 +255,7 @@ void SDFRasterizer::init_traverse_scomtree_pipeline () {
     this->traverse_scomtree_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
-void SDFRasterizer::init_compute_prepare_indirect_pipeline () {
+void Renderer::init_compute_prepare_indirect_pipeline () {
     assert (this->context && "required for 'compute_prepare_indirect_pipeline'");
     assert (this->active_leafs_ds && "required for 'compute_prepare_indirect_pipeline'");
     assert (this->indirect_dispatch_ds && "required for 'compute_prepare_indirect_pipeline'");
@@ -253,7 +269,7 @@ void SDFRasterizer::init_compute_prepare_indirect_pipeline () {
     this->compute_prepare_indirect_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
-void SDFRasterizer::init_marching_cubes_octree_pipeline () {
+void Renderer::init_marching_cubes_octree_pipeline () {
     assert (this->context && "required for 'marching_cubes_octree_pipeline'");
     assert (this->sdf_octree_ds && "required for 'marching_cubes_octree_pipeline'");
     assert (this->mesh_ds && "required for 'marching_cubes_octree_pipeline'");
@@ -273,7 +289,7 @@ void SDFRasterizer::init_marching_cubes_octree_pipeline () {
     this->marching_cubes_octree_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
-void SDFRasterizer::init_marching_cubes_scomtree_pipeline () {
+void Renderer::init_marching_cubes_scomtree_pipeline () {
     assert (this->context && "required for 'marching_cubes_scomtree_pipeline'");
     assert (this->sdf_scomtree_ds && "required for 'marching_cubes_scomtree_pipeline'");
     assert (this->mesh_ds && "required for 'marching_cubes_scomtree_pipeline'");
@@ -297,7 +313,7 @@ void SDFRasterizer::init_marching_cubes_scomtree_pipeline () {
     this->marching_cubes_scomtree_pipeline = compute_pipeline_maker.MakePipeline (this->context->get_device ());
 }
 
-void SDFRasterizer::init_forward_rendering_pipeline (const std::string& vert_shader_path, const std::string& frag_shader_path, VkFrontFace front_face) {
+void Renderer::init_forward_rendering_pipeline (const std::string& vert_shader_path, const std::string& frag_shader_path, VkFrontFace front_face) {
     assert (this->context && "required for 'init_forward_rendering_pipeline'");
     assert (this->forward_shading && "required for 'init_forward_rendering_pipeline'");
 
@@ -464,7 +480,7 @@ void SDFRasterizer::init_forward_rendering_pipeline (const std::string& vert_sha
     shader_modules.clear ();
 }
 
-void SDFRasterizer::init_graphics_gbuffer_pipeline (const std::string& vert_shader_path, const std::string& frag_shader_path) {
+void Renderer::init_graphics_gbuffer_pipeline (const std::string& vert_shader_path, const std::string& frag_shader_path) {
     assert (this->context && "required for 'graphics_gbuffer_pipeline'");
     assert (this->deferred_shading && "required for 'graphics_gbuffer_pipeline'");
 
@@ -631,7 +647,7 @@ void SDFRasterizer::init_graphics_gbuffer_pipeline (const std::string& vert_shad
     shader_modules.clear ();
 }
 
-void SDFRasterizer::init_graphics_lighting_pipeline () {
+void Renderer::init_graphics_lighting_pipeline () {
     assert (this->context && "required for 'graphics_lighting_pipeline'");
     assert (this->deferred_shading && "required for 'graphics_lighting_pipeline'");
 
@@ -751,7 +767,7 @@ void SDFRasterizer::init_graphics_lighting_pipeline () {
     for (VkShaderModule module : shader_modules) vkDestroyShaderModule (this->context->get_device (), module, nullptr);
 }
 
-void SDFRasterizer::init_mesh_shading_octree_pipeline () {
+void Renderer::init_mesh_shading_octree_pipeline () {
     assert (this->context && "required for 'mesh_shading_octree_pipeline'");
     assert (this->active_leafs_ds && "required for 'mesh_shading_octree_pipeline'");
     assert (this->forward_shading && "required for 'mesh_shading_octree_pipeline'"); // TODO: support deferred_shading
@@ -897,7 +913,7 @@ void SDFRasterizer::init_mesh_shading_octree_pipeline () {
     shader_modules.clear ();
 }
 
-void SDFRasterizer::init_mesh_shading_scomtree_pipeline () {
+void Renderer::init_mesh_shading_scomtree_pipeline () {
     assert (this->context && "required for 'mesh_shading_scomtree_pipeline'");
     assert (this->sdf_scomtree_ds && "required for 'mesh_shading_scomtree_pipeline'");
     assert (this->marching_cubes_lookup_table_ds && "required for 'mesh_shading_scomtree_pipeline'");
@@ -907,7 +923,7 @@ void SDFRasterizer::init_mesh_shading_scomtree_pipeline () {
     assert (false && "not yet implemented");
 }
 
-void SDFRasterizer::init_frustum_demo_pipeline () {
+void Renderer::init_frustum_demo_pipeline () {
     assert (this->context && "required for 'frustum_demo_pipeline'");
     assert (this->frustum_ds && "required for 'frustum_demo_pipeline'");
     assert (this->forward_shading || this->deferred_shading && "required for 'init_frustum_demo_pipeline");
@@ -1067,7 +1083,7 @@ void SDFRasterizer::init_frustum_demo_pipeline () {
     shader_modules.clear ();
 }
 
-void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
+void Renderer::update (uint32_t frame_index, Settings& settings) {
     this->frame_index = frame_index;
 
     if (!this->current_scene) {
@@ -1180,7 +1196,7 @@ LiteMath::float3 face_normal (const LiteMath::float4& a, const LiteMath::float4&
 
 }
 
-void SDFRasterizer::update_frustum_buffer (const Camera& camera) {
+void Renderer::update_frustum_buffer (const Camera& camera) {
     const auto& vertices = camera.get_frustum_corners ();
     std::copy (vertices.begin (), vertices.end (), this->frustum.vertices);
 
@@ -1192,7 +1208,7 @@ void SDFRasterizer::update_frustum_buffer (const Camera& camera) {
     this->frustum.normals [5] = LiteMath::to_float4 (face_normal (this->frustum.vertices [4], this->frustum.vertices [0], this->frustum.vertices [1]), 1.f); // Bottom
 }
 
-void SDFRasterizer::clear_geometry (VkCommandBuffer cmd_buff) {
+void Renderer::clear_geometry (VkCommandBuffer cmd_buff) {
     vkCmdFillBuffer (cmd_buff, this->mesh_ds->get_vertex_buffer (this->frame_index), 0, VK_WHOLE_SIZE, 0x00000000);
     vkCmdFillBuffer (cmd_buff, this->mesh_ds->get_index_buffer (this->frame_index), 0, VK_WHOLE_SIZE, 0x00000000);
 
@@ -1221,7 +1237,7 @@ void SDFRasterizer::clear_geometry (VkCommandBuffer cmd_buff) {
     );
 }
 
-void SDFRasterizer::copy_forward_rendered_depth (VkCommandBuffer cmd_buff) {
+void Renderer::copy_forward_rendered_depth (VkCommandBuffer cmd_buff) {
     assert (this->forward_shading && "required for 'copy_forward_rendered_depth'");
     assert (this->hz_buffer_ds && "required for 'copy_forward_rendered_depth'");
 
@@ -1326,7 +1342,7 @@ void SDFRasterizer::copy_forward_rendered_depth (VkCommandBuffer cmd_buff) {
     }
 }
 
-void SDFRasterizer::copy_subtrees (VkCommandBuffer cmd_buff) {
+void Renderer::copy_subtrees (VkCommandBuffer cmd_buff) {
     VkDeviceSize subtrees_size {};
 
     if (this->sdf_octree_ds) {
@@ -1376,7 +1392,7 @@ void SDFRasterizer::copy_subtrees (VkCommandBuffer cmd_buff) {
     );
 }
 
-void SDFRasterizer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
+void Renderer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
     // NOTE: expects layout of all hz_buffer_ds mip-images to be VK_IMAGE_LAYOUT_GENERAL
 
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
@@ -1427,7 +1443,7 @@ void SDFRasterizer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
     }
 }
 
-void SDFRasterizer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
+void Renderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
     vkCmdFillBuffer (cmd_buff, this->active_leafs_ds->get_active_leaf_counter_buffer (this->frame_index), 0, VK_WHOLE_SIZE, 0x00000000);
 
     VkBufferMemoryBarrier buffer_barrier = {};
@@ -1452,7 +1468,7 @@ void SDFRasterizer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
     );
 }
 
-void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src, LayoutStageAccess dst) {
+void Renderer::hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src, LayoutStageAccess dst) {
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
 
     VkImageSubresourceRange base_level_range {
@@ -1479,7 +1495,7 @@ void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAcce
     vkCmdPipelineBarrier (cmd_buff, src.stage, dst.stage, 0, 0, nullptr, 0, nullptr, 1, &base_level_barrier);
 }
 
-void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src_base, LayoutStageAccess dst_base, LayoutStageAccess src_levels, LayoutStageAccess dst_levels) {
+void Renderer::hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src_base, LayoutStageAccess dst_base, LayoutStageAccess src_levels, LayoutStageAccess dst_levels) {
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
 
     VkImageSubresourceRange base_level_range {
@@ -1533,7 +1549,7 @@ void SDFRasterizer::hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAcce
         , static_cast <uint32_t> (barriers.size ()), barriers.data ());
 }
 
-void SDFRasterizer::traverse_octree (VkCommandBuffer cmd_buff) {
+void Renderer::traverse_octree (VkCommandBuffer cmd_buff) {
     size_t subtree_root_count = this->sdf_octree_ds->get_subtree_count ();
     if (!subtree_root_count) {
         return;
@@ -1556,7 +1572,7 @@ void SDFRasterizer::traverse_octree (VkCommandBuffer cmd_buff) {
     vkCmdDispatch (cmd_buff, 8, 8, subtree_root_count);
 }
 
-void SDFRasterizer::traverse_scomtree (VkCommandBuffer cmd_buff) {
+void Renderer::traverse_scomtree (VkCommandBuffer cmd_buff) {
     size_t subtree_root_count = this->sdf_scomtree_ds->get_subtree_count ();
     if (!subtree_root_count) {
         return;
@@ -1579,7 +1595,7 @@ void SDFRasterizer::traverse_scomtree (VkCommandBuffer cmd_buff) {
     vkCmdDispatch (cmd_buff, 1, 1, subtree_root_count); // TODO: direct descend with (8, 8, <cpu_roots>)
 }
 
-void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size) {
+void Renderer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size) {
     assert (this->context && "required for 'prepare_indirect'");
     assert (this->active_leafs_ds && "required for 'prepare_indirect'");
     assert (this->indirect_dispatch_ds && "required for 'prepare_indirect'");
@@ -1626,7 +1642,7 @@ void SDFRasterizer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgro
         );
 }
 
-void SDFRasterizer::prepare_hzbuffer_after_forward_rendering (VkCommandBuffer cmd_buff) {
+void Renderer::prepare_hzbuffer_after_forward_rendering (VkCommandBuffer cmd_buff) {
     assert (this->hz_buffer_ds && "required for 'prepare_hzbuffer_after_forward_rendering");
     assert (this->forward_shading && "required for 'prepare_hzbuffer_after_forward_rendering");
 
@@ -1653,7 +1669,7 @@ void SDFRasterizer::prepare_hzbuffer_after_forward_rendering (VkCommandBuffer cm
         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
 }
 
-void SDFRasterizer::marching_cubes_octree (VkCommandBuffer cmd_buff) {
+void Renderer::marching_cubes_octree (VkCommandBuffer cmd_buff) {
     assert (this->context && "required for 'marching_cubes_octree'");
     assert (this->sdf_octree_ds && "required for 'marching_cubes_octree'");
     assert (this->mesh_ds && "required for 'marching_cubes_octree'");
@@ -1679,7 +1695,7 @@ void SDFRasterizer::marching_cubes_octree (VkCommandBuffer cmd_buff) {
     vkCmdDispatchIndirect (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0);
 }
 
-void SDFRasterizer::marching_cubes_scomtree (VkCommandBuffer cmd_buff) {
+void Renderer::marching_cubes_scomtree (VkCommandBuffer cmd_buff) {
     assert (this->context && "required for 'marching_cubes_scomtree'");
     assert (this->sdf_scomtree_ds && "required for 'marching_cubes_scomtree'");
     assert (this->mesh_ds && "required for 'marching_cubes_scomtree'");
@@ -1710,7 +1726,7 @@ void SDFRasterizer::marching_cubes_scomtree (VkCommandBuffer cmd_buff) {
     vkCmdDispatchIndirect (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0);
 }
 
-void SDFRasterizer::geometry_barrier (VkCommandBuffer cmd_buff) {
+void Renderer::geometry_barrier (VkCommandBuffer cmd_buff) {
     assert (this->mesh_ds && "required for 'geometry_barrier'");
     assert (this->draw_indexed_indirect_command_ds && "required for 'geometry_barrier'");
 
@@ -1763,7 +1779,7 @@ void SDFRasterizer::geometry_barrier (VkCommandBuffer cmd_buff) {
     );
 }
 
-void SDFRasterizer::forward_rendering (VkCommandBuffer cmd_buff) {
+void Renderer::forward_rendering (VkCommandBuffer cmd_buff) {
     assert (this->context && "required for 'forward_rendering'");
     assert (this->forward_shading && "required for 'forward_rendering'");
 
@@ -1818,7 +1834,7 @@ void SDFRasterizer::forward_rendering (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void SDFRasterizer::draw_frustum_demo (VkCommandBuffer cmd_buff) {
+void Renderer::draw_frustum_demo (VkCommandBuffer cmd_buff) {
     assert (this->frustum_demo_pipeline && "required for 'draw_frustum_demo'");
     assert (this->frustum_demo_pipeline_layout && "required for 'draw_frustum_demo'");
     assert (this->frustum_draw_buffer && "required for 'draw_frustum_demo'");
@@ -1871,7 +1887,7 @@ void SDFRasterizer::draw_frustum_demo (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void SDFRasterizer::deferred_rendering (VkCommandBuffer cmd_buff) {
+void Renderer::deferred_rendering (VkCommandBuffer cmd_buff) {
     assert (this->context && "required for 'deferred_rendering'");
     assert (this->deferred_shading && "required for 'deferred_rendering'");
     assert (this->draw_indexed_indirect_command_ds && "required for 'deferred_rendering'");
@@ -1964,7 +1980,7 @@ void SDFRasterizer::deferred_rendering (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
+void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     assert (this->sdf_octree_ds && "required for 'raster_octree_via_mesh_shading'");
     assert (this->marching_cubes_lookup_table_ds && "required for 'raster_octree_via_mesh_shading'");
     assert (this->active_leafs_ds && "required for 'raster_octree_via_mesh_shading'");
@@ -2044,10 +2060,10 @@ void SDFRasterizer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
         , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = 0});
 }
 
-void SDFRasterizer::raster_scomtree_via_mesh_shading (VkCommandBuffer /*cmd_buff*/) {
+void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer /*cmd_buff*/) {
 }
 
-void SDFRasterizer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
+void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
@@ -2064,7 +2080,7 @@ void SDFRasterizer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff)
     }
 }
 
-void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
+void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
@@ -2103,7 +2119,7 @@ void SDFRasterizer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buf
     }
 }
 
-void SDFRasterizer::render (VkCommandBuffer cmd_buff) {
+void Renderer::render (VkCommandBuffer cmd_buff) {
     if (this->draw) {
         std::invoke (this->draw, this, cmd_buff);
     }
@@ -2113,11 +2129,11 @@ void SDFRasterizer::render (VkCommandBuffer cmd_buff) {
     }
 }
 
-const Stats& SDFRasterizer::get_stats () {
+const Stats& Renderer::get_stats () {
     return this->stats;
 }
 
-void SDFRasterizer::process_commands (std::queue <std::function<void()>>& commands, std::mutex& mutex) {
+void Renderer::process_commands (std::queue <std::function<void()>>& commands, std::mutex& mutex) {
     std::queue <std::function<void()>> local_commands;
     {
         std::lock_guard lock (mutex);
@@ -2139,7 +2155,7 @@ void SDFRasterizer::process_commands (std::queue <std::function<void()>>& comman
     }
 }
 
-void SDFRasterizer::release_render_resources () {
+void Renderer::release_render_resources () {
     vkDeviceWaitIdle (this->context->get_device ());
 
     this->current_scene.reset ();
@@ -2160,7 +2176,7 @@ void SDFRasterizer::release_render_resources () {
     this->deferred_shading.reset ();
 }
 
-void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
+void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
     vkDeviceWaitIdle (this->context->get_device());
 
     if (scene) {
@@ -2354,27 +2370,6 @@ void SDFRasterizer::apply_scene_config (std::shared_ptr <Scene> scene) {
     }
 
     // LOG_INFO ("[{}] Rendering pipeline set to: {}", RENDERER_NAME, this->current_scene->get_state ().draw_method);
-}
-
-void SDFRasterizer::shutdown () {
-    vkDeviceWaitIdle (this->context->get_device ());
-
-    if (!this->context || !this->context->is_initialized ()) {
-        LOG_ERROR ("Vulkan context is already missing");
-        return;
-    }
-
-    if (this->frustum_draw_buffer) {
-        if (this->current_scene) {
-            this->current_scene->get_state ().camera = this->frustum_draw_buffer->get_camera ();
-        }
-        this->frustum_draw_buffer.reset ();
-    }
-
-    this->release_render_resources ();
-
-    this->dummy_ds.reset ();
-    this->frustum_ds.reset ();
 }
 
 } // namespace sdf_raster

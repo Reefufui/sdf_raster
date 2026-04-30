@@ -41,7 +41,7 @@ GUIApplication::~GUIApplication () {
     {
         this->settings.frustum_view = false;
         if (this->renderer) {
-            this->renderer->shutdown ();
+            this->renderer.reset ();
         }
     }
 
@@ -146,8 +146,7 @@ void GUIApplication::init_vulkan () {
 }
 
 void GUIApplication::init_renderer () {
-    this->renderer = std::make_unique <SDFRasterizer> (this->vulkan_context, this->presentation_render_target);
-    this->renderer->init ();
+    this->renderer = std::make_unique <Renderer> (this->vulkan_context, this->presentation_render_target);
 }
 
 void GUIApplication::init_gui () {
@@ -187,13 +186,12 @@ void GUIApplication::cleanup () {
     gui::cleanup (this->settings);
 
     if (this->renderer) {
-        this->renderer->shutdown ();
+        this->renderer.reset ();
     }
 
     if (this->presentation_render_target) {
-        this->presentation_render_target->shutdown ();
+        this->presentation_render_target.reset ();
     }
-    this->presentation_render_target.reset ();
 
     if (this->vulkan_context) {
         this->vulkan_context->shutdown ();

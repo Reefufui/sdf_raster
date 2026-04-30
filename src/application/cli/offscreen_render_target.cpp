@@ -43,20 +43,11 @@ OffscreenRenderTarget::OffscreenRenderTarget (std::shared_ptr <VulkanContext> a_
 
     this->create_output_image ();
     this->create_frame_resources ();
-    this->initialized = true;
 
     LOG_INFO ("[OffscreenRenderTarget] Created offscreen render target with extent ({}x{}) and format {}.", a_width, a_height, static_cast <int> (a_format));
 }
 
 OffscreenRenderTarget::~OffscreenRenderTarget () {
-    this->shutdown ();
-}
-
-void OffscreenRenderTarget::shutdown () {
-    if (!this->initialized) {
-        return;
-    }
-
     if (this->context->get_device () != VK_NULL_HANDLE) {
         vkDeviceWaitIdle (this->context->get_device ());
     }
@@ -64,12 +55,7 @@ void OffscreenRenderTarget::shutdown () {
     this->destroy_frame_resources ();
     this->destroy_output_image ();
 
-    this->initialized = false;
     LOG_INFO ("[OffscreenRenderTarget] Shutdown complete.");
-}
-
-bool OffscreenRenderTarget::is_initialized () const {
-    return this->initialized;
 }
 
 VkExtent2D OffscreenRenderTarget::get_extent () const {

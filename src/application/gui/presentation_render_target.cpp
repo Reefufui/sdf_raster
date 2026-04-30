@@ -16,24 +16,13 @@ PresentationRenderTarget::PresentationRenderTarget (std::shared_ptr <VulkanConte
     glfwGetFramebufferSize (this->window, &width, &height);
     this->create_swapchain (static_cast <uint32_t> (width), static_cast <uint32_t> (height));
     this->create_frame_resources ();
-    this->initialized = true;
 }
 
 PresentationRenderTarget::~PresentationRenderTarget () {
-    this->shutdown ();
-}
-
-void PresentationRenderTarget::shutdown () {
-    if (!this->initialized) {
-        LOG_WARN ("[PresentationRenderTarget] Attempted to shutdown an uninitialized or already shut down presentation context.");
-        return;
-    }
-
     if (this->context->get_device () == VK_NULL_HANDLE) {
         LOG_WARN ("[PresentationRenderTarget] Vulkan device was VK_NULL_HANDLE during shutdown. Resources might not have been created.");
     } else {
         LOG_INFO ("[PresentationRenderTarget] Waiting for the GPU to go idle to shutdown application.");
-        this->on_before_device_wait_idle ();
         vkDeviceWaitIdle (this->context->get_device ());
 
         this->destroy_swapchain ();
@@ -49,7 +38,6 @@ void PresentationRenderTarget::shutdown () {
         this->surface = VK_NULL_HANDLE;
     }
 
-    this->initialized = false;
     LOG_INFO ("[PresentationRenderTarget] Presentation context destroyed successfully.");
 }
 

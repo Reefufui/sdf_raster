@@ -1,7 +1,7 @@
 // application/cli/cli_application.cpp
 #include "cli_application.hpp"
 
-#include "engine/sdf_rasterizer.hpp"
+#include "engine/renderer.hpp"
 #include "logger.hpp"
 #include "state.hpp"
 
@@ -50,8 +50,7 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
         VK_FORMAT_B8G8R8A8_UNORM
     );
 
-    auto renderer = std::make_unique <SDFRasterizer> (vulkan_context, render_target);
-    renderer->init ();
+    auto renderer = std::make_unique <Renderer> (vulkan_context, render_target);
 
     const uint32_t frames_in_flight = render_target->get_max_frames_in_flight ();
     uint32_t frame_idx = 0;
@@ -89,8 +88,8 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
         render_target->get_timestamp_period ()
     );
 
-    renderer->shutdown ();
-    render_target->shutdown ();
+    renderer.reset ();
+    render_target.reset ();
     vulkan_context->shutdown ();
 }
 

@@ -155,7 +155,7 @@ add_executable(${PROJECT_NAME}
     src/engine/utils/frustum_culling.cpp
     src/logger.cpp
     src/data/mesh.cpp
-    src/engine/sdf_rasterizer.cpp
+    src/engine/renderer.cpp
     src/state.cpp
     src/vulkan/vulkan_context.cpp
     src/application/gui/presentation_render_target.cpp

@@ -17,9 +17,6 @@ public:
     OffscreenRenderTarget (std::shared_ptr <VulkanContext> a_context, uint32_t a_width, uint32_t a_height, VkFormat a_format);
     virtual ~OffscreenRenderTarget () override;
 
-    void shutdown () override;
-    bool is_initialized () const override;
-
     VkExtent2D get_extent () const override;
     VkFormat get_image_format () const override;
     VkImageLayout get_output_final_layout () const override;
@@ -67,7 +64,6 @@ private:
     double timestamp_period = 0.0;
 
     std::vector <std::function <void ()>> resizable_callbacks;
-    bool initialized = false;
 };
 
 } // namespace sdf_raster

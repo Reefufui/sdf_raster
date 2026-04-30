@@ -21,11 +21,6 @@ public:
     PresentationRenderTarget (std::shared_ptr <VulkanContext> a_context, GLFWwindow* a_window);
     virtual ~PresentationRenderTarget ();
 
-    virtual void shutdown () override;
-    virtual void on_before_device_wait_idle () {}
-
-    inline bool is_initialized () const override { return this->initialized; }
-
     inline VkExtent2D get_extent () const override { return this->swapchain.GetExtent (); }
     inline VkFormat get_image_format () const override { return this->swapchain.GetFormat (); }
     inline uint32_t get_image_count () const override { return this->swapchain.GetImageCount (); }
@@ -83,8 +78,6 @@ protected:
     const size_t max_frames_in_flight = 2;
 
     std::vector <std::function <void ()>> resizable_callbacks;
-
-    bool initialized = false;
 };
 
 } // namespace sdf_raster

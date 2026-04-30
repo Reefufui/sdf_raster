@@ -1,4 +1,4 @@
-// engine/sdf_rasterizer.hpp
+// engine/renderer.hpp
 #pragma once
 
 #include "deferred_shading.hpp"
@@ -32,15 +32,13 @@
 
 namespace sdf_raster {
 
-class SDFRasterizer {
+class Renderer {
 public:
-    SDFRasterizer (std::shared_ptr <VulkanContext> context, std::shared_ptr <RenderTarget> render_target);
-    ~SDFRasterizer ();
+    Renderer (std::shared_ptr <VulkanContext> context, std::shared_ptr <RenderTarget> render_target);
+    ~Renderer ();
 
-    void init ();
     void update (uint32_t frame_index, Settings& settings);
     void render (VkCommandBuffer cmd_buff);
-    void shutdown ();
     void process_commands (std::queue <std::function<void()>>& commands, std::mutex& mutex);
     void apply_scene_config (std::shared_ptr <Scene> scene);
     const Stats& get_stats ();
@@ -147,8 +145,8 @@ private:
     void raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff);
     void raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff);
     void raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff);
-    using RenderMethodPtr = void (SDFRasterizer::*)(VkCommandBuffer);
-    RenderMethodPtr draw = &SDFRasterizer::forward_rendering;
+    using RenderMethodPtr = void (Renderer::*)(VkCommandBuffer);
+    RenderMethodPtr draw = &Renderer::forward_rendering;
 
     struct MethodTrait {
         DrawMethod method;
@@ -157,15 +155,15 @@ private:
     };
 
     static inline constexpr std::array <MethodTrait, 9> draw_strategies = {{
-          { DrawMethod::None, &SDFRasterizer::forward_rendering, false}
-        , { DrawMethod::Explicit, &SDFRasterizer::forward_rendering, false}
-        , { DrawMethod::ExplicitDeferred, &SDFRasterizer::deferred_rendering, false}
-        , { DrawMethod::OctreeCompute, &SDFRasterizer::raster_octree_via_compute_shading, false}
-        , { DrawMethod::OctreeMesh, &SDFRasterizer::raster_octree_via_mesh_shading, true }
-        , { DrawMethod::SComTreeCompute, &SDFRasterizer::raster_scomtree_via_compute_shading, false }
-        , { DrawMethod::SComTreeComputeDeferred, &SDFRasterizer::raster_scomtree_via_compute_shading, false }
-        , { DrawMethod::SComTreeMesh, &SDFRasterizer::raster_scomtree_via_mesh_shading, true }
-        , { DrawMethod::SComTreeMeshDeferred, &SDFRasterizer::raster_scomtree_via_mesh_shading, true }
+          { DrawMethod::None, &Renderer::forward_rendering, false}
+        , { DrawMethod::Explicit, &Renderer::forward_rendering, false}
+        , { DrawMethod::ExplicitDeferred, &Renderer::deferred_rendering, false}
+        , { DrawMethod::OctreeCompute, &Renderer::raster_octree_via_compute_shading, false}
+        , { DrawMethod::OctreeMesh, &Renderer::raster_octree_via_mesh_shading, true }
+        , { DrawMethod::SComTreeCompute, &Renderer::raster_scomtree_via_compute_shading, false }
+        , { DrawMethod::SComTreeComputeDeferred, &Renderer::raster_scomtree_via_compute_shading, false }
+        , { DrawMethod::SComTreeMesh, &Renderer::raster_scomtree_via_mesh_shading, true }
+        , { DrawMethod::SComTreeMeshDeferred, &Renderer::raster_scomtree_via_mesh_shading, true }
     }};
 
     FrustumGeometry frustum {};

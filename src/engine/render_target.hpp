@@ -20,9 +20,6 @@ class RenderTarget {
 public:
     virtual ~RenderTarget () = default;
 
-    virtual void shutdown () = 0;
-    virtual bool is_initialized () const = 0;
-
     virtual VkExtent2D get_extent () const = 0;
     virtual VkFormat get_image_format () const = 0;
     virtual VkImageLayout get_output_final_layout () const = 0;

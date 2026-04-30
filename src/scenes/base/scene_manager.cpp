@@ -112,6 +112,14 @@ std::shared_ptr <Scene> SceneManager::get_scene () {
     return nullptr;
 }
 
+std::optional <std::filesystem::path> SceneManager::get_current_scene_path () const {
+    std::lock_guard lock (this->mutex);
+    if (std::holds_alternative <std::shared_ptr <Scene>> (this->managed_scene)) {
+        return std::get <std::shared_ptr <Scene>> (this->managed_scene)->get_state ().path;
+    }
+    return std::nullopt;
+}
+
 void SceneManager::subscribe (SceneEventCallback callback) {
     this->subscribers.push_back (std::move (callback));
 }

@@ -49,13 +49,6 @@ Renderer::Renderer (std::shared_ptr <VulkanContext> context, std::shared_ptr <Re
         , VK_SHADER_STAGE_ALL
         , this->render_target->get_extent ()
         , this->render_target->get_max_frames_in_flight ());
-
-    if (auto presentation_render_target = std::dynamic_pointer_cast <PresentationRenderTarget> (this->render_target)) {
-        auto resize = [&] () {
-            this->resize ();
-        };
-        presentation_render_target->register_resizable (resize);
-    }
 }
 
 Renderer::~Renderer () {

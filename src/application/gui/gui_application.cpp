@@ -15,15 +15,14 @@
 
 namespace sdf_raster {
 
-GUIApplication::GUIApplication (const SessionState& session)
-    : user_data ({this}) {
+GUIApplication::GUIApplication (SessionState& session)
+    : session (session)
+    , user_data ({this}) {
     try {
-        this->settings = session.settings;
-
         init_window ();
         init_vulkan ();
         init_renderer ();
-        init_scene_manager (session);
+        init_scene_manager ();
         init_gui ();
     } catch (...) {
         cleanup ();
@@ -32,17 +31,18 @@ GUIApplication::GUIApplication (const SessionState& session)
 }
 
 GUIApplication::~GUIApplication () {
-    this->settings.window_maximized = glfwGetWindowAttrib (this->window, GLFW_MAXIMIZED);
-    glfwGetWindowSize (window, &this->settings.window_width, &this->settings.window_height);
+    this->session.settings.window_maximized = glfwGetWindowAttrib (this->window, GLFW_MAXIMIZED);
+    glfwGetWindowSize (window, &this->session.settings.window_width, &this->session.settings.window_height);
     glfwSetWindowShouldClose (this->window, true);
 
     {
-        this->settings.frustum_view = false;
+        this->session.settings.frustum_view = false;
         if (this->renderer) {
             this->renderer.reset ();
         }
     }
 
+    this->session.scene_states = this->scene_manager->get_all_states ();
     this->scene_manager.reset ();
 
     cleanup ();
@@ -70,10 +70,10 @@ void GUIApplication::run () {
                 continue;
             }
 
-            gui::update (this->settings, this->renderer->get_stats ());
+            gui::update (this->session.settings, this->renderer->get_stats ());
 
             this->renderer->process_commands (this->render_commands, this->render_command_mutex);
-            this->renderer->update (i, this->settings);
+            this->renderer->update (i, this->session.settings);
 
             this->renderer->render (cmd_buff);
             gui::draw (this->presentation_render_target->get_swapchain_image_index (), cmd_buff);
@@ -91,8 +91,8 @@ void GUIApplication::init_window () {
     glfwWindowHint (GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint (GLFW_RESIZABLE, GLFW_TRUE);
 
-    this->window = glfwCreateWindow (this->settings.window_width, this->settings.window_height, APP_NAME, nullptr, nullptr);
-    if (this->settings.window_maximized) {
+    this->window = glfwCreateWindow (this->session.settings.window_width, this->session.settings.window_height, APP_NAME, nullptr, nullptr);
+    if (this->session.settings.window_maximized) {
         glfwMaximizeWindow (this->window);
     }
     if (!this->window) {
@@ -104,7 +104,7 @@ void GUIApplication::init_window () {
     glfwSetFramebufferSizeCallback (this->window, framebuffer_resize_callback);
     glfwSetMouseButtonCallback (this->window, mouse_button_callback);
 
-    this->settings.disabled_cursor = false;
+    this->session.settings.disabled_cursor = false;
 }
 
 void GUIApplication::init_vulkan () {
@@ -113,7 +113,9 @@ void GUIApplication::init_vulkan () {
     }
     this->vulkan_context = std::make_shared <VulkanContext> ();
     this->vulkan_context->init ();
+}
 
+void GUIApplication::init_renderer () {
     this->presentation_render_target = std::make_shared <PresentationRenderTarget> (this->vulkan_context, this->window);
 
     auto resize_camera = [&] () {
@@ -127,15 +129,17 @@ void GUIApplication::init_vulkan () {
     };
 
     auto resize_gui = [&] () {
-        gui::cleanup (this->settings);
+        gui::cleanup (this->session.settings);
         init_gui ();
+    };
+
+    auto resize_renderer = [&] () {
+        this->renderer->resize ();
     };
 
     this->presentation_render_target->register_resizable (resize_camera);
     this->presentation_render_target->register_resizable (resize_gui);
-}
-
-void GUIApplication::init_renderer () {
+    this->presentation_render_target->register_resizable (resize_renderer);
     this->renderer = std::make_unique <Renderer> (this->vulkan_context, this->presentation_render_target);
 }
 
@@ -152,28 +156,33 @@ void GUIApplication::init_gui () {
         .surface_format = this->presentation_render_target->get_image_format (),
     };
 
-    gui::init (vulkan_context, scene_manager, init_info, this->settings);
+    gui::init (vulkan_context, scene_manager, init_info, this->session.settings);
 }
 
-void GUIApplication::init_scene_manager (const SessionState& session) {
+void GUIApplication::init_scene_manager () {
     this->scene_manager = std::make_unique <SceneManager> ();
     this->scene_manager->register_scene_type <ObjScene> (".obj");
     this->scene_manager->register_scene_type <SComTreeScene> (".scomtree");
     this->scene_manager->register_scene_type <SdfOctreeScene> (".octree");
 
     this->scene_manager->subscribe ([this] (SceneEventType type, const std::filesystem::path& path) {
+        if (type == SceneEventType::LOADED) {
+            this->session.current_scene_path = this->scene_manager->get_current_scene_path ();
+        } else if (type == SceneEventType::UNLOADED) {
+            this->session.current_scene_path = std::nullopt;
+        }
         this->on_scene_event (type, path);
     });
 
-    this->scene_manager->restore_states (session.scene_states);
+    this->scene_manager->restore_states (this->session.scene_states);
 
     if (session.current_scene_path.has_value ()) {
-        this->scene_manager->load_scene (*session.current_scene_path);
+        this->scene_manager->load_scene (*this->session.current_scene_path);
     }
 }
 
 void GUIApplication::cleanup () {
-    gui::cleanup (this->settings);
+    gui::cleanup (this->session.settings);
 
     if (this->renderer) {
         this->renderer.reset ();
@@ -203,15 +212,15 @@ void GUIApplication::mouse_button_callback (GLFWwindow* window, int button, int 
     GUIApplication* app = get_app_ptr (window);
     if (!app) return;
 
-    if (app->settings.disabled_cursor) {
+    if (app->session.settings.disabled_cursor) {
         if ((button == GLFW_MOUSE_BUTTON_RIGHT || button == GLFW_MOUSE_BUTTON_LEFT) && action == GLFW_PRESS) {
-            app->settings.disabled_cursor = false;
+            app->session.settings.disabled_cursor = false;
             glfwSetInputMode (window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             LOG_INFO ("Exited camera mode. Cursor NORMAL.");
         }
     } else {
         if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
-            app->settings.disabled_cursor = true;
+            app->session.settings.disabled_cursor = true;
             glfwSetInputMode (window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             LOG_INFO ("Entered camera mode. Cursor DISABLED.");
         }

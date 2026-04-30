@@ -22,7 +22,7 @@ namespace sdf_raster {
 
 class GUIApplication {
 public:
-    explicit GUIApplication (const SessionState& session);
+    explicit GUIApplication (SessionState& session);
     ~GUIApplication ();
 
     void run ();
@@ -33,7 +33,7 @@ private:
     void init_vulkan ();
     void init_window ();
     void init_gui ();
-    void init_scene_manager (const SessionState& session);
+    void init_scene_manager ();
 
     static GUIApplication* get_app_ptr (GLFWwindow* window);
     static void framebuffer_resize_callback (GLFWwindow* window, int width, int height);
@@ -44,8 +44,8 @@ private:
 private:
     GLFWwindow* window;
 
-    Settings settings;
     SdfOctree scene;
+    SessionState& session;
 
     struct UserData {
         GUIApplication* app;

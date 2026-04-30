@@ -60,6 +60,8 @@ public:
 
     std::shared_ptr <Scene> get_scene ();
 
+    [[nodiscard]] std::optional <std::filesystem::path> get_current_scene_path () const;
+
     [[nodiscard]] bool is_loading_scene () const noexcept {
         return is_loading.load (std::memory_order_acquire);
     }

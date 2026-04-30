@@ -176,11 +176,11 @@ void ForwardShading::create_framebuffers () {
 
     VkFramebufferCreateInfo fb_ci {
         .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .attachmentCount = static_cast <uint32_t> (attachments.size ()),
+        .pAttachments = attachments.data (),
         .width = extent.width,
         .height = extent.height,
         .layers = 1,
-        .attachmentCount = static_cast <uint32_t> (attachments.size ()),
-        .pAttachments = attachments.data ()
     };
 
     this->main.framebuffer.resize (image_count);

@@ -12,8 +12,13 @@ void dump_session (const SessionState& session, const std::string& filename) {
     try {
         json j = session;
         std::ofstream file (filename);
-        if (file.is_open ()) {
+        if (file.is_open()) {
             file << j.dump (4);
+            if (!file.good ()) {
+                LOG_ERROR ("Failed to write session file: {}", filename);
+            }
+        } else {
+            LOG_ERROR ("Failed to open session file for writing: {}", filename);
         }
     } catch (const json::exception& e) {
         LOG_ERROR ("JSON session dump error: {}", e.what ());

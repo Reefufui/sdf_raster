@@ -42,6 +42,7 @@ public:
     void process_commands (std::queue <std::function<void()>>& commands, std::mutex& mutex);
     void apply_scene_config (std::shared_ptr <Scene> scene);
     const Stats& get_stats ();
+    void resize ();
 
 private:
     void init_push_constants ();
@@ -63,8 +64,6 @@ private:
 
     void destroy_pipelines ();
     void create_required_pipelines ();
-
-    void resize ();
 
     void init_frustum_demo_pipeline ();
 

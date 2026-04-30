@@ -1,7 +1,7 @@
 // application/gui/imgui_overlay.hpp
 #pragma once
 
-#include "engine/renderer.hpp"
+#include "state.hpp"
 #include "vulkan/vulkan_context.hpp"
 
 #include <vector>

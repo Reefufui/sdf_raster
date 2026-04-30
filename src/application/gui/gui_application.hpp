@@ -4,7 +4,6 @@
 #include "presentation_render_target.hpp"
 
 #include "engine/camera.hpp"
-#include "engine/renderer.hpp"
 #include "engine/sdf_rasterizer.hpp"
 #include "scenes/base/scene_manager.hpp"
 #include "scenes/octree/octree.hpp"
@@ -13,6 +12,7 @@
 
 #include <GLFW/glfw3.h>
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -55,9 +55,9 @@ private:
     std::shared_ptr <PresentationRenderTarget> presentation_render_target;
     std::shared_ptr <SceneManager> scene_manager;
 
-    std::unique_ptr <Renderer> renderer;
+    std::unique_ptr <SDFRasterizer> renderer;
     std::mutex render_command_mutex;
-    std::queue <RenderCommand> render_commands;
+    std::queue <std::function<void()>> render_commands;
 };
 
 }

@@ -4,7 +4,6 @@
 #include "deferred_shading.hpp"
 #include "forward_shading.hpp"
 #include "render_target.hpp"
-#include "renderer.hpp"
 
 #include "data/mesh.hpp"
 #include "resources/active_leafs.hpp"
@@ -25,6 +24,7 @@
 
 #include <functional>
 #include <memory>
+#include <queue>
 #include <mutex>
 #include <string_view>
 #include <string>
@@ -32,18 +32,18 @@
 
 namespace sdf_raster {
 
-class SDFRasterizer : public Renderer {
+class SDFRasterizer {
 public:
     SDFRasterizer (std::shared_ptr <VulkanContext> context, std::shared_ptr <RenderTarget> render_target);
     ~SDFRasterizer ();
 
-    void init () override;
-    void update (uint32_t frame_index, Settings& settings) override;
-    void render (VkCommandBuffer cmd_buff) override;
-    void shutdown () override;
-    void process_commands (std::queue <RenderCommand>& commands, std::mutex& mutex) override;
+    void init ();
+    void update (uint32_t frame_index, Settings& settings);
+    void render (VkCommandBuffer cmd_buff);
+    void shutdown ();
+    void process_commands (std::queue <std::function<void()>>& commands, std::mutex& mutex);
     void apply_scene_config (std::shared_ptr <Scene> scene);
-    const Stats& get_stats () override;
+    const Stats& get_stats ();
 
 private:
     void init_push_constants ();

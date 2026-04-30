@@ -234,10 +234,8 @@ void GUIApplication::on_scene_event (SceneEventType type, const std::filesystem:
     auto enqueue_render_config = [this] () {
         std::shared_ptr <Scene> scene = this->scene_manager->get_scene ();
         if (scene) {
-            RenderCommand command = [scene] (Renderer* renderer) {
-                if (SDFRasterizer* sdf_rasterizer = dynamic_cast <SDFRasterizer*> (renderer)) {
-                    sdf_rasterizer->apply_scene_config (scene);
-                }
+            std::function<void()> command = [this, scene] () {
+                this->renderer->apply_scene_config (scene);
             };
             std::lock_guard lock (this->render_command_mutex);
             this->render_commands.push (std::move (command));

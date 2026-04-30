@@ -2117,8 +2117,8 @@ const Stats& SDFRasterizer::get_stats () {
     return this->stats;
 }
 
-void SDFRasterizer::process_commands (std::queue <RenderCommand>& commands, std::mutex& mutex) {
-    std::queue <RenderCommand> local_commands;
+void SDFRasterizer::process_commands (std::queue <std::function<void()>>& commands, std::mutex& mutex) {
+    std::queue <std::function<void()>> local_commands;
     {
         std::lock_guard lock (mutex);
         if (commands.empty ()) return;
@@ -2130,9 +2130,9 @@ void SDFRasterizer::process_commands (std::queue <RenderCommand>& commands, std:
     }
 
     while (!local_commands.empty ()) {
-        RenderCommand& cmd_func = local_commands.front ();
+        auto& cmd_func = local_commands.front ();
         if (cmd_func) {
-            cmd_func (dynamic_cast <Renderer*> (this));
+            cmd_func ();
         }
 
         local_commands.pop ();

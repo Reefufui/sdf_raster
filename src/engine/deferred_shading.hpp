@@ -2,7 +2,7 @@
 #pragma once
 
 #include "shader_common.hpp" // DeferredLightingPushConstants
-#include "vulkan/presentation/presentation_context.hpp"
+#include "vulkan/presentation/render_target.hpp"
 
 #include <vk_descriptor_sets.h> // DescriptorMaker
 #include <vk_images.h> // VulkanImageMem
@@ -18,7 +18,7 @@ struct DeferredShadingConfig {
 class DeferredShading {
 public:
     DeferredShading (VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue queue
-        , const DeferredShadingConfig& config, std::shared_ptr <sdf_raster::PresentationContext> a_presentation);
+        , const DeferredShadingConfig& config, std::shared_ptr <sdf_raster::RenderTarget> a_render_target);
     ~DeferredShading ();
 
     DeferredShading (const DeferredShading&) = delete;
@@ -31,8 +31,8 @@ public:
     VkRenderPass get_lighting_pass () const { return this->lighting_pass; }
     VkRenderPass get_render_pass_after () const { return this->after_pass; }
     VkFramebuffer get_gbuffer_fb () const { return this->g_buffer_framebuffer; }
-    VkFramebuffer get_lighting_fb (uint32_t swap_index) const { return this->lighting_framebuffers [swap_index]; }
-    VkFramebuffer get_framebuffer_after (uint32_t swap_index) const { return this->after_framebuffers [swap_index]; }
+    VkFramebuffer get_lighting_fb (uint32_t image_index) const { return this->lighting_framebuffers [image_index]; }
+    VkFramebuffer get_framebuffer_after (uint32_t image_index) const { return this->after_framebuffers [image_index]; }
     VkDescriptorSet get_descriptor_set () const { return this->descriptor_set; }
     VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
     DeferredLightingPushConstants& push_constants_ref () { return this->push_constants; }
@@ -52,7 +52,7 @@ private:
     std::vector <vk_utils::VulkanImageMem> g_buffer; // NOTE: Pos, Norm, Albedo, Depth
     VkFramebuffer g_buffer_framebuffer = VK_NULL_HANDLE;
 
-    std::vector <VkFramebuffer> lighting_framebuffers; // NOTE: Swapchain count
+    std::vector <VkFramebuffer> lighting_framebuffers; // NOTE: Output image count
     std::vector <VkFramebuffer> after_framebuffers; // NOTE: In-Flight count
 
     VkSampler sampler = VK_NULL_HANDLE;
@@ -62,6 +62,6 @@ private:
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
     DeferredLightingPushConstants push_constants;
-    std::shared_ptr <sdf_raster::PresentationContext> presentation_context;
+    std::shared_ptr <sdf_raster::RenderTarget> render_target;
 };
 

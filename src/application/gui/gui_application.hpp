@@ -8,6 +8,7 @@
 #include "../../engine/sdf_rasterizer.hpp"
 #include "../../state.hpp"
 #include "../../vulkan/context/vulkan_context.hpp"
+#include "../../vulkan/presentation/presentation_render_target.hpp"
 
 #include <GLFW/glfw3.h>
 
@@ -50,7 +51,7 @@ private:
     } user_data;
 
     std::shared_ptr <VulkanContext> vulkan_context;
-    std::shared_ptr <PresentationContext> presentation_context;
+    std::shared_ptr <PresentationRenderTarget> presentation_context;
     std::shared_ptr <SceneManager> scene_manager;
 
     std::unique_ptr <Renderer> renderer;

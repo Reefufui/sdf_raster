@@ -65,14 +65,14 @@ VkRenderPass create_gbuffer_render_pass (VkDevice device, std::vector <VkFormat>
     return rp;
 }
 
-VkRenderPass create_lighting_render_pass (VkDevice device, VkFormat swapchain_format) {
+VkRenderPass create_lighting_render_pass (VkDevice device, VkFormat output_format, VkImageLayout output_final_layout) {
     VkAttachmentDescription swap_attachment {
-        .format = swapchain_format,
+        .format = output_format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+        .finalLayout = output_final_layout
     };
 
     VkAttachmentReference color_ref {
@@ -112,17 +112,17 @@ VkRenderPass create_lighting_render_pass (VkDevice device, VkFormat swapchain_fo
     return rp;
 }
 
-VkRenderPass create_after_render_pass (VkDevice device, VkFormat depth_format, VkFormat swapchain_format) {
+VkRenderPass create_after_render_pass (VkDevice device, VkFormat depth_format, VkFormat output_format, VkImageLayout output_final_layout) {
     std::array <VkAttachmentDescription, 2> attachments = {{
         {
-            .format = swapchain_format,
+            .format = output_format,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VK_ATTACHMENT_LOAD_OP_NONE,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
             .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+            .initialLayout = output_final_layout,
+            .finalLayout = output_final_layout
         },
         {
             .format = depth_format,
@@ -340,31 +340,31 @@ void warmup_gbuffer_images (VkDevice device, VkCommandPool command_pool, VkQueue
 }
 
 DeferredShading::DeferredShading (VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue queue
-    , const DeferredShadingConfig& config, std::shared_ptr <sdf_raster::PresentationContext> a_presentation) : device (device)
-    , presentation_context (std::move (a_presentation)) {
-    VkExtent2D extent = this->presentation_context->get_extent ();
+    , const DeferredShadingConfig& config, std::shared_ptr <sdf_raster::RenderTarget> a_render_target) : device (device)
+    , render_target (std::move (a_render_target)) {
+    VkExtent2D extent = this->render_target->get_extent ();
     VkFormat depth_format;
     if (!vk_utils::getSupportedDepthFormat (physical_device, {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &depth_format)) {
         throw std::runtime_error ("couldn't find supported depth format");
     }
 
     this->gbuffer_pass = create_gbuffer_render_pass (device, config.gbuffer_formats, depth_format);
-    this->lighting_pass = create_lighting_render_pass (device, this->presentation_context->get_swapchain_image_format ());
-    this->after_pass = create_after_render_pass (device, depth_format, this->presentation_context->get_swapchain_image_format ());
+    this->lighting_pass = create_lighting_render_pass (device, this->render_target->get_image_format (), this->render_target->get_output_final_layout ());
+    this->after_pass = create_after_render_pass (device, depth_format, this->render_target->get_image_format (), this->render_target->get_output_final_layout ());
 
     this->g_buffer = create_gbuffer_images (device, physical_device, extent, config.gbuffer_formats, depth_format);
     this->g_buffer_framebuffer = create_gbuffer_framebuffer (device, this->gbuffer_pass, extent, this->g_buffer);
     warmup_gbuffer_images (device, command_pool, queue, this->g_buffer);
 
-    uint32_t swapchain_image_count = this->presentation_context->get_swapchain_image_count ();
-    auto swapchain_views = this->presentation_context->get_swapchain_image_views ();
+    uint32_t output_image_count = this->render_target->get_image_count ();
+    auto output_views = this->render_target->get_image_views ();
 
-    this->lighting_framebuffers.resize (swapchain_image_count);
-    this->after_framebuffers.resize (swapchain_image_count);
-    for (size_t i = 0; i < swapchain_image_count; ++i) {
+    this->lighting_framebuffers.resize (output_image_count);
+    this->after_framebuffers.resize (output_image_count);
+    for (size_t i = 0; i < output_image_count; ++i) {
         assert (this->g_buffer.back ().aspectMask == VK_IMAGE_ASPECT_DEPTH_BIT && "last image of g_buffer must be depth buffer");
-        this->lighting_framebuffers [i] = create_lighting_framebuffer (device, this->lighting_pass, extent, swapchain_views [i]);
-        this->after_framebuffers [i] = create_after_framebuffer (device, this->after_pass, extent, this->g_buffer.back ().view, swapchain_views [i]);
+        this->lighting_framebuffers [i] = create_lighting_framebuffer (device, this->lighting_pass, extent, output_views [i]);
+        this->after_framebuffers [i] = create_after_framebuffer (device, this->after_pass, extent, this->g_buffer.back ().view, output_views [i]);
     }
 
     this->sampler = create_gbuffer_sampler (device, config.filter);

@@ -10,8 +10,8 @@
 
 namespace sdf_raster {
 
-ForwardShading::ForwardShading (VkDevice a_device, VkPhysicalDevice a_physical_device, std::shared_ptr <PresentationContext> a_presentation)
-    : presentation_context (std::move (a_presentation))
+ForwardShading::ForwardShading (VkDevice a_device, VkPhysicalDevice a_physical_device, std::shared_ptr <RenderTarget> a_render_target)
+    : render_target (std::move (a_render_target))
     , device (a_device) {
 
     if (!vk_utils::getSupportedDepthFormat (a_physical_device, {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &this->depth_format)) {
@@ -45,7 +45,7 @@ ForwardShading& ForwardShading::operator= (ForwardShading&& other) noexcept {
     if (this != &other) {
         this->~ForwardShading ();
 
-        this->presentation_context = std::move (other.presentation_context);
+        this->render_target = std::move (other.render_target);
         this->device = other.device;
         this->depth_format = other.depth_format;
         this->depth_buffer = std::move (other.depth_buffer);
@@ -65,14 +65,14 @@ void ForwardShading::create_render_passes () {
 
 VkRenderPass ForwardShading::create_render_pass (VkAttachmentLoadOp load_op) {
     VkAttachmentDescription color_attachment {
-        .format = this->presentation_context->get_swapchain_image_format (),
+        .format = this->render_target->get_image_format (),
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = load_op,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+        .finalLayout = this->render_target->get_output_final_layout ()
     };
 
     VkAttachmentReference color_attachment_ref {
@@ -145,7 +145,7 @@ VkRenderPass ForwardShading::create_render_pass (VkAttachmentLoadOp load_op) {
 void ForwardShading::create_depth_buffer (VkPhysicalDevice a_physical_device) {
     assert (this->depth_format != VK_FORMAT_UNDEFINED);
 
-    const auto extent = this->presentation_context->get_extent ();
+    const auto extent = this->render_target->get_extent ();
     assert (extent.width > 0 && extent.height > 0);
 
     this->depth_buffer.format = this->depth_format;
@@ -171,8 +171,8 @@ void ForwardShading::create_depth_buffer (VkPhysicalDevice a_physical_device) {
 void ForwardShading::create_framebuffers () {
     std::array <VkImageView, 2> attachments = {VK_NULL_HANDLE, this->depth_buffer.view};
 
-    const auto extent = this->presentation_context->get_extent ();
-    const uint32_t image_count = this->presentation_context->get_swapchain_image_count ();
+    const auto extent = this->render_target->get_extent ();
+    const uint32_t image_count = this->render_target->get_image_count ();
 
     VkFramebufferCreateInfo fb_ci {
         .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -186,9 +186,9 @@ void ForwardShading::create_framebuffers () {
     this->main.framebuffer.resize (image_count);
     this->after.framebuffer.resize (image_count);
 
-    auto swapchain_views = this->presentation_context->get_swapchain_image_views ();
+    auto output_views = this->render_target->get_image_views ();
     for (uint32_t i = 0; i < image_count; i++) {
-        attachments [0] = swapchain_views [i];
+        attachments [0] = output_views [i];
 
         fb_ci.renderPass = this->main.render_pass;
         VK_CHECK_RESULT (vkCreateFramebuffer (this->device, &fb_ci, nullptr, &this->main.framebuffer [i]));

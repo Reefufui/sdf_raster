@@ -122,7 +122,7 @@ void GUIApplication::init_vulkan () {
     this->vulkan_context = std::make_shared <VulkanContext> ();
     this->vulkan_context->init ();
 
-    this->presentation_context = std::make_shared <PresentationContext> (this->vulkan_context, this->window);
+    this->presentation_context = std::make_shared <PresentationRenderTarget> (this->vulkan_context, this->window);
 
     auto resize_camera = [&] () {
         const auto extent = this->presentation_context->get_extent ();
@@ -156,9 +156,9 @@ void GUIApplication::init_gui () {
         .physical_device = this->vulkan_context->get_physical_device (),
         .graphics_queue = this->vulkan_context->get_graphics_queue (),
         .graphics_queue_family_index = this->vulkan_context->get_graphics_queue_family_index (),
-        .swapchain_image_views = this->presentation_context->get_swapchain_image_views (),
+        .swapchain_image_views = this->presentation_context->get_image_views (),
         .surface_extent = this->presentation_context->get_extent (),
-        .surface_format = this->presentation_context->get_swapchain_image_format (),
+        .surface_format = this->presentation_context->get_image_format (),
     };
 
     gui::init (vulkan_context, scene_manager, init_info, this->settings);

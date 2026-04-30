@@ -3,7 +3,7 @@
 
 #include "deferred_shading.hpp"
 #include "forward_shading.hpp"
-#include "vulkan/presentation/presentation_context.hpp"
+#include "vulkan/presentation/render_target.hpp"
 #include "renderer.hpp"
 #include "scenes/base/scene.hpp"
 #include "shader_common.hpp"
@@ -36,7 +36,7 @@ namespace sdf_raster {
 
 class SDFRasterizer : public Renderer {
 public:
-    SDFRasterizer (std::shared_ptr <VulkanContext> a_core, std::shared_ptr <PresentationContext> a_presentation);
+    SDFRasterizer (std::shared_ptr <VulkanContext> a_core, std::shared_ptr <RenderTarget> a_presentation);
     ~SDFRasterizer ();
 
     void init () override;
@@ -64,6 +64,9 @@ private:
     // TODO: ^^^^
     void init_mesh_shading_octree_pipeline ();
     void init_mesh_shading_scomtree_pipeline ();
+
+    void destroy_pipelines ();
+    void create_required_pipelines ();
 
     void register_resizable ();
 
@@ -96,7 +99,7 @@ private:
     void hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src_base, LayoutStageAccess dst_base, LayoutStageAccess src_levels, LayoutStageAccess dst_levels);
 
     std::shared_ptr <VulkanContext> context {nullptr};
-    std::shared_ptr <PresentationContext> presentation_context {nullptr};
+    std::shared_ptr <RenderTarget> render_target {nullptr};
 
     std::unique_ptr <SComTreeTreeDescriptorSetInfo> sdf_scomtree_ds {};
     std::unique_ptr <SdfOctreeDescriptorSetInfo> sdf_octree_ds {};

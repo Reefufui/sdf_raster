@@ -158,7 +158,8 @@ add_executable(${PROJECT_NAME}
     src/engine/sdf_rasterizer.cpp
     src/state.cpp
     src/vulkan/context/vulkan_context.cpp
-    src/vulkan/presentation/presentation_context.cpp
+    src/vulkan/presentation/presentation_render_target.cpp
+    src/vulkan/presentation/offscreen_render_target.cpp
 
     src/scenes/obj/obj.cpp
     src/scenes/octree/octree.cpp

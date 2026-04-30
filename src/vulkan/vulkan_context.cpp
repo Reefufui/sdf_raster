@@ -92,9 +92,11 @@ void VulkanContext::create_instance () {
     instance_extensions.push_back (VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
     instance_extensions.push_back (VK_KHR_SURFACE_EXTENSION_NAME);
-#ifdef __APPLE__
+#if defined (__APPLE__)
     instance_extensions.push_back (VK_EXT_METAL_SURFACE_EXTENSION_NAME);
     instance_extensions.push_back (VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+#elif defined (__linux__)
+    instance_extensions.push_back ("VK_KHR_xcb_surface");
 #endif
 
     void* pNext = nullptr;

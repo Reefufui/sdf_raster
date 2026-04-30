@@ -22,7 +22,7 @@ namespace sdf_raster {
 
 class GUIApplication {
 public:
-    GUIApplication ();
+    explicit GUIApplication (const SessionState& session);
     ~GUIApplication ();
 
     void run ();

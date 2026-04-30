@@ -13,8 +13,9 @@
 
 namespace sdf_raster {
 
-CLIApplication::CLIApplication (int argc_, char* argv_[])
-    : argc (argc_)
+CLIApplication::CLIApplication (const SessionState& session, int argc_, char* argv_[])
+    : session (session)
+    , argc (argc_)
     , argv (argv_) {}
 
 int CLIApplication::run () {
@@ -34,9 +35,6 @@ BenchmarkConfig CLIApplication::parse_args (int argc, char* argv[]) {
 }
 
 void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
-    SessionState session;
-    load_session (session, "/tmp/sdf_raster.json"); // TODO: fill from config
-
     LOG_INFO ("[Benchmark] Starting with resolution {}x{}, {} warmup frames, {} measurement frames",
               config.width, config.height, config.warmup_frames, config.measurement_frames);
 
@@ -67,7 +65,7 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
             throw std::runtime_error ("[Benchmark] begin_frame returned VK_NULL_HANDLE.");
         }
 
-        renderer->update (frame, session.settings);
+        renderer->update (frame, this->session.settings);
         renderer->render (cmd_buff);
 
         render_target->end_frame (cmd_buff, frame_idx);

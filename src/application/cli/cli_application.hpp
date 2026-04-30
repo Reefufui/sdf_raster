@@ -3,6 +3,7 @@
 
 #include "offscreen_render_target.hpp"
 
+#include "state.hpp"
 #include "vulkan/vulkan_context.hpp"
 
 #include <nlohmann/json.hpp>
@@ -28,7 +29,7 @@ struct BenchmarkConfig {
 
 class CLIApplication {
 public:
-    explicit CLIApplication (int argc, char* argv[]);
+    explicit CLIApplication (const SessionState& session, int argc, char* argv[]);
     int run ();
 
 private:
@@ -40,6 +41,7 @@ private:
     void drain_pending_frames (std::shared_ptr <OffscreenRenderTarget> render_target);
     void run_benchmark (const BenchmarkConfig& config);
 
+    SessionState session;
     int argc = 0;
     char** argv = nullptr;
 };

@@ -15,11 +15,9 @@
 
 namespace sdf_raster {
 
-GUIApplication::GUIApplication ()
+GUIApplication::GUIApplication (const SessionState& session)
     : user_data ({this}) {
     try {
-        SessionState session;
-        load_session (session, "/tmp/sdf_raster.json");
         this->settings = session.settings;
 
         init_window ();
@@ -45,14 +43,6 @@ GUIApplication::~GUIApplication () {
         }
     }
 
-    SessionState session_to_save;
-    session_to_save.settings = this->settings;
-    session_to_save.scene_states = this->scene_manager->get_all_states ();
-    if (auto scene = this->scene_manager->get_scene ()) {
-        session_to_save.current_scene_path = scene->get_state ().path;
-    }
-
-    dump_session (session_to_save, "/tmp/sdf_raster.json");
     this->scene_manager.reset ();
 
     cleanup ();

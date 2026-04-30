@@ -35,9 +35,6 @@ public:
     virtual VkCommandBuffer begin_frame (uint32_t frame_idx) = 0;
     virtual void end_frame (VkCommandBuffer cmd_buff, uint32_t frame_idx) = 0;
 
-    virtual void register_resizable (std::function <void ()> callback) = 0;
-    virtual void set_resized_flag () {}
-
     virtual uint32_t get_current_image_index () const { return 0; }
 
 protected:

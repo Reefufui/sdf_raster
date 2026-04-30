@@ -31,8 +31,6 @@ public:
     VkCommandBuffer begin_frame (uint32_t frame_idx) override;
     void end_frame (VkCommandBuffer cmd_buff, uint32_t frame_idx) override;
 
-    void register_resizable (std::function <void ()> callback) override;
-
     std::span <const double> get_gpu_times_ns () const;
     double get_timestamp_period () const;
     void clear_gpu_times ();

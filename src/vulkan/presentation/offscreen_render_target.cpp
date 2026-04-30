@@ -305,8 +305,4 @@ void OffscreenRenderTarget::clear_gpu_times () {
     this->gpu_times_ns.clear ();
 }
 
-void OffscreenRenderTarget::register_resizable (std::function <void ()> callback) {
-    this->resizable_callbacks.push_back (std::move (callback));
-}
-
 } // namespace sdf_raster

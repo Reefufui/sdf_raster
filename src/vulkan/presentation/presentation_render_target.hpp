@@ -44,10 +44,10 @@ public:
     inline uint32_t get_current_image_index () const override { return this->acquired_image_index; }
     inline uint32_t get_swapchain_image_index () const { return this->acquired_image_index; }
 
-    inline void register_resizable (std::function <void ()> a_func) override {
+    inline void register_resizable (std::function <void ()> a_func) {
         this->resizable_callbacks.push_back (a_func);
     }
-    inline void set_resized_flag () override { this->framebuffer_resized = true; }
+    inline void set_resized_flag () { this->framebuffer_resized = true; }
 
     inline VkQueue get_present_queue () const { return this->present_queue; }
     inline VkPhysicalDevice get_physical_device () const { return this->context->get_physical_device (); }

@@ -63,7 +63,7 @@ void GUIApplication::run () {
     }
 
     try {
-        const uint32_t frames_in_flight = this->presentation_context->get_max_frames_in_flight ();
+        const uint32_t frames_in_flight = this->presentation_render_target->get_max_frames_in_flight ();
         for (uint32_t i = 0; !glfwWindowShouldClose (this->window); i = (i + 1) % frames_in_flight) {
             glfwPollEvents ();
 
@@ -73,7 +73,7 @@ void GUIApplication::run () {
                 continue;
             }
 
-            auto cmd_buff = this->presentation_context->begin_frame (i);
+            auto cmd_buff = this->presentation_render_target->begin_frame (i);
             if (cmd_buff == VK_NULL_HANDLE) {
                 continue;
             }
@@ -84,9 +84,9 @@ void GUIApplication::run () {
             this->renderer->update (i, this->settings);
 
             this->renderer->render (cmd_buff);
-            gui::draw (this->presentation_context->get_swapchain_image_index (), cmd_buff);
+            gui::draw (this->presentation_render_target->get_swapchain_image_index (), cmd_buff);
 
-            this->presentation_context->end_frame (cmd_buff, i);
+            this->presentation_render_target->end_frame (cmd_buff, i);
         }
     } catch (...) {
         cleanup ();
@@ -122,10 +122,10 @@ void GUIApplication::init_vulkan () {
     this->vulkan_context = std::make_shared <VulkanContext> ();
     this->vulkan_context->init ();
 
-    this->presentation_context = std::make_shared <PresentationRenderTarget> (this->vulkan_context, this->window);
+    this->presentation_render_target = std::make_shared <PresentationRenderTarget> (this->vulkan_context, this->window);
 
     auto resize_camera = [&] () {
-        const auto extent = this->presentation_context->get_extent ();
+        const auto extent = this->presentation_render_target->get_extent ();
         const float height = static_cast <float> (extent.height);
         const float width = static_cast <float> (extent.width);
         auto scene = this->scene_manager->get_scene ();
@@ -139,12 +139,12 @@ void GUIApplication::init_vulkan () {
         init_gui ();
     };
 
-    this->presentation_context->register_resizable (resize_camera);
-    this->presentation_context->register_resizable (resize_gui);
+    this->presentation_render_target->register_resizable (resize_camera);
+    this->presentation_render_target->register_resizable (resize_gui);
 }
 
 void GUIApplication::init_renderer () {
-    this->renderer = std::make_unique <SDFRasterizer> (this->vulkan_context, this->presentation_context);
+    this->renderer = std::make_unique <SDFRasterizer> (this->vulkan_context, this->presentation_render_target);
     this->renderer->init ();
 }
 
@@ -156,9 +156,9 @@ void GUIApplication::init_gui () {
         .physical_device = this->vulkan_context->get_physical_device (),
         .graphics_queue = this->vulkan_context->get_graphics_queue (),
         .graphics_queue_family_index = this->vulkan_context->get_graphics_queue_family_index (),
-        .swapchain_image_views = this->presentation_context->get_image_views (),
-        .surface_extent = this->presentation_context->get_extent (),
-        .surface_format = this->presentation_context->get_image_format (),
+        .swapchain_image_views = this->presentation_render_target->get_image_views (),
+        .surface_extent = this->presentation_render_target->get_extent (),
+        .surface_format = this->presentation_render_target->get_image_format (),
     };
 
     gui::init (vulkan_context, scene_manager, init_info, this->settings);
@@ -188,10 +188,10 @@ void GUIApplication::cleanup () {
         this->renderer->shutdown ();
     }
 
-    if (this->presentation_context) {
-        this->presentation_context->shutdown ();
+    if (this->presentation_render_target) {
+        this->presentation_render_target->shutdown ();
     }
-    this->presentation_context.reset ();
+    this->presentation_render_target.reset ();
 
     if (this->vulkan_context) {
         this->vulkan_context->shutdown ();
@@ -206,7 +206,7 @@ void GUIApplication::cleanup () {
 
 void GUIApplication::framebuffer_resize_callback (GLFWwindow* window, int, int) {
     auto app = get_app_ptr (window);
-    app->presentation_context->set_resized_flag ();
+    app->presentation_render_target->set_resized_flag ();
 }
 
 void GUIApplication::mouse_button_callback (GLFWwindow* window, int button, int action, int) {
@@ -247,7 +247,7 @@ void GUIApplication::on_scene_event (SceneEventType type, const std::filesystem:
             enqueue_render_config ();
 
             auto resize_camera = [&] () {
-                const auto extent = this->presentation_context->get_extent ();
+                const auto extent = this->presentation_render_target->get_extent ();
                 const float height = static_cast <float> (extent.height);
                 const float width = static_cast <float> (extent.width);
                 this->scene_manager->get_scene ()->get_state ().camera.set_aspect_ratio (width / height);

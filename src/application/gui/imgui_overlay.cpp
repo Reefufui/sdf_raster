@@ -423,19 +423,12 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
         this->pending_config_notify = true;
     }
 
-    ImGui::Text ("LOD distance range:");
+    ImGui::Text ("LOD threshold:");
     if (ImGui::IsItemHovered ()) {
-        ImGui::SetTooltip ("Distance range for LOD selection. Near plane=%.2f, Far plane=%.2f", scene_state.camera.get_near_plane (), scene_state.camera.get_far_plane ());
+        ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
     }
-    ImGui::DragFloatRange2 ("##LODDistance", &scene_state.min_lod_distance, &scene_state.max_lod_distance, 0.1f, scene_state.camera.get_near_plane (), scene_state.camera.get_far_plane (), "min:%.2f", "max:%.2f");
-    if (scene_state.min_lod_distance < scene_state.camera.get_near_plane ()) {
-        scene_state.min_lod_distance = scene_state.camera.get_near_plane ();
-    }
-    if (scene_state.max_lod_distance > scene_state.camera.get_far_plane ()) {
-        scene_state.max_lod_distance = scene_state.camera.get_far_plane ();
-    }
-    if (scene_state.min_lod_distance > scene_state.max_lod_distance) {
-        scene_state.min_lod_distance = scene_state.max_lod_distance;
+    if (ImGui::DragFloat ("##LODThreshold", &scene_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px")) {
+        this->pending_config_notify = true;
     }
 
     ImGui::SeparatorText ("Octree");

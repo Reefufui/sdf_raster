@@ -30,6 +30,7 @@ public:
 
     float get_near_plane () const;
     float get_far_plane () const;
+    float get_fov_y () const;
 
     void set_aspect_ratio (float aspect_ratio);
     void set_far_plane (float far_plane);

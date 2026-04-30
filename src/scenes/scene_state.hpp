@@ -34,8 +34,8 @@ struct SceneState {
     int frustum_culling_level {16};
     int occlusion_culling_level {16};
     LODMode lod_mode = LODMode::Global;
-    float min_lod_distance {0.5f};  // LOD distance range (set to near plane by default)
-    float max_lod_distance {100.f}; // LOD distance range (set to far plane by default)
+    LiteMath::float4 octree_root_center {0.0f, 0.0f, 0.0f, 0.0f};
+    float lod_threshold_pixels {2.0f};
 };
 
 constexpr std::string_view draw_method_name (DrawMethod m) {

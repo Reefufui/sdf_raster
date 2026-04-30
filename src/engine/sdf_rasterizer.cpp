@@ -5,6 +5,7 @@
 #include "scenes/obj/obj.hpp"
 #include "scenes/octree/octree.hpp"
 #include "scenes/scomtree/scomtree.hpp"
+#include "vulkan/presentation/presentation_render_target.hpp"
 
 #include <spdlog/stopwatch.h>
 #include <vk_buffers.h>
@@ -19,9 +20,9 @@ namespace sdf_raster {
 
 #define RENDERER_NAME "SDFRasterizer"
 
-SDFRasterizer::SDFRasterizer (std::shared_ptr <VulkanContext> a_core, std::shared_ptr <RenderTarget> a_presentation)
-    : context (a_core)
-    , render_target (a_presentation) {
+SDFRasterizer::SDFRasterizer (std::shared_ptr <VulkanContext> context, std::shared_ptr <RenderTarget> render_target)
+    : context (context)
+    , render_target (render_target) {
     if (!this->context) {
         throw std::invalid_argument("VulkanContext cannot be null.");
     }
@@ -54,7 +55,12 @@ void SDFRasterizer::init () {
         , this->render_target->get_extent ()
         , this->render_target->get_max_frames_in_flight ());
 
-    this->register_resizable ();
+    if (auto presentation_render_target = std::dynamic_pointer_cast <PresentationRenderTarget> (this->render_target)) {
+        auto resize = [&] () {
+            this->resize ();
+        };
+        presentation_render_target->register_resizable (resize);
+    }
 }
 
 void SDFRasterizer::destroy_pipelines () {
@@ -133,8 +139,7 @@ void SDFRasterizer::create_required_pipelines () {
     this->init_frustum_demo_pipeline ();
 }
 
-void SDFRasterizer::register_resizable () {
-    auto resize_pipelines = [&] () {
+void SDFRasterizer::resize () {
         this->destroy_pipelines ();
 
         if (this->hz_buffer_ds) {
@@ -167,9 +172,7 @@ void SDFRasterizer::register_resizable () {
         }
 
         this->create_required_pipelines ();
-    };
 
-    this->render_target->register_resizable (resize_pipelines);
 }
 
 void SDFRasterizer::init_push_constants () {
@@ -1124,8 +1127,12 @@ void SDFRasterizer::update (uint32_t frame_index, Settings& settings) {
     this->push_constants.frustum_culling_level = scene_state.frustum_culling_level;
     this->push_constants.color_leafs = settings.color_leafs;
     this->push_constants.lod_mode = (scene_state.lod_mode == LODMode::PerNode) ? 1u : 0u;
-    this->push_constants.min_lod_distance = scene_state.min_lod_distance;
-    this->push_constants.max_lod_distance = scene_state.max_lod_distance;
+    this->push_constants.root_center = scene_state.octree_root_center;
+    this->push_constants.lod_threshold_pixels = scene_state.lod_threshold_pixels;
+    this->push_constants.fov_y = scene_state.camera.get_fov_y () * (3.14159265359f / 180.0f);
+    auto extent = this->render_target->get_extent ();
+    this->push_constants.screen_width = extent.width;
+    this->push_constants.screen_height = extent.height;
     this->push_constants.max_voxel_size = 2.0f / std::pow (2.0f, scene_state.cpu_traversed);
     this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, scene_state.octree_depth);
     this->clear_color = settings.lighting.clear_color;

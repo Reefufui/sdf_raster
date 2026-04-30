@@ -83,8 +83,11 @@ struct PushConstantsData {
     alignas (4)  uint frustum_culling_level;
     alignas (4)  uint color_leafs;
     alignas (4)  uint lod_mode;  // 0 = global, 1 = per-node
-    alignas (4)  float min_lod_distance;  // LOD distance range min
-    alignas (4)  float max_lod_distance;  // LOD distance range max
+    alignas (16) float4 root_center;
+    alignas (4)  float lod_threshold_pixels;
+    alignas (4)  float fov_y;
+    alignas (4)  uint screen_width;
+    alignas (4)  uint screen_height;
     alignas (4)  float min_voxel_size;
     alignas (4)  float max_voxel_size;
 };

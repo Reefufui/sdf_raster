@@ -104,7 +104,7 @@ void dfs_octree (NodeContext root, uint lod) {
 
         float3 child_center = child_coord + float3 (child_voxel_size * 0.5f);
         uint child_lod = (pc.lod_mode == 1)
-            ? calc_lod_for_node (child_center, pc.subtree_root_level, pc.max_lod)
+            ? calc_lod_for_node (child_center, child_voxel_size, pc.subtree_root_level, pc.max_lod)
             : lod;
 
         float max_dim;
@@ -112,7 +112,7 @@ void dfs_octree (NodeContext root, uint lod) {
             continue;
         }
 
-        if (child_node.offset == 0 || dfs_root_level + dfs_level == child_lod) { // leaf
+        if (child_node.offset == 0 || dfs_root_level + dfs_level >= child_lod) { // leaf
             NodeContext context;
             context.voxel_size = child_voxel_size;
             context.min_corner_x = child_coord.x;
@@ -147,10 +147,10 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext curren
             current_context.min_corner_z + ((child_index >> 2) & 1) * node_size + node_size * 0.5f
         );
         uint node_lod = (pc.lod_mode == 1)
-            ? calc_lod_for_node (child_center, pc.subtree_root_level, pc.max_lod)
+            ? calc_lod_for_node (child_center, node_size, pc.subtree_root_level, pc.max_lod)
             : lod;
 
-        if (parent_node.offset == 0 || direct_root_level + direct_level == node_lod) {
+        if (parent_node.offset == 0 || direct_root_level + direct_level >= node_lod) {
             [unroll]
             for (; direct_level < MAX_DIRECT_DESCEND_PATH; ++direct_level) {
                 if (path [direct_level] != 0u) {
@@ -173,47 +173,35 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext curren
         }
     }
 
-    force_process_voxel = direct_root_level + MAX_DIRECT_DESCEND_PATH == lod;
+    force_process_voxel = direct_root_level + MAX_DIRECT_DESCEND_PATH >= lod;
     return true;
 }
 
-uint calc_lod_for_node (float3 node_pos, uint subtree_root_level, uint max_lod) {
-    const float min_distance = pc.min_lod_distance;
-    const float max_distance = pc.max_lod_distance;
-    const uint min_lod = subtree_root_level;
+float distance_to_aabb (float3 p, float3 aabb_min, float3 aabb_max) {
+    float3 q = max (max (aabb_min - p, 0.0f), p - aabb_max);
+    return length (q);
+}
 
-    const float distance = length (node_pos - pc.camera_pos.xyz);
+uint calc_lod_for_node (float3 node_center, float node_size, uint subtree_root_level, uint max_lod) {
+    const float half_size = node_size * 0.5f;
+    const float3 node_min = node_center - half_size;
+    const float3 node_max = node_center + half_size;
 
-    if (distance <= min_distance) {
-        return max_lod;
+    const float distance = max (distance_to_aabb (pc.camera_pos.xyz, node_min, node_max), 1e-5f);
+    const float tan_half_fov = tan (pc.fov_y * 0.5f);
+    const float projected_pixels = node_size * float (pc.screen_height)
+        / (2.0f * distance * tan_half_fov);
+
+    const float lod_threshold_pixels = pc.lod_threshold_pixels;
+    uint desired_depth = subtree_root_level;
+    if (projected_pixels > lod_threshold_pixels) {
+        desired_depth += uint (ceil (log2 (projected_pixels / lod_threshold_pixels)));
     }
-    if (distance >= max_distance) {
-        return min_lod;
-    }
-
-    const float normalized_distance = (distance - min_distance) / (max_distance - min_distance);
-    const uint lod = min_lod + uint (round ((1.f - normalized_distance) * (max_lod - min_lod)));
-
-    return lod;
+    return min (desired_depth, max_lod);
 }
 
 uint get_global_lod () {
-    const float distance = length (pc.camera_pos.xyz);
-    const float min_distance = pc.min_lod_distance;
-    const float max_distance = pc.max_lod_distance;
-    const uint min_lod = pc.subtree_root_level;
-    const uint max_lod = pc.max_lod;
-
-    if (distance < min_distance) {
-        return max_lod;
-    }
-    if (distance > max_distance) {
-        return min_lod;
-    }
-
-    const float normalized_distance = (distance - min_distance) / (max_distance - min_distance);
-    const float current_lod_float = float (min_lod) + ((1.f - normalized_distance) * (float)(max_lod - min_lod));
-    return uint (round (current_lod_float));
+    return calc_lod_for_node (pc.root_center.xyz, pc.max_voxel_size, pc.subtree_root_level, pc.max_lod);
 }
 
 [shader ("compute")]

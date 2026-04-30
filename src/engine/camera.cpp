@@ -42,6 +42,10 @@ float Camera::get_far_plane () const {
     return this->far_plane;
 }
 
+float Camera::get_fov_y () const {
+    return this->fov_y;
+}
+
 void Camera::set_aspect_ratio (float aspect_ratio) {
     this->aspect_ratio = aspect_ratio;
 }

@@ -28,6 +28,20 @@ struct adl_serializer <LiteMath::float3> {
 };
 
 template <>
+struct adl_serializer <LiteMath::float4> {
+    static void to_json (json& j, const LiteMath::float4& vec) {
+        j = {vec.x, vec.y, vec.z, vec.w};
+    }
+
+    static void from_json (const json& j, LiteMath::float4& vec) {
+        j.at (0).get_to (vec.x);
+        j.at (1).get_to (vec.y);
+        j.at (2).get_to (vec.z);
+        j.at (3).get_to (vec.w);
+    }
+};
+
+template <>
 struct adl_serializer <std::filesystem::path> {
     static void to_json (json& j, const std::filesystem::path& p) {
         j = p.string ();
@@ -81,7 +95,10 @@ struct adl_serializer <sdf_raster::SceneState> {
             {"gpu_descend", scene_state.gpu_descend},
             {"max_lod", scene_state.max_lod},
             {"frustum_culling_level", scene_state.frustum_culling_level},
-            {"occlusion_culling_level", scene_state.occlusion_culling_level}
+            {"occlusion_culling_level", scene_state.occlusion_culling_level},
+            {"lod_mode", scene_state.lod_mode},
+            {"octree_root_center", scene_state.octree_root_center},
+            {"lod_threshold_pixels", scene_state.lod_threshold_pixels}
         };
     }
 
@@ -96,6 +113,9 @@ struct adl_serializer <sdf_raster::SceneState> {
         j.at ("max_lod").get_to (scene_state.max_lod);
         j.at ("frustum_culling_level").get_to (scene_state.frustum_culling_level);
         j.at ("occlusion_culling_level").get_to (scene_state.occlusion_culling_level);
+        j.at ("lod_mode").get_to (scene_state.lod_mode);
+        j.at ("octree_root_center").get_to (scene_state.octree_root_center);
+        j.at ("lod_threshold_pixels").get_to (scene_state.lod_threshold_pixels);
     }
 };
 

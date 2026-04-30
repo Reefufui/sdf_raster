@@ -36,7 +36,7 @@ namespace sdf_raster {
 
 class SDFRasterizer : public Renderer {
 public:
-    SDFRasterizer (std::shared_ptr <VulkanContext> a_core, std::shared_ptr <RenderTarget> a_presentation);
+    SDFRasterizer (std::shared_ptr <VulkanContext> context, std::shared_ptr <RenderTarget> render_target);
     ~SDFRasterizer ();
 
     void init () override;
@@ -68,7 +68,7 @@ private:
     void destroy_pipelines ();
     void create_required_pipelines ();
 
-    void register_resizable ();
+    void resize ();
 
     void init_frustum_demo_pipeline ();
 

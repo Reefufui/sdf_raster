@@ -157,7 +157,7 @@ add_executable(${PROJECT_NAME}
     src/data/mesh.cpp
     src/engine/sdf_rasterizer.cpp
     src/state.cpp
-    src/vulkan/context/vulkan_context.cpp
+    src/vulkan/vulkan_context.cpp
     src/application/gui/presentation_render_target.cpp
     src/application/cli/offscreen_render_target.cpp
 

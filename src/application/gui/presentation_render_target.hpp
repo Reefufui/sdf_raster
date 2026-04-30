@@ -1,12 +1,12 @@
 // application/gui/presentation_render_target.hpp
 #pragma once
 
-#include "../../vulkan/context/vulkan_context.hpp"
-#include "vk_images.h"
-#include "vk_swapchain.h"
-#include "../../engine/render_target.hpp"
+#include "engine/render_target.hpp"
+#include "vulkan/vulkan_context.hpp"
 
 #include <GLFW/glfw3.h>
+#include <vk_images.h>
+#include <vk_swapchain.h>
 
 #include <functional>
 #include <memory>

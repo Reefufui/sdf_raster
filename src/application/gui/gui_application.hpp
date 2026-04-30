@@ -1,14 +1,15 @@
 // application/gui/gui_application.hpp
 #pragma once
 
-#include "../../engine/camera.hpp"
-#include "../../engine/renderer.hpp"
-#include "../../scenes/base/scene_manager.hpp"
-#include "../../scenes/octree/octree.hpp"
-#include "../../engine/sdf_rasterizer.hpp"
-#include "../../state.hpp"
-#include "../../vulkan/context/vulkan_context.hpp"
 #include "presentation_render_target.hpp"
+
+#include "engine/camera.hpp"
+#include "engine/renderer.hpp"
+#include "engine/sdf_rasterizer.hpp"
+#include "scenes/base/scene_manager.hpp"
+#include "scenes/octree/octree.hpp"
+#include "state.hpp"
+#include "vulkan/vulkan_context.hpp"
 
 #include <GLFW/glfw3.h>
 

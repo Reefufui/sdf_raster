@@ -3,33 +3,31 @@
 
 #include "deferred_shading.hpp"
 #include "forward_shading.hpp"
-#include "engine/render_target.hpp"
+#include "render_target.hpp"
 #include "renderer.hpp"
-#include "scenes/base/scene.hpp"
-#include "shader_common.hpp"
-#include "state.hpp"
-#include "vk_descriptor_sets.h"
-#include "vulkan/context/vulkan_context.hpp"
 
+#include "data/mesh.hpp"
+#include "resources/active_leafs.hpp"
+#include "resources/dummy_ds.hpp"
 #include "resources/frustum.hpp"
 #include "resources/hz_buffer.hpp"
-#include "resources/dummy_ds.hpp"
 #include "resources/indirect_dispatch.hpp"
 #include "resources/lod.hpp"
 #include "resources/marching_cubes_lookup_table.hpp"
-#include "data/mesh.hpp"
 #include "resources/sdf_octree.hpp"
 #include "resources/sdf_scomtree.hpp"
-#include "resources/active_leafs.hpp"
+#include "scenes/base/scene.hpp"
 #include "shader_common.hpp"
 #include "state.hpp"
-#include "vk_descriptor_sets.h"
+#include "vulkan/vulkan_context.hpp"
+
+#include <vk_descriptor_sets.h>
 
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <string>
 #include <string_view>
+#include <string>
 #include <vector>
 
 namespace sdf_raster {

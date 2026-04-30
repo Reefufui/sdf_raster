@@ -1,8 +1,9 @@
 // application/cli/cli_application.hpp
 #pragma once
 
-#include "vulkan/context/vulkan_context.hpp"
 #include "offscreen_render_target.hpp"
+
+#include "vulkan/vulkan_context.hpp"
 
 #include <nlohmann/json.hpp>
 

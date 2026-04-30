@@ -1,20 +1,21 @@
 // application/gui/imgui_overlay.cpp
+#include "imgui_overlay.hpp"
+
+#include "gui_application.hpp"
+
+#include "scenes/base/scene_manager.hpp"
+#include "scenes/scene_state.hpp"
+#include "state.hpp"
+
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
+#include <imgui.h>
+#include <imfilebrowser.h> // NOTE: this must be included after <imgui.h>
+#include <vk_images.h>
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
-
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_vulkan.h"
-#include "imfilebrowser.h"
-
-#include "gui_application.hpp"
-#include "imgui_overlay.hpp"
-#include "../../scenes/base/scene_manager.hpp"
-#include "../../scenes/scene_state.hpp"
-#include "../../state.hpp"
-#include "../../vulkan/context/vulkan_context.hpp"
-#include "vk_images.h"
 
 namespace sdf_raster {
 

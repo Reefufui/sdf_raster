@@ -68,16 +68,16 @@ Prefer starting new lines with commas where it aids readability:
 ```cpp
 // GOOD
 this->gbuffer_formats = {
-    VK_FORMAT_R16G16B16A16_SFLOAT,
-    VK_FORMAT_R16G16B16A16_SFLOAT,
-    VK_FORMAT_R8G8B8A8_UNORM
+    VK_FORMAT_R16G16B16A16_SFLOAT
+    , VK_FORMAT_R16G16B16A16_SFLOAT
+    , VK_FORMAT_R8G8B8A8_UNORM
 };
 
 this->frustum_ds = std::make_unique <FrustumDescriptorSetInfo> (
-    this->context->get_device (),
-    this->context->get_physical_device (),
-    VK_SHADER_STAGE_COMPUTE_BIT,
-    this->context->get_total_frames ()
+    this->context->get_device ()
+    , this->context->get_physical_device ()
+    , VK_SHADER_STAGE_COMPUTE_BIT
+    , this->context->get_total_frames ()
 );
 ```
 
@@ -122,22 +122,30 @@ void foo ()
 
 ## Includes
 
-- Sort includes logically: paired header first, then third-party, then standard library.
-- Use angle brackets for external headers, quotes for project headers.
+- Sort includes logically: paired header first, then same or child directory, then other directory, then third-party, then standard library.
+- Use angle brackets for external headers (third-party, standard library), quotes for project headers.
 - Empty line between groups.
+- Sorted alphabeticaly inside a group, but pay attention to situations when specific header must be included prior.
 
 ```cpp
-#include "sdf_rasterizer.hpp"
+// application/gui/imgui_overlay.cpp
+#include "imgui_overlay.hpp"
 
-#include "application.hpp"
-#include "gui.hpp"
+#include "gui_application.hpp"
 
-#include <spdlog/stopwatch.h>
-#include <vk_buffers.h>
+#include "scenes/base/scene_manager.hpp"
+#include "scenes/scene_state.hpp"
+#include "state.hpp"
 
-#include <array>
-#include <fstream>
-#include <stdexcept>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
+#include <imgui.h>
+#include <imfilebrowser.h> // NOTE: this must be included after <imgui.h>
+#include <vk_images.h>
+
+#include <algorithm>
+#include <cassert>
+#include <chrono>
 ```
 
 ## Type Conversions

@@ -1,15 +1,17 @@
 // application/gui/gui_application.cpp
+#include "gui_application.hpp"
+
+#include "imgui_overlay.hpp"
+
+#include "scenes/obj/obj.hpp"
+#include "scenes/octree/octree.hpp"
+#include "scenes/scomtree/scomtree.hpp"
+
+#include <chrono>
 #include <chrono>
 #include <fstream>
 #include <stdexcept>
-#include <chrono>
 #include <thread>
-
-#include "gui_application.hpp"
-#include "imgui_overlay.hpp"
-#include "../../scenes/obj/obj.hpp"
-#include "../../scenes/octree/octree.hpp"
-#include "../../scenes/scomtree/scomtree.hpp"
 
 namespace sdf_raster {
 

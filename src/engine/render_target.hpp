@@ -1,7 +1,7 @@
 // engine/render_target.hpp
 #pragma once
 
-#include "../vulkan/context/vulkan_context.hpp"
+#include "vulkan/vulkan_context.hpp"
 
 #include <functional>
 #include <memory>

@@ -1,4 +1,4 @@
-// vulkan/presentation/offscreen_render_target.cpp
+// application/cli/offscreen_render_target.cpp
 #include "offscreen_render_target.hpp"
 #include "logger.hpp"
 

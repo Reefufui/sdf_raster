@@ -1,9 +1,9 @@
-// vulkan/presentation/offscreen_render_target.hpp
+// application/cli/offscreen_render_target.hpp
 #pragma once
 
-#include "render_target.hpp"
+#include "../../engine/render_target.hpp"
 
-#include <vk_images.h>
+#include "vk_images.h"
 
 #include <array>
 #include <memory>

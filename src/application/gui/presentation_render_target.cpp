@@ -1,4 +1,4 @@
-// vulkan/presentation/presentation_render_target.cpp
+// application/gui/presentation_render_target.cpp
 #include "presentation_render_target.hpp"
 #include "logger.hpp"
 

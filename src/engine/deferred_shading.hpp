@@ -2,7 +2,7 @@
 #pragma once
 
 #include "shader_common.hpp" // DeferredLightingPushConstants
-#include "vulkan/presentation/render_target.hpp"
+#include "engine/render_target.hpp"
 
 #include <vk_descriptor_sets.h> // DescriptorMaker
 #include <vk_images.h> // VulkanImageMem

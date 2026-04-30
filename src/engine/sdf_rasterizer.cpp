@@ -5,7 +5,7 @@
 #include "scenes/obj/obj.hpp"
 #include "scenes/octree/octree.hpp"
 #include "scenes/scomtree/scomtree.hpp"
-#include "vulkan/presentation/presentation_render_target.hpp"
+#include "application/gui/presentation_render_target.hpp"
 
 #include <spdlog/stopwatch.h>
 #include <vk_buffers.h>

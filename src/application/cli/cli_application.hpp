@@ -2,7 +2,7 @@
 #pragma once
 
 #include "vulkan/context/vulkan_context.hpp"
-#include "vulkan/presentation/offscreen_render_target.hpp"
+#include "offscreen_render_target.hpp"
 
 #include <nlohmann/json.hpp>
 

@@ -8,7 +8,7 @@
 #include "../../engine/sdf_rasterizer.hpp"
 #include "../../state.hpp"
 #include "../../vulkan/context/vulkan_context.hpp"
-#include "../../vulkan/presentation/presentation_render_target.hpp"
+#include "presentation_render_target.hpp"
 
 #include <GLFW/glfw3.h>
 

@@ -1,10 +1,10 @@
-// vulkan/presentation/presentation_render_target.hpp
+// application/gui/presentation_render_target.hpp
 #pragma once
 
-#include "../context/vulkan_context.hpp"
+#include "../../vulkan/context/vulkan_context.hpp"
 #include "vk_images.h"
 #include "vk_swapchain.h"
-#include "render_target.hpp"
+#include "../../engine/render_target.hpp"
 
 #include <GLFW/glfw3.h>
 

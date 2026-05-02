@@ -12,6 +12,7 @@
 #include <vk_pipeline.h>
 
 #include <array>
+#include <cassert>
 #include <fstream>
 #include <iomanip>
 #include <stdexcept>
@@ -1077,6 +1078,8 @@ void Renderer::init_frustum_demo_pipeline () {
 }
 
 void Renderer::update (uint32_t frame_index, Settings& settings) {
+    assert (frame_index < this->render_target->get_max_frames_in_flight () && "frame_index must be less than max_frames_in_flight");
+
     this->frame_index = frame_index;
 
     if (!this->current_scene) {
@@ -2199,22 +2202,22 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
 
     if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
         || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
-	    this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
-	        , this->context->get_physical_device ()
-	        , this->context->get_copy_helper ()
-	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-	        , this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS
-	        , this->push_constants.active_leafs_max_count * MAX_LEAF_PRIMS * 3
-	        , this->render_target->get_max_frames_in_flight ());
+        this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_copy_helper ()
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+            , this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS
+            , this->push_constants.active_leafs_max_count * MAX_LEAF_PRIMS * 3
+            , this->render_target->get_max_frames_in_flight ());
     }
 
     if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
         || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
         || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
-	    this->marching_cubes_lookup_table_ds = std::make_unique <MarchingCubesLookupTableDescriptorSetInfo> (this->context->get_device ()
-	        , this->context->get_physical_device ()
-	        , this->context->get_copy_helper ()
-	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
+        this->marching_cubes_lookup_table_ds = std::make_unique <MarchingCubesLookupTableDescriptorSetInfo> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_copy_helper ()
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
 
         this->hz_buffer_ds = std::make_unique <HZBufferDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_physical_device ()
@@ -2222,7 +2225,7 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , this->context->get_transfer_queue ()
             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
             , this->render_target->get_extent ()
-            , 2);
+            , this->render_target->get_max_frames_in_flight ());
 
         this->indirect_dispatch_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_physical_device ()
@@ -2232,20 +2235,20 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
 
         this->lod_ds = std::make_unique <LODDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_copy_helper ()
-	        , this->context->get_physical_device ()
-	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-	        , 1 // TODO: edit to match max models count in scene
-	        , 2);
+            , this->context->get_physical_device ()
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+            , 1 // TODO: edit to match max models count in scene
+            , this->render_target->get_max_frames_in_flight ());
 
         VkDeviceSize active_leaf_size = (method == DrawMethod::OctreeCompute) ? sizeof (NodeContext) : sizeof (SComTreeBrickPayload);
 
-	    this->active_leafs_ds = std::make_unique <ActiveLeafsDescriptorSetInfo> (this->context->get_device ()
-	        , this->context->get_physical_device ()
-	        , this->context->get_copy_helper ()
-	        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-	        , this->push_constants.active_leafs_max_count * active_leaf_size
-	        , 2);
-	}
+        this->active_leafs_ds = std::make_unique <ActiveLeafsDescriptorSetInfo> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_copy_helper ()
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+            , this->push_constants.active_leafs_max_count * active_leaf_size
+            , this->render_target->get_max_frames_in_flight ());
+    }
 
     if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
         || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
@@ -2254,7 +2257,7 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , this->context->get_physical_device ()
             , VK_SHADER_STAGE_COMPUTE_BIT
             , sizeof (VkDrawIndexedIndirectCommand)
-            , 2);
+            , this->render_target->get_max_frames_in_flight ());
     }
 
     if (!this->deferred_shading) {
@@ -2269,16 +2272,16 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , this->context->get_copy_helper ()
             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
             , octree_scene
-            , 2
+            , this->render_target->get_max_frames_in_flight ()
         );
 
         const SceneState& scene_state = octree_scene->get_state ();
 
-	    LOG_INFO ("[{}] Created gpu resources for sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
-	         , scene_state.name
-	         , scene_state.octree_depth
-	         , scene_state.cpu_traversed
-	         , scene_state.octree_depth - scene_state.cpu_traversed);
+        LOG_INFO ("[{}] Created gpu resources for sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
+             , scene_state.name
+             , scene_state.octree_depth
+             , scene_state.cpu_traversed
+             , scene_state.octree_depth - scene_state.cpu_traversed);
     } else if (auto obj_scene = std::dynamic_pointer_cast <ObjScene> (scene)) {
         LOG_INFO ("[{}] Received a scene that of type ObjScene.", RENDERER_NAME);
 
@@ -2290,13 +2293,13 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
             return;
         }
 
-	    this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
-	        , this->context->get_physical_device ()
-	        , this->context->get_copy_helper ()
-	        , 0x0 // NOTE: we don't need descriptors at all as we have no plan on using vertex/index buffers as shader input.
-	        , model_data.vertices.size ()
-	        , model_data.indices.size ()
-	        , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
+        this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_copy_helper ()
+            , 0x0 // NOTE: we don't need descriptors at all as we have no plan on using vertex/index buffers as shader input.
+            , model_data.vertices.size ()
+            , model_data.indices.size ()
+            , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
 
         this->context->get_copy_helper ()->UpdateBuffer (
             this->mesh_ds->get_vertex_buffer (0), 0
@@ -2320,7 +2323,7 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , this->context->get_physical_device ()
             , VK_SHADER_STAGE_COMPUTE_BIT
             , sizeof (cmd)
-	        , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
+            , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
 
         this->context->get_copy_helper ()->UpdateBuffer (
             this->draw_indexed_indirect_command_ds->get_indirect_buffer (0), 0
@@ -2340,11 +2343,11 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , this->render_target->get_max_frames_in_flight ()
         );
 
-	    LOG_INFO ("[{}] Created gpu resources for sdf-scomtree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
-	         , scene_state.name
-	         , scene_state.octree_depth
-	         , scene_state.cpu_traversed
-	         , scene_state.octree_depth - scene_state.cpu_traversed);
+        LOG_INFO ("[{}] Created gpu resources for sdf-scomtree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
+             , scene_state.name
+             , scene_state.octree_depth
+             , scene_state.cpu_traversed
+             , scene_state.octree_depth - scene_state.cpu_traversed);
     } else {
         LOG_ERROR ("[{}] Received a scene that is not of any renderable type. Cannot render.", RENDERER_NAME);
         return;

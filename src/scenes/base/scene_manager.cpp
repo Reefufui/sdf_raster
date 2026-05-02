@@ -104,6 +104,12 @@ void SceneManager::load_scene (const std::filesystem::path& path) {
     }).detach ();
 }
 
+void SceneManager::wait_for_scene () const {
+    while (this->is_loading.load (std::memory_order_acquire)) {
+        std::this_thread::sleep_for (std::chrono::milliseconds (10));
+    }
+}
+
 std::shared_ptr <Scene> SceneManager::get_scene () {
     std::lock_guard lock (this->mutex);
     if (std::holds_alternative <std::shared_ptr <Scene>> (this->managed_scene)) {

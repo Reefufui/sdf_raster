@@ -66,6 +66,8 @@ public:
         return is_loading.load (std::memory_order_acquire);
     }
 
+    void wait_for_scene () const;
+
     void subscribe (SceneEventCallback callback);
     void notify (SceneEventType type);
 

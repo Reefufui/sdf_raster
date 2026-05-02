@@ -3,6 +3,9 @@
 
 #include "engine/renderer.hpp"
 #include "logger.hpp"
+#include "scenes/obj/obj.hpp"
+#include "scenes/octree/octree.hpp"
+#include "scenes/scomtree/scomtree.hpp"
 #include "state.hpp"
 
 #include <algorithm>
@@ -19,19 +22,99 @@ CLIApplication::CLIApplication (const SessionState& session, int argc_, char* ar
     , argv (argv_) {}
 
 int CLIApplication::run () {
-    BenchmarkConfig config = parse_args (argc, argv);
-    run_benchmark (config);
+    CLIArguments args = this->parse_args (this->argc, this->argv);
+    BenchmarkConfig config = this->fill_config (args, this->session);
+    this->run_benchmark (config);
     return 0;
 }
 
-BenchmarkConfig CLIApplication::parse_args (int argc, char* argv[]) {
-    BenchmarkConfig config;
-    // TODO: real argument parsing.
-    // For now, keep defaults and maybe accept a single scene path argument.
-    if (argc > 1) {
-        config.scene_path = std::filesystem::path (argv[1]);
+CLIArguments CLIApplication::parse_args (int argc, char* argv[]) {
+    CLIArguments args;
+
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv [i];
+
+        if (arg == "--width" || arg == "-w") {
+            if (++i < argc) {
+                args.width = static_cast <uint32_t> (std::stoul (argv [i]));
+            }
+        } else if (arg == "--height" || arg == "-h") {
+            if (++i < argc) {
+                args.height = static_cast <uint32_t> (std::stoul (argv [i]));
+            }
+        } else if (arg == "--scene" || arg == "-s") {
+            if (++i < argc) {
+                args.scene_path = std::filesystem::path (argv [i]);
+            }
+        } else if (arg == "--output" || arg == "-o") {
+            if (++i < argc) {
+                args.output_path = std::filesystem::path (argv [i]);
+            }
+        } else if (arg == "--warmup" || arg == "-u") {
+            if (++i < argc) {
+                args.warmup_frames = static_cast <uint32_t> (std::stoul (argv [i]));
+            }
+        } else if (arg == "--measurement" || arg == "-m") {
+            if (++i < argc) {
+                args.measurement_frames = static_cast <uint32_t> (std::stoul (argv [i]));
+            }
+        } else {
+            args.scene_path = std::filesystem::path (arg);
+        }
     }
+
+    return args;
+}
+
+BenchmarkConfig CLIApplication::fill_config (const CLIArguments& args, const SessionState& session) {
+    BenchmarkConfig config;
+
+    if (args.width) {
+        config.width = *args.width;
+    } else {
+        config.width = static_cast <uint32_t> (session.settings.window_width);
+    }
+
+    if (args.height) {
+        config.height = *args.height;
+    } else {
+        config.height = static_cast <uint32_t> (session.settings.window_height);
+    }
+
+    if (args.scene_path) {
+        config.scene_path = *args.scene_path;
+    } else if (session.current_scene_path) {
+        config.scene_path = *session.current_scene_path;
+    }
+
+    if (args.output_path) {
+        config.output_path = *args.output_path;
+    }
+
+    if (args.warmup_frames) {
+        config.warmup_frames = *args.warmup_frames;
+    }
+
+    if (args.measurement_frames) {
+        config.measurement_frames = *args.measurement_frames;
+    }
+
     return config;
+}
+
+std::shared_ptr <SceneManager> CLIApplication::create_scene_manager () {
+    auto manager = std::make_shared <SceneManager> ();
+    manager->register_scene_type <ObjScene> (".obj");
+    manager->register_scene_type <SComTreeScene> (".scomtree");
+    manager->register_scene_type <SdfOctreeScene> (".octree");
+    manager->restore_states (this->session.scene_states);
+    return manager;
+}
+
+std::shared_ptr <Scene> CLIApplication::load_scene (const std::filesystem::path& path, SceneManager& scene_manager) {
+    scene_manager.load_scene (path);
+    scene_manager.wait_for_scene ();
+    return scene_manager.get_scene ();
 }
 
 void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
@@ -41,6 +124,12 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
     auto vulkan_context = std::make_shared <VulkanContext> ();
     vulkan_context->init ();
 
+    auto scene_manager = this->create_scene_manager ();
+    auto scene = this->load_scene (config.scene_path, *scene_manager);
+    if (!scene) {
+        throw std::runtime_error ("Failed to load scene: " + config.scene_path.string ());
+    }
+
     auto render_target = std::make_shared <OffscreenRenderTarget> (
         vulkan_context,
         config.width,
@@ -49,27 +138,27 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
     );
 
     auto renderer = std::make_unique <Renderer> (vulkan_context, render_target);
+    renderer->apply_scene_config (scene);
 
-    const uint32_t frames_in_flight = render_target->get_max_frames_in_flight ();
-    uint32_t frame_idx = 0;
+    uint32_t fif_index = 0;
     const uint32_t total_frames = config.warmup_frames + config.measurement_frames;
 
-    for (uint32_t frame = 0; frame < total_frames; ++frame) {
-        if (frame == config.warmup_frames) {
+    for (uint32_t frame_index = 0; frame_index < total_frames; ++frame_index) {
+        if (frame_index == config.warmup_frames) {
             render_target->clear_gpu_times ();
             LOG_INFO ("[Benchmark] Warmup complete. Starting measurement phase.");
         }
 
-        VkCommandBuffer cmd_buff = render_target->begin_frame (frame_idx);
+        VkCommandBuffer cmd_buff = render_target->begin_frame (fif_index);
         if (cmd_buff == VK_NULL_HANDLE) {
             throw std::runtime_error ("[Benchmark] begin_frame returned VK_NULL_HANDLE.");
         }
 
-        renderer->update (frame, this->session.settings);
+        renderer->update (fif_index, this->session.settings);
         renderer->render (cmd_buff);
 
-        render_target->end_frame (cmd_buff, frame_idx);
-        frame_idx = (frame_idx + 1) % frames_in_flight;
+        render_target->end_frame (cmd_buff, fif_index);
+        fif_index = (fif_index + 1) % render_target->get_max_frames_in_flight ();
     }
 
     this->drain_pending_frames (render_target);

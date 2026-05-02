@@ -219,12 +219,11 @@ VkCommandBuffer OffscreenRenderTarget::begin_frame (uint32_t frame_idx) {
 
     vkResetFences (this->context->get_device (), 1, &frame.fence);
     vkResetCommandBuffer (frame.command_buffer, 0);
+    vkResetQueryPool (this->context->get_device (), frame.query_pool, 0, 2);
 
     VkCommandBufferBeginInfo begin_info {};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     VK_CHECK_RESULT (vkBeginCommandBuffer (frame.command_buffer, &begin_info));
-
-    vkCmdResetQueryPool (frame.command_buffer, frame.query_pool, 0, 2);
 
     vkCmdWriteTimestamp (frame.command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, frame.query_pool, 0);
 
@@ -264,7 +263,7 @@ void OffscreenRenderTarget::collect_frame_timestamp (FrameResources& frame) {
         sizeof (timestamps),
         timestamps.data (),
         sizeof (uint64_t),
-        VK_QUERY_RESULT_64_BIT
+        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT
     );
 
     uint64_t delta = timestamps [1] - timestamps [0];

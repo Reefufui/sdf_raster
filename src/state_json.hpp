@@ -57,8 +57,7 @@ struct adl_serializer <sdf_raster::Camera> {
     static void to_json (json& j, const sdf_raster::Camera& cam) {
         j = json {
             {"position", cam.position},
-            {"yaw_angle", cam.yaw_angle},
-            {"pitch_angle", cam.pitch_angle},
+            {"orientation", cam.orientation},
             {"fov_y", cam.fov_y},
             {"movement_speed", cam.movement_speed},
             {"mouse_sensitivity", cam.mouse_sensitivity},
@@ -70,8 +69,9 @@ struct adl_serializer <sdf_raster::Camera> {
 
     static void from_json (const json& j, sdf_raster::Camera& cam) {
         j.at ("position").get_to (cam.position);
-        j.at ("yaw_angle").get_to (cam.yaw_angle);
-        j.at ("pitch_angle").get_to (cam.pitch_angle);
+        if (j.contains ("orientation")) {
+            j.at ("orientation").get_to (cam.orientation);
+        }
         j.at ("fov_y").get_to (cam.fov_y);
         j.at ("movement_speed").get_to (cam.movement_speed);
         j.at ("mouse_sensitivity").get_to (cam.mouse_sensitivity);

@@ -7,6 +7,8 @@
 #include <nlohmann/json.hpp> // nlohmann::adl_serializer
 #include <vk_copy.h>
 
+#include "utils/quaternion.hpp"
+
 #include <array>
 #include <cmath>
 #include <memory>
@@ -48,17 +50,15 @@ public:
 private:
     // TODO: create static camera instance with default values
     LiteMath::float3 default_position {1.f};
-    float default_yaw_angle {-135.0f};
-    float default_pitch_angle {-35.5f};
+    math::Quat default_orientation {0.f, 0.f, 0.f, 1.f};
     float default_fov_y {45.5f};
 
     LiteMath::float3 position {default_position};
-    float yaw_angle {default_yaw_angle};
-    float pitch_angle {default_pitch_angle};
+    math::Quat orientation {default_orientation};
 
-    LiteMath::float3 front {}; // NOTE: front = (cos(yaw)*cos(pitch),sin(pitch),sin(yaw)*cos(pitch))
-    LiteMath::float3 right {}; // NOTE: right = [front×(0,-1,0)]
-    LiteMath::float3 up {}; // NOTE: right and front
+    LiteMath::float3 front {};
+    LiteMath::float3 right {};
+    LiteMath::float3 up {};
 
     LiteMath::float4x4 view_matrix;
     LiteMath::float4x4 projection_matrix;

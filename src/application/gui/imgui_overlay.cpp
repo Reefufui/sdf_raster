@@ -320,19 +320,16 @@ void UI::key_input (Settings& settings, SceneState& scene_state) {
 void camera_window (Camera& camera) {
     ImGui::Begin ("Camera");
 
-    auto wrap_angle = [] (float angle) {
-        angle = std::fmod (angle + 180.0f, 360.0f);
-        if (angle < 0.0f)
-            angle += 360.0f;
-        return angle - 180.0f;
-    };
-
     if (ImGui::CollapsingHeader ("Orientation", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::InputFloat3 ("Position", &camera.position.x);
-        if (ImGui::DragFloat ("Yaw", &camera.yaw_angle, 1.0f, 0.0f, 0.0f, "%.1f deg")) {
-            camera.yaw_angle = wrap_angle (camera.yaw_angle);
+
+        ImGui::BeginDisabled ();
+        ImGui::InputFloat4 ("Quaternion", &camera.orientation.x);
+        ImGui::EndDisabled ();
+
+        if (ImGui::Button ("Reset Orientation")) {
+            camera.orientation = camera.default_orientation;
         }
-        ImGui::DragFloat ("Pitch", &camera.pitch_angle, 1.0f, -89.0f, 89.0f, "%.1f deg");
 
         ImGui::BeginDisabled ();
         ImGui::InputFloat3 ("Front", &camera.front.x);

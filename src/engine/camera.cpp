@@ -65,13 +65,13 @@ void Camera::rotate (float x_offset, float y_offset) {
     x_offset *= this->mouse_sensitivity;
     y_offset *= this->mouse_sensitivity;
 
-    this->yaw_angle -= x_offset;
-    this->pitch_angle += y_offset;
+    // Yaw around world up (0, -1, 0)
+    math::Quat q_yaw = math::quat_from_axis_angle (LiteMath::float3 (0.0f, -1.0f, 0.0f), -x_offset);
+    // Pitch around local right (1, 0, 0)
+    math::Quat q_pitch = math::quat_from_axis_angle (LiteMath::float3 (1.0f, 0.0f, 0.0f), -y_offset);
 
-    if (this->pitch_angle > 89.9f) this->pitch_angle = 89.9f;
-    if (this->pitch_angle < -89.9f) this->pitch_angle = -89.9f;
-    if (this->yaw_angle > 180.0f) this->yaw_angle -= 360.f;
-    if (this->yaw_angle < -180.0f) this->yaw_angle += 360.f;
+    this->orientation = math::quat_mul (q_yaw, math::quat_mul (this->orientation, q_pitch));
+    this->orientation = LiteMath::normalize (this->orientation);
 }
 
 void Camera::adjust_fov (float offset) {
@@ -81,14 +81,12 @@ void Camera::adjust_fov (float offset) {
 }
 
 void Camera::update () {
-    LiteMath::float3 new_front;
-    new_front.x = std::cos (LiteMath::DEG_TO_RAD * yaw_angle) * std::cos (LiteMath::DEG_TO_RAD * pitch_angle);
-    new_front.y = std::sin (LiteMath::DEG_TO_RAD * pitch_angle);
-    new_front.z = std::sin (LiteMath::DEG_TO_RAD * yaw_angle) * std::cos (LiteMath::DEG_TO_RAD * pitch_angle);
+    LiteMath::float4x4 rot_mat = math::quat_to_mat4 (this->orientation);
 
-    this->front = LiteMath::normalize (new_front);
-    this->right = LiteMath::normalize (LiteMath::cross (this->front, LiteMath::float3 (0.0f, -1.0f, 0.0f)));
-    this->up    = LiteMath::normalize (LiteMath::cross (this->right, this->front));
+    // Extract basis vectors from rotation matrix columns
+    this->right = LiteMath::normalize (LiteMath::float3 (rot_mat.col (0).x, rot_mat.col (0).y, rot_mat.col (0).z));
+    this->up    = LiteMath::normalize (LiteMath::float3 (-rot_mat.col (1).x, -rot_mat.col (1).y, -rot_mat.col (1).z));
+    this->front = LiteMath::normalize (LiteMath::float3 (rot_mat.col (2).x, rot_mat.col (2).y, rot_mat.col (2).z));
 
     this->view_matrix = LiteMath::lookAt (this->position, this->position + this->front, this->up);
     this->projection_matrix = LiteMath::perspectiveMatrix (this->fov_y, this->aspect_ratio, this->near_plane, this->far_plane);
@@ -111,8 +109,7 @@ void Camera::update () {
 
 void Camera::reset () {
     this->position = this->default_position;
-    this->yaw_angle = this->default_yaw_angle;
-    this->pitch_angle = this->default_pitch_angle;
+    this->orientation = this->default_orientation;
     this->fov_y = this->default_fov_y;
     this->movement_speed = 0.25f;
     this->mouse_sensitivity = 0.1f;

@@ -2,6 +2,9 @@
 #include "offscreen_render_target.hpp"
 #include "logger.hpp"
 
+#include "Image2d.h"
+#include <vk_copy.h>
+
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
@@ -289,6 +292,35 @@ double OffscreenRenderTarget::get_timestamp_period () const {
 
 void OffscreenRenderTarget::clear_gpu_times () {
     this->gpu_times_ns.clear ();
+}
+
+void OffscreenRenderTarget::save_image (const std::filesystem::path& path) const {
+    std::string path_str = path.string ();
+
+    vkDeviceWaitIdle (this->context->get_device ());
+
+    const auto width = this->extent.width;
+    const auto height = this->extent.height;
+    const size_t image_size = width * height * 4;
+
+    std::vector <uint8_t> pixels (image_size);
+    this->context->get_copy_helper ()->ReadImage (
+        this->output_image.image,
+        pixels.data (),
+        static_cast <int> (width),
+        static_cast <int> (height),
+        4,
+        this->get_output_final_layout ()
+    );
+
+    LiteImage::Image2D <LiteImage::uchar4> image (width, height);
+    std::memcpy (image.data (), pixels.data (), image_size);
+
+    if (!LiteImage::SaveImage (path_str.c_str (), image)) {
+        LOG_ERROR ("[OffscreenRenderTarget] Failed to save image to {}", path_str);
+    } else {
+        LOG_INFO ("[OffscreenRenderTarget] Image saved to {}", path_str);
+    }
 }
 
 } // namespace sdf_raster

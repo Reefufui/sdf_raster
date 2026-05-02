@@ -6,8 +6,10 @@
 #include "vk_images.h"
 
 #include <array>
+#include <filesystem>
 #include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace sdf_raster {
@@ -32,6 +34,8 @@ public:
     double get_timestamp_period () const;
     void clear_gpu_times ();
     void collect_pending_timestamps ();
+
+    void save_image (const std::filesystem::path& path) const;
 
 private:
     void create_output_image ();

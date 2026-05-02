@@ -50,6 +50,10 @@ CLIArguments CLIApplication::parse_args (int argc, char* argv[]) {
             if (++i < argc) {
                 args.output_path = std::filesystem::path (argv [i]);
             }
+        } else if (arg == "--screenshot" || arg == "-p") {
+            if (++i < argc) {
+                args.screenshot_path = std::filesystem::path (argv [i]);
+            }
         } else if (arg == "--warmup" || arg == "-u") {
             if (++i < argc) {
                 args.warmup_frames = static_cast <uint32_t> (std::stoul (argv [i]));
@@ -89,6 +93,10 @@ BenchmarkConfig CLIApplication::fill_config (const CLIArguments& args, const Ses
 
     if (args.output_path) {
         config.output_path = *args.output_path;
+    }
+
+    if (args.screenshot_path) {
+        config.screenshot_path = *args.screenshot_path;
     }
 
     if (args.warmup_frames) {
@@ -134,7 +142,7 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
         vulkan_context,
         config.width,
         config.height,
-        VK_FORMAT_B8G8R8A8_UNORM
+        VK_FORMAT_R8G8B8A8_UNORM
     );
 
     auto renderer = std::make_unique <Renderer> (vulkan_context, render_target);
@@ -162,6 +170,10 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
     }
 
     this->drain_pending_frames (render_target);
+
+    if (!config.screenshot_path.empty ()) {
+        render_target->save_image (config.screenshot_path);
+    }
 
     std::vector <double> times_ns (
         render_target->get_gpu_times_ns ().begin (),

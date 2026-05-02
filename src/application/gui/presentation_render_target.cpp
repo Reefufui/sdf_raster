@@ -13,7 +13,7 @@ PresentationRenderTarget::PresentationRenderTarget (std::shared_ptr <VulkanConte
     , window (a_window) {
     this->create_surface ();
     int width, height;
-    glfwGetFramebufferSize (this->window, &width, &height);
+    glfwGetWindowSize (this->window, &width, &height);
     this->create_swapchain (static_cast <uint32_t> (width), static_cast <uint32_t> (height));
     this->create_frame_resources ();
 }
@@ -167,10 +167,10 @@ void PresentationRenderTarget::resize () {
     this->framebuffer_resized = false;
 
     int width, height;
-    glfwGetFramebufferSize (this->window, &width, &height);
+    glfwGetWindowSize (this->window, &width, &height);
     while (width == 0 || height == 0) {
         glfwWaitEvents ();
-        glfwGetFramebufferSize (this->window, &width, &height);
+        glfwGetWindowSize (this->window, &width, &height);
     }
 
     const auto extent = this->swapchain.GetExtent ();

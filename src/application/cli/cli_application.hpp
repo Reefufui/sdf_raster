@@ -23,6 +23,7 @@ struct BenchmarkConfig {
     uint32_t height = 1080;
     std::filesystem::path scene_path;
     std::filesystem::path output_path = "benchmark_results.json";
+    std::filesystem::path screenshot_path;
     uint32_t warmup_frames = 100;
     uint32_t measurement_frames = 500;
 
@@ -34,6 +35,7 @@ struct CLIArguments {
     std::optional <uint32_t> height;
     std::optional <std::filesystem::path> scene_path;
     std::optional <std::filesystem::path> output_path;
+    std::optional <std::filesystem::path> screenshot_path;
     std::optional <uint32_t> warmup_frames;
     std::optional <uint32_t> measurement_frames;
 };

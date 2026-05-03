@@ -82,19 +82,20 @@ void frustum_culling (const std::vector <NodeContext>& nodes, const FrustumGeome
     }
 }
 
-void frustum_culling (const std::vector <SComTreeStackElement>& nodes, const FrustumGeometry& /*frustum*/, std::vector <SComTreeStackElement>& result) {
+void frustum_culling (const std::vector <SComTreeStackElement>& nodes, const FrustumGeometry& frustum, std::vector <SComTreeStackElement>& result) {
     result.clear ();
 
-    /*
     for (const auto& node : nodes) {
-        LiteMath::float3 min_corner = {node.min_corner_x, node.min_corner_y, node.min_corner_z};
-        if (aabb_cube_frustum_intersects (frustum, min_corner, node.voxel_size)) {
+        const LiteMath::uint3 p = LiteMath::uint3 (node.p_size.x >> 16, node.p_size.x & 0xFFFF, node.p_size.y >> 16);
+        const uint level_sz = node.p_size.y & 0xFFFF;
+
+        const float node_size = 2.0f / static_cast <float> (level_sz);
+        const LiteMath::float3 min_corner = LiteMath::float3 (-1.0f, -1.0f, -1.0f) + node_size * LiteMath::float3 (static_cast <float> (p.x), static_cast <float> (p.y), static_cast <float> (p.z));
+
+        if (aabb_cube_frustum_intersects (frustum, min_corner, node_size)) {
             result.push_back (node);
         }
     }
-    */
-
-    result = nodes;
 }
 
 

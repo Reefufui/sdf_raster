@@ -162,7 +162,7 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
             throw std::runtime_error ("[Benchmark] begin_frame returned VK_NULL_HANDLE.");
         }
 
-        renderer->update (fif_index, this->session.settings);
+        renderer->update (fif_index, this->session.settings, 1.0f / 60.0f);
         renderer->render (cmd_buff);
 
         render_target->end_frame (cmd_buff, fif_index);

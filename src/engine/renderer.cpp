@@ -1077,7 +1077,7 @@ void Renderer::init_frustum_demo_pipeline () {
     shader_modules.clear ();
 }
 
-void Renderer::update (uint32_t frame_index, Settings& settings) {
+void Renderer::update (uint32_t frame_index, Settings& settings, float delta_time) {
     assert (frame_index < this->render_target->get_max_frames_in_flight () && "frame_index must be less than max_frames_in_flight");
 
     this->frame_index = frame_index;
@@ -1087,6 +1087,7 @@ void Renderer::update (uint32_t frame_index, Settings& settings) {
     }
 
     auto& scene_state = current_scene->get_state ();
+    scene_state.camera.update (delta_time);
 
     if (!settings.frustum_view && this->frustum_draw_buffer) {
         this->clear_color = this->clear_color * 2.f;

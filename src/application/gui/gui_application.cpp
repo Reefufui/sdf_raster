@@ -72,8 +72,12 @@ void GUIApplication::run () {
 
             gui::update (this->session.settings, this->renderer->get_stats ());
 
+            double current_time = glfwGetTime ();
+            float delta_time = static_cast <float> (current_time - this->last_time);
+            this->last_time = current_time;
+
             this->renderer->process_commands (this->render_commands, this->render_command_mutex);
-            this->renderer->update (i, this->session.settings);
+            this->renderer->update (i, this->session.settings, delta_time);
 
             this->renderer->render (cmd_buff);
             gui::draw (this->presentation_render_target->get_swapchain_image_index (), cmd_buff);

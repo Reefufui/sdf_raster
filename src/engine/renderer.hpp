@@ -37,7 +37,7 @@ public:
     Renderer (std::shared_ptr <VulkanContext> context, std::shared_ptr <RenderTarget> render_target);
     ~Renderer ();
 
-    void update (uint32_t frame_index, Settings& settings);
+    void update (uint32_t frame_index, Settings& settings, float delta_time);
     void render (VkCommandBuffer cmd_buff);
     void process_commands (std::queue <std::function<void()>>& commands, std::mutex& mutex);
     void apply_scene_config (std::shared_ptr <Scene> scene);

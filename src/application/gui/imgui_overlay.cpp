@@ -320,6 +320,12 @@ void UI::key_input (Settings& settings, SceneState& scene_state) {
 void camera_window (Camera& camera) {
     ImGui::Begin ("Camera");
 
+    const char* modes [] = { "Static", "FlyAround", "Trajectory" };
+    int current_mode = static_cast <int> (camera.get_control_mode ());
+    if (ImGui::Combo ("Control Mode", &current_mode, modes, IM_ARRAYSIZE (modes))) {
+        camera.set_control_mode (static_cast <Camera::ControlMode> (current_mode));
+    }
+
     if (ImGui::CollapsingHeader ("Orientation", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::InputFloat3 ("Position", &camera.position.x);
 
@@ -336,6 +342,95 @@ void camera_window (Camera& camera) {
         ImGui::InputFloat3 ("Right", &camera.right.x);
         ImGui::InputFloat3 ("Up", &camera.up.x);
         ImGui::EndDisabled ();
+    }
+
+    if (ImGui::CollapsingHeader ("Trajectories", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto& trajectories = camera.get_trajectories ();
+        static int selected_traj_idx = 0;
+
+        if (trajectories.empty ()) {
+            if (ImGui::Button ("Create Initial Trajectory")) {
+                trajectories.push_back ({ "Default", 10.0f, {} });
+            }
+        } else {
+            // Selection and Creation
+            std::vector <std::string> names;
+            for (const auto& t : trajectories) {
+                names.push_back (t.name);
+            }
+
+            std::vector <const char*> name_ptrs;
+            for (const auto& n : names) {
+                name_ptrs.push_back (n.c_str ());
+            }
+
+            if (ImGui::Combo ("Select Trajectory", &selected_traj_idx, name_ptrs.data (), name_ptrs.size ())) {
+                if (selected_traj_idx >= static_cast <int> (trajectories.size ())) {
+                    selected_traj_idx = 0;
+                }
+            }
+
+            ImGui::SameLine ();
+            if (ImGui::Button ("[+] New")) {
+                trajectories.push_back ({ "New Trajectory", 10.0f, {} });
+                selected_traj_idx = static_cast <int> (trajectories.size ()) - 1;
+            }
+
+            auto& traj = trajectories [selected_traj_idx];
+
+            // Rename
+            char name_buf [128];
+            std::strncpy (name_buf, traj.name.c_str (), sizeof (name_buf));
+            if (ImGui::InputText ("Name", name_buf, sizeof (name_buf))) {
+                traj.name = name_buf;
+            }
+
+            ImGui::DragFloat ("Duration (s)", &traj.duration, 0.1f, 0.1f, 3600.0f, "%.1f");
+
+            if (ImGui::Button ("Add Keyframe")) {
+                traj.keyframes.push_back ({ camera.position, camera.orientation });
+            }
+            ImGui::SameLine ();
+            if (ImGui::Button ("Delete Trajectory")) {
+                trajectories.erase (trajectories.begin () + selected_traj_idx);
+                selected_traj_idx = std::max (0, selected_traj_idx - 1);
+                ImGui::End (); // Early exit for this frame to avoid using deleted traj
+                return;
+            }
+
+            ImGui::SeparatorText ("Keyframes");
+            for (int i = 0; i < static_cast <int> (traj.keyframes.size ()); i++) {
+                ImGui::PushID (i);
+                ImGui::Text ("#%d: [%.1f, %.1f, %.1f]", i, traj.keyframes [i].position.x, traj.keyframes [i].position.y, traj.keyframes [i].position.z);
+                ImGui::SameLine ();
+                if (ImGui::Button ("Jump")) {
+                    camera.position = traj.keyframes [i].position;
+                    camera.orientation = traj.keyframes [i].orientation;
+                    camera.set_control_mode (Camera::ControlMode::Static);
+                    camera.update ();
+                }
+                ImGui::SameLine ();
+                if (ImGui::Button ("Remove")) {
+                    traj.keyframes.erase (traj.keyframes.begin () + i);
+                }
+                ImGui::PopID ();
+            }
+
+            ImGui::SeparatorText ("Playback");
+            if (camera.get_control_mode () == Camera::ControlMode::Trajectory) {
+                float progress = camera.trajectory_elapsed_time / traj.duration;
+                ImGui::ProgressBar (progress);
+                if (ImGui::Button ("Stop Playback")) {
+                    camera.set_control_mode (Camera::ControlMode::Static);
+                }
+            } else {
+                if (!traj.keyframes.empty ()) {
+                    if (ImGui::Button ("Play")) {
+                        camera.play_trajectory (selected_traj_idx);
+                    }
+                }
+            }
+        }
     }
 
     if (ImGui::CollapsingHeader ("Movement", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -694,7 +789,6 @@ void UI::update (Settings& settings, const Stats& stats) {
             }
             this->status_bar (settings, stats, scene_state);
         }
-        scene_state.camera.update ();
     } else {
         if (settings.show_ui) {
             this->handle_global_shortcuts (settings);

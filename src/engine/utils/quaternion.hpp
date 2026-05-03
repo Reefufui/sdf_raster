@@ -42,4 +42,28 @@ inline LiteMath::float4x4 quat_to_mat4 (const Quat& q) {
     return m;
 }
 
+inline Quat slerp (const Quat& q1, const Quat& q2, float t) {
+    float dot = LiteMath::dot (q1, q2);
+    Quat q2_shortest = q2;
+
+    if (dot < 0.0f) {
+        dot = -dot;
+        q2_shortest = -q2;
+    }
+
+    if (dot > 0.9995f) {
+        return LiteMath::normalize (q1 + t * (q2_shortest - q1));
+    }
+
+    float theta_0 = std::acos (dot);
+    float theta = theta_0 * t;
+    float sin_theta = std::sin (theta);
+    float sin_theta_0 = std::sin (theta_0);
+
+    float s0 = std::cos (theta) - dot * sin_theta / sin_theta_0;
+    float s1 = sin_theta / sin_theta_0;
+
+    return (s0 * q1) + (s1 * q2_shortest);
+}
+
 } // namespace sdf_raster::math

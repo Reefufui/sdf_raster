@@ -53,17 +53,50 @@ struct adl_serializer <std::filesystem::path> {
 };
 
 template <>
+struct adl_serializer <sdf_raster::Keyframe> {
+    static void to_json (json& j, const sdf_raster::Keyframe& k) {
+        j = json {
+            {"position", k.position}
+            , {"orientation", k.orientation}
+        };
+    }
+
+    static void from_json (const json& j, sdf_raster::Keyframe& k) {
+        j.at ("position").get_to (k.position);
+        j.at ("orientation").get_to (k.orientation);
+    }
+};
+
+template <>
+struct adl_serializer <sdf_raster::Trajectory> {
+    static void to_json (json& j, const sdf_raster::Trajectory& t) {
+        j = json {
+            {"name", t.name}
+            , {"duration", t.duration}
+            , {"keyframes", t.keyframes}
+        };
+    }
+
+    static void from_json (const json& j, sdf_raster::Trajectory& t) {
+        j.at ("name").get_to (t.name);
+        j.at ("duration").get_to (t.duration);
+        j.at ("keyframes").get_to (t.keyframes);
+    }
+};
+
+template <>
 struct adl_serializer <sdf_raster::Camera> {
     static void to_json (json& j, const sdf_raster::Camera& cam) {
         j = json {
-            {"position", cam.position},
-            {"orientation", cam.orientation},
-            {"fov_y", cam.fov_y},
-            {"movement_speed", cam.movement_speed},
-            {"mouse_sensitivity", cam.mouse_sensitivity},
-            {"near_plane", cam.near_plane},
-            {"far_plane", cam.far_plane},
-            {"aspect_ratio", cam.aspect_ratio}
+            {"position", cam.position}
+            , {"orientation", cam.orientation}
+            , {"fov_y", cam.fov_y}
+            , {"movement_speed", cam.movement_speed}
+            , {"mouse_sensitivity", cam.mouse_sensitivity}
+            , {"near_plane", cam.near_plane}
+            , {"far_plane", cam.far_plane}
+            , {"aspect_ratio", cam.aspect_ratio}
+            , {"trajectories", cam.trajectories}
         };
     }
 
@@ -78,6 +111,11 @@ struct adl_serializer <sdf_raster::Camera> {
         j.at ("near_plane").get_to (cam.near_plane);
         j.at ("far_plane").get_to (cam.far_plane);
         j.at ("aspect_ratio").get_to (cam.aspect_ratio);
+
+        if (j.contains ("trajectories")) {
+            j.at ("trajectories").get_to (cam.trajectories);
+        }
+
         cam.update ();
     }
 };

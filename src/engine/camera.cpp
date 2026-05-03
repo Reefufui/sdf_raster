@@ -107,6 +107,101 @@ void Camera::update () {
     }
 }
 
+void Camera::update (float delta_time) {
+    if (this->control_mode == ControlMode::Trajectory && this->active_trajectory_idx >= 0) {
+        const auto& trajectory = this->trajectories [this->active_trajectory_idx];
+        this->trajectory_elapsed_time += delta_time;
+
+        float normalized_time = this->trajectory_elapsed_time / trajectory.duration;
+        if (normalized_time >= 1.0f) {
+            normalized_time = 1.0f;
+            this->control_mode = ControlMode::Static;
+        }
+
+        Keyframe k = this->interpolate (trajectory, normalized_time);
+        this->position = k.position;
+        this->orientation = k.orientation;
+    }
+
+    this->update ();
+}
+
+void Camera::set_control_mode (ControlMode mode) {
+    this->control_mode = mode;
+}
+
+Camera::ControlMode Camera::get_control_mode () const {
+    return this->control_mode;
+}
+
+std::vector <Trajectory>& Camera::get_trajectories () {
+    return this->trajectories;
+}
+
+void Camera::play_trajectory (int index) {
+    if (index >= 0 && index < static_cast <int> (this->trajectories.size ())) {
+        this->active_trajectory_idx = index;
+        this->trajectory_elapsed_time = 0.0f;
+        this->control_mode = ControlMode::Trajectory;
+    }
+}
+
+Keyframe Camera::interpolate (const Trajectory& trajectory, float normalized_time) const {
+    if (trajectory.keyframes.empty ()) {
+        return { this->position, this->orientation };
+    }
+    if (trajectory.keyframes.size () == 1) {
+        return trajectory.keyframes [0];
+    }
+
+    std::vector <float> segment_lengths;
+    float total_length = 0.0f;
+    for (size_t i = 0; i < trajectory.keyframes.size () - 1; ++i) {
+        float len = LiteMath::length (trajectory.keyframes [i + 1].position - trajectory.keyframes [i].position);
+        segment_lengths.push_back (len);
+        total_length += len;
+    }
+
+    if (total_length < 1e-6f) {
+        float segment_t = normalized_time * static_cast <float> (trajectory.keyframes.size () - 1);
+        size_t idx = static_cast <size_t> (std::floor (segment_t));
+        idx = std::min (idx, trajectory.keyframes.size () - 2);
+        float t = segment_t - static_cast <float> (idx);
+
+        const auto& k1 = trajectory.keyframes [idx];
+        const auto& k2 = trajectory.keyframes [idx + 1];
+
+        return {
+            LiteMath::lerp (k1.position, k2.position, t)
+            , math::slerp (k1.orientation, k2.orientation, t)
+        };
+    }
+
+    float target_dist = normalized_time * total_length;
+    float current_dist = 0.0f;
+    size_t segment_idx = 0;
+
+    for (size_t i = 0; i < segment_lengths.size (); ++i) {
+        if (current_dist + segment_lengths [i] >= target_dist) {
+            segment_idx = i;
+            break;
+        }
+        current_dist += segment_lengths [i];
+        segment_idx = i;
+    }
+
+    float t = (target_dist - current_dist) / std::max (segment_lengths [segment_idx], 1e-6f);
+    t = std::clamp (t, 0.0f, 1.0f);
+
+    const auto& k1 = trajectory.keyframes [segment_idx];
+    const auto& k2 = trajectory.keyframes [segment_idx + 1];
+
+    return {
+        LiteMath::lerp (k1.position, k2.position, t)
+        , math::slerp (k1.orientation, k2.orientation, t)
+    };
+}
+
 void Camera::reset () {
     this->position = this->default_position;
     this->orientation = this->default_orientation;

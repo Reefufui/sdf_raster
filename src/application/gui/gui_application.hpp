@@ -58,6 +58,8 @@ private:
     std::unique_ptr <Renderer> renderer;
     std::mutex render_command_mutex;
     std::queue <std::function<void()>> render_commands;
+
+    double last_time { 0.0 };
 };
 
 }

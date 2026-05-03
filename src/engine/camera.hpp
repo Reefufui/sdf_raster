@@ -15,6 +15,17 @@
 
 namespace sdf_raster {
 
+struct Keyframe {
+    LiteMath::float3 position;
+    math::Quat orientation;
+};
+
+struct Trajectory {
+    std::string name;
+    float duration { 10.0f };
+    std::vector <Keyframe> keyframes;
+};
+
 class Camera;
 namespace gui {
     void camera_window (Camera& camera);
@@ -22,6 +33,12 @@ namespace gui {
 
 class Camera {
 public:
+    enum class ControlMode {
+        Static
+        , FlyAround
+        , Trajectory
+    };
+
     Camera ();
 
     const LiteMath::float3& get_position () const;
@@ -43,11 +60,20 @@ public:
 
     void reset ();
     void update ();
+    void update (float delta_time);
+
+    void set_control_mode (ControlMode mode);
+    ControlMode get_control_mode () const;
+
+    std::vector <Trajectory>& get_trajectories ();
+    void play_trajectory (int index);
 
     friend void gui::camera_window (Camera& camera);
     friend struct nlohmann::adl_serializer <Camera>;
 
 private:
+    Keyframe interpolate (const Trajectory& trajectory, float normalized_time) const;
+
     // TODO: create static camera instance with default values
     LiteMath::float3 default_position {1.f};
     math::Quat default_orientation {0.f, 0.f, 0.f, 1.f};
@@ -55,6 +81,11 @@ private:
 
     LiteMath::float3 position {default_position};
     math::Quat orientation {default_orientation};
+
+    ControlMode control_mode { ControlMode::Static };
+    std::vector <Trajectory> trajectories;
+    int active_trajectory_idx { -1 };
+    float trajectory_elapsed_time { 0.0f };
 
     LiteMath::float3 front {};
     LiteMath::float3 right {};

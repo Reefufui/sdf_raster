@@ -58,7 +58,6 @@ bool SComTreeScene::load (const std::filesystem::path& path) {
     fs.close ();
 
     const int depth = this->data.header.max_depth;
-    LOG_INFO ("depth={}", depth);
 
     this->state = SceneState {
         .camera = Camera (),
@@ -498,13 +497,9 @@ std::vector <SComTreeStackElement> get_octree_subtrees_payloads (const SComTree&
     assert (scene.header.children_active_bits_shift == 24);
 
     int top = 0;
+    const uint target_size = 1u << max_level_to_descend;
 
     while (top >= 0) {
-        if (top == max_level_to_descend) {
-            result.push_back (cur);
-            cur = stack [top--];
-        }
-
         const uint32_t child = cur.info & 0x7;
         assert (child < 8);
 
@@ -527,6 +522,9 @@ std::vector <SComTreeStackElement> get_octree_subtrees_payloads (const SComTree&
             } else {
                 cur.info = next_child | (cur.info & 0xFFFFFF00u);
             }
+        } else if (target_size == (cur.p_size.y & 0xFFFF)) {
+            result.push_back (cur);
+            cur = stack [top--];
         } else if (child_is_leaf > 0) {
             const uint32_t next_child = child + 1;
             if (next_child >= 8) {
@@ -559,14 +557,7 @@ std::vector <SComTreeStackElement> get_octree_subtrees_payloads (const SComTree&
 }
 
 void SComTreeScene::invalidate_cache () {
-    LOG_INFO ("cached_all_subtrees...");
     this->cached_all_subtrees = get_octree_subtrees_payloads (this->data, this->state.cpu_traversed);
-    LOG_INFO ("cached_all_subtrees...ok (size={})", cached_all_subtrees.size ());
-    for (size_t i = 0; i < cached_all_subtrees.size (); ++i) {
-        const auto& s = cached_all_subtrees[i];
-        LOG_INFO ("ROOT[{}]: links_offset={}, info=0x{:08X}, transform={}, p_size=({},{})", 
-            i, s.links_offset, s.info, s.transform, s.p_size.x, s.p_size.y);
-    }
 }
 
 std::vector <SComTreeStackElement> SComTreeScene::collect_visible_subtrees (const FrustumGeometry& frustum) const {

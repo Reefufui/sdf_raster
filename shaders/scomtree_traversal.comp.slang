@@ -5,6 +5,7 @@
 #include "scomtree_utils.slang"
 #include "frustum_culling.slang"
 #include "occlusion_culling.slang"
+#include "lod_utils.slang"
 
 [[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
 
@@ -55,20 +56,21 @@ bool is_visible_node (int level, float3 node_coord, float node_size, out float m
 
 // NOTE: root expected to have children
 void dfs_scomtree (SComTreeStackElement cur, uint lod) {
+    const uint target_level_sz = 1u << lod;
+
     SComTreeStackElement stack [16];
 
     int top = 0;
-    float d = 1.0f;
 
     stack [0] = cur;
 
     while (top >= 0) {
         const uint child = cur.info & 0x7;
 
-        if (bool (pc.frustum_culling_level) || bool (pc.occlusion_culling_level)) {
-            const uint3 p = uint3 (cur.p_size.x >> 16, cur.p_size.x & 0xFFFF, cur.p_size.y >> 16);
-            const uint level_sz = cur.p_size.y & 0xFFFF;
+        const uint3 p = uint3 (cur.p_size.x >> 16, cur.p_size.x & 0xFFFF, cur.p_size.y >> 16);
+        const uint level_sz = cur.p_size.y & 0xFFFF;
 
+        if (bool (pc.frustum_culling_level) || bool (pc.occlusion_culling_level)) {
             const float node_size = 2.0f / float (level_sz);
             const float3 node_coord = float3 (-1.0f, -1.0f, -1.0f) + node_size * float3 (p);
 
@@ -98,7 +100,7 @@ void dfs_scomtree (SComTreeStackElement cur, uint lod) {
         const uint child_is_leaf = cur.info & (1u << (g_scomtree_header.children_types_shift + 2 * child_n));
         const uint rot_id = cur.info >> g_scomtree_header.children_active_bits_shift;
 
-        d = 1.0f / float (cur.p_size.y & 0xFFFF);
+        const uint node_target_size = target_level_sz >> 1;
 
         if (child_has_data == 0) {
             const uint next_child = child + 1;
@@ -107,6 +109,7 @@ void dfs_scomtree (SComTreeStackElement cur, uint lod) {
             } else {
                 cur.info = next_child | (cur.info & 0xFFFFFF00u);
             }
+        // } else if (level_sz == target_level_sz) {
         } else if (child_is_leaf > 0) {
             SComTreeBrickPayload payload;
             payload.p_size = (cur.p_size << 1) | uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
@@ -134,8 +137,6 @@ void dfs_scomtree (SComTreeStackElement cur, uint lod) {
                 stack [++top] = cur; // NOTE: return parent we previously popped for other children
             }
 
-            d = 0.5f / float (cur.p_size.y & 0xFFFF);
-
             uint link_data = g_scomtree_nodes [child_link];
             SdfDAGChildEdge ce = unpack_child_edge (g_scomtree_header, link_data, link_data);
 
@@ -154,7 +155,9 @@ void dfs_scomtree (SComTreeStackElement cur, uint lod) {
 [shader ("compute")]
 [numthreads (1, 1, 1)]
 void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : SV_GroupThreadID) {
+    uint lod = get_global_lod ();
+
     SComTreeStackElement cur = g_roots [gi.z];
-    dfs_scomtree (cur, MAX_OCTREE_DEPTH);
+    dfs_scomtree (cur, lod);
 }
 

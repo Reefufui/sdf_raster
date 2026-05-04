@@ -296,7 +296,6 @@ void traverse_scomtree_core (const Header& header, const std::vector <uint32_t>&
     SComTreeStackElement stack [16];
 
     int top = 0;
-    float d = 1.0f;
 
     SComTreeStackElement cur = init_root (header, nodes);
 
@@ -325,8 +324,6 @@ void traverse_scomtree_core (const Header& header, const std::vector <uint32_t>&
         const uint32_t child_is_leaf = cur.info & (1u << (header.children_types_shift + 2 * child_n));
         const uint32_t rot_id = cur.info >> header.children_active_bits_shift;
 
-        d = 1.0f / float (cur.p_size.y & 0xFFFF);
-
         if (child_has_data == 0) {
             const uint32_t next_child = child + 1;
             if (next_child >= 8) {
@@ -353,8 +350,6 @@ void traverse_scomtree_core (const Header& header, const std::vector <uint32_t>&
                 cur.info = next_child | (cur.info & 0xFFFFFF00u);
                 stack [++top] = cur; // NOTE: return parent we previously popped for other children
             }
-
-            d = 0.5f / float (cur.p_size.y & 0xFFFF);
 
             uint32_t link_data = nodes [child_link];
             SdfDAGChildEdge ce = unpack_child_edge (header, link_data, link_data);
@@ -505,6 +500,11 @@ std::vector <SComTreeStackElement> get_octree_subtrees_payloads (const SComTree&
     int top = 0;
 
     while (top >= 0) {
+        if (top == max_level_to_descend) {
+            result.push_back (cur);
+            cur = stack [top--];
+        }
+
         const uint32_t child = cur.info & 0x7;
         assert (child < 8);
 
@@ -528,7 +528,12 @@ std::vector <SComTreeStackElement> get_octree_subtrees_payloads (const SComTree&
                 cur.info = next_child | (cur.info & 0xFFFFFF00u);
             }
         } else if (child_is_leaf > 0) {
-            cur = stack [top--];
+            const uint32_t next_child = child + 1;
+            if (next_child >= 8) {
+                cur = stack [top--];
+            } else {
+                cur.info = next_child | (cur.info & 0xFFFFFF00u);
+            }
         } else {
             const uint32_t next_child = child + 1;
             if (next_child < 8) {
@@ -547,8 +552,6 @@ std::vector <SComTreeStackElement> get_octree_subtrees_payloads (const SComTree&
             cur.transform = rot_idx;
             cur.info = (rot_idx << 24) | (node.children_types << 8);
             cur.p_size = (cur.p_size << 1) | LiteMath::uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
-
-            LOG_INFO ("top={}", top);
         }
     }
 
@@ -559,6 +562,11 @@ void SComTreeScene::invalidate_cache () {
     LOG_INFO ("cached_all_subtrees...");
     this->cached_all_subtrees = get_octree_subtrees_payloads (this->data, this->state.cpu_traversed);
     LOG_INFO ("cached_all_subtrees...ok (size={})", cached_all_subtrees.size ());
+    for (size_t i = 0; i < cached_all_subtrees.size (); ++i) {
+        const auto& s = cached_all_subtrees[i];
+        LOG_INFO ("ROOT[{}]: links_offset={}, info=0x{:08X}, transform={}, p_size=({},{})", 
+            i, s.links_offset, s.info, s.transform, s.p_size.x, s.p_size.y);
+    }
 }
 
 std::vector <SComTreeStackElement> SComTreeScene::collect_visible_subtrees (const FrustumGeometry& frustum) const {

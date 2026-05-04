@@ -920,7 +920,7 @@ void Renderer::init_mesh_shading_scomtree_pipeline () {
 void Renderer::init_frustum_demo_pipeline () {
     assert (this->context && "required for 'frustum_demo_pipeline'");
     assert (this->frustum_ds && "required for 'frustum_demo_pipeline'");
-    assert (this->forward_shading || this->deferred_shading && "required for 'init_frustum_demo_pipeline");
+    assert ((this->forward_shading || this->deferred_shading) && "required for 'init_frustum_demo_pipeline");
 
     const size_t shaders_count = 2;
     std::vector <VkShaderModule> shader_modules (shaders_count);
@@ -1836,7 +1836,7 @@ void Renderer::draw_frustum_demo (VkCommandBuffer cmd_buff) {
     assert (this->frustum_demo_pipeline_layout && "required for 'draw_frustum_demo'");
     assert (this->frustum_draw_buffer && "required for 'draw_frustum_demo'");
     assert (this->render_target && "required for 'draw_frustum_demo'");
-    assert (this->forward_shading || this->deferred_shading && "required for 'draw_frustum_demo'");
+    assert ((this->forward_shading || this->deferred_shading) && "required for 'draw_frustum_demo'");
 
     const auto extent = this->render_target->get_extent ();
     const uint32_t image_index = this->render_target->get_current_image_index ();

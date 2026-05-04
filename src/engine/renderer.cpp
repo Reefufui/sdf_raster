@@ -1167,7 +1167,7 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
         lighting_pc.fog_start         = lighting.fog_start;
         lighting_pc.fog_end           = lighting.fog_end;
 
-        lighting_pc.enable_hz_write   = !!this->hz_buffer_ds;
+        lighting_pc.enable_hz_write   = !!this->hz_buffer_ds && !this->frustum_draw_buffer;
     }
 
     if (!settings.frustum_view && this->frustum_ds) {
@@ -2089,7 +2089,9 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
     this->geometry_barrier (cmd_buff);
 
     if (this->deferred_shading) {
-        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
+        if (!this->frustum_draw_buffer) {
+            this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
+        }
 
         this->hz_buffer_barrier (cmd_buff
             , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
@@ -2103,7 +2105,9 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
             , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
             , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
 
-        this->compute_hz_buffer (cmd_buff);
+        if (!this->frustum_draw_buffer) {
+            this->compute_hz_buffer (cmd_buff);
+        }
 
         this->hz_buffer_barrier (cmd_buff
             , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}

@@ -25,15 +25,15 @@
 
 [[vk::binding (0, 4)]] RWStructuredBuffer <LevelOfDetail> g_lod;
 
-bool is_visible_node (int level, float3 node_coord, float node_size, out float max_dim) {
-    if (level <= pc.frustum_culling_level) {
+bool is_visible_node (bool frustum_culling, bool occlusion_culling, float3 node_coord, float node_size, out float max_dim) {
+    if (frustum_culling) {
         if (!aabb_cube_frustum_intersects (g_frustum_geometry, node_coord, node_size)) {
             max_dim = 0.f;
             return false;
         }
     }
 
-    if (level <= pc.occlusion_culling_level) {
+    if (occlusion_culling) {
         float3 child_corners [8];
         [unroll]
         for (int i = 0; i < 8; ++i) {
@@ -83,24 +83,28 @@ void push_brick_payload (SComTreeBrickPayload payload) {
     g_active_leafs [active_leaf_offset] = payload;
 }
 
-bool cull_node (uint2 p_size) {
+void p_size_desider (uint2 p_size, uint lod, out bool cull, out bool hit_lod) {
     const uint3 p = uint3 (p_size.x >> 16, p_size.x & 0xFFFF, p_size.y >> 16);
     const uint level_sz = p_size.y & 0xFFFF;
 
     const float node_size = 2.0f / float (level_sz);
     const float3 node_coord = float3 (-1.0f, -1.0f, -1.0f) + node_size * float3 (p);
 
-    const int current_level = 0; // TODO:
     float max_dim;
-    if (is_visible_node (current_level, node_coord, node_size, max_dim)) {
-        return false;
-    }
+    bool frustum_culling = true; // TODO
+    bool occlusion_culling = true; // TODO
+    cull = !is_visible_node (frustum_culling, occlusion_culling, node_coord, node_size, max_dim);
 
-    return true;
+    if (pc.lod_mode == LOD_MODE_PER_NODE) { // NOTE: per-node LOD mode
+        const uint node_lod = calc_lod_for_node (node_coord, node_size, pc.subtree_root_level, pc.max_lod);
+        hit_lod = (1u << (node_lod - 1u)) <= level_sz;
+    } else {
+        hit_lod = (1u << (lod - 1u)) <= level_sz;
+    }
 }
 
 // NOTE: root expected to have children
-void dfs_scomtree (SComTreeStackElement cur, uint lod_sz) {
+void dfs_scomtree (SComTreeStackElement cur, uint lod) {
     int top = 0;
     SComTreeStackElement stack [16];
     stack [top] = cur;
@@ -115,7 +119,12 @@ void dfs_scomtree (SComTreeStackElement cur, uint lod_sz) {
 
         const uint2 child_node_p_size = (cur.p_size << 1) | uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
 
-        if (!cull_node (child_node_p_size)) {
+        bool cull = false;
+        bool hit_lod = false;
+        uint node_lod_sz = 1u << (lod - 1);
+        p_size_desider (child_node_p_size, lod, cull, hit_lod);
+
+        if (!cull) {
             const uint3 voxel_pos = uint3 ((child & 4) >> 2, (child & 2) >> 1, child & 1); // (0,0,0)..(1,1,1)
             const uint child_n = uint (dot (g_rotation_modifiers [2 * 48 + cur.transform], int4 (int (voxel_pos.x), int (voxel_pos.y), int (voxel_pos.z), 1)));
             const uint child_n_mask = 1u << (2 * child_n);
@@ -126,7 +135,7 @@ void dfs_scomtree (SComTreeStackElement cur, uint lod_sz) {
             child_is_leaf = cur.info & (1u << (g_scomtree_header.children_types_shift + 2 * child_n));
             rot_id = cur.info >> g_scomtree_header.children_active_bits_shift;
 
-            if (child_is_leaf == 0u && (child_node_p_size.y & 0xFFFF) == lod_sz) {
+            if (child_has_data > 0u && child_is_leaf == 0u && hit_lod) {
                 uint link_data = g_scomtree_nodes [child_link];
                 SdfDAGChildEdge ce = unpack_child_edge (g_scomtree_header, link_data, link_data);
 
@@ -181,9 +190,11 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout SComTreeStackEleme
 [shader ("compute")]
 [numthreads (1, 1, 1)]
 void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : SV_GroupThreadID) {
-    uint lod = get_global_lod ();
+    const uint lod = (pc.lod_mode == LOD_MODE_FIXED) ? pc.fixed_lod
+        : (pc.lod_mode == LOD_MODE_PER_TREE) ? calc_lod_for_node (pc.root_center.xyz - 0.5f * pc.max_voxel_size, pc.max_voxel_size, pc.subtree_root_level, pc.max_lod)
+        : uint (MAX_OCTREE_DEPTH);
 
     SComTreeStackElement cur = g_roots [gi.z];
-    dfs_scomtree (cur, 1u << (pc.fixed_lod - 1));
+    dfs_scomtree (cur, lod);
 }
 

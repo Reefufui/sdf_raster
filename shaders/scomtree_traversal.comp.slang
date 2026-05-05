@@ -100,25 +100,22 @@ bool cull_node (uint2 p_size) {
 }
 
 // NOTE: root expected to have children
-void dfs_scomtree (SComTreeStackElement cur, uint lod) {
-    const uint target_level_sz = 1u << lod;
-
+void dfs_scomtree (SComTreeStackElement cur, uint lod_sz) {
     int top = 0;
     SComTreeStackElement stack [16];
     stack [top] = cur;
 
     while (top >= 0) {
-        const uint child = cur.info & 0x7;
+        uint child = cur.info & 0x7;
 
-        uint child_has_data = 0;
-        uint child_is_leaf = 0;
-        uint child_link = 0;
-        uint rot_id = 0;
+        uint child_has_data = 0u;
+        uint child_is_leaf = 0u;
+        uint child_link = 0u;
+        uint rot_id = 0u;
 
         const uint2 child_node_p_size = (cur.p_size << 1) | uint2 (((child & 4) << (16 - 2)) | ((child & 2) >> 1), (child & 1) << 16);
-        bool cull_node = cull_node (child_node_p_size);
 
-        if (!cull_node) {
+        if (!cull_node (child_node_p_size)) {
             const uint3 voxel_pos = uint3 ((child & 4) >> 2, (child & 2) >> 1, child & 1); // (0,0,0)..(1,1,1)
             const uint child_n = uint (dot (g_rotation_modifiers [2 * 48 + cur.transform], int4 (int (voxel_pos.x), int (voxel_pos.y), int (voxel_pos.z), 1)));
             const uint child_n_mask = 1u << (2 * child_n);
@@ -129,15 +126,19 @@ void dfs_scomtree (SComTreeStackElement cur, uint lod) {
             child_is_leaf = cur.info & (1u << (g_scomtree_header.children_types_shift + 2 * child_n));
             rot_id = cur.info >> g_scomtree_header.children_active_bits_shift;
 
-            if (!child_is_leaf) {
-                if ((child_node_p_size.y & 0xFFFF) == 4) {
-                }
+            if (child_is_leaf == 0u && (child_node_p_size.y & 0xFFFF) == lod_sz) {
+                uint link_data = g_scomtree_nodes [child_link];
+                SdfDAGChildEdge ce = unpack_child_edge (g_scomtree_header, link_data, link_data);
+
+                child_link = ce.child_offset + g_scomtree_header.links_offset;
+                rot_id = g_rotation_add [rot_id * 48 + ce.rotation_id];
+                child_is_leaf = 1u;
             }
         }
 
-        if (child_has_data == 0) {
+        if (child_has_data == 0u) {
             next_child_or_pop (child, cur, stack, top);
-        } else if (child_is_leaf > 0) {
+        } else if (child_is_leaf > 0u) {
             SComTreeBrickPayload payload;
             payload.p_size = child_node_p_size;
             payload.rot_link = (rot_id << 26) | child_link;
@@ -152,7 +153,7 @@ void dfs_scomtree (SComTreeStackElement cur, uint lod) {
             uint node_data = g_scomtree_nodes [ce.child_offset];
             NodeHeadUnpacked node = unpack_node_head (g_scomtree_header, node_data, node_data);
 
-            const uint init_child = 0;
+            const uint init_child = 0u;
 
             const uint rot_idx = g_rotation_add [rot_id * 48 + ce.rotation_id];
             cur.links_offset = ce.child_offset + g_scomtree_header.links_offset + (node.base_type == SCOM2_CHILD_EMPTY ? 0 : 1);
@@ -183,6 +184,6 @@ void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : 
     uint lod = get_global_lod ();
 
     SComTreeStackElement cur = g_roots [gi.z];
-    dfs_scomtree (cur, lod);
+    dfs_scomtree (cur, 1u << (pc.fixed_lod - 1));
 }
 

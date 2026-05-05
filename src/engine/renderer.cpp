@@ -1139,7 +1139,8 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     this->push_constants.occlusion_culling_level = scene_state.occlusion_culling_level;
     this->push_constants.frustum_culling_level = scene_state.frustum_culling_level;
     this->push_constants.color_leafs = settings.color_leafs;
-    this->push_constants.lod_mode = (scene_state.lod_mode == LODMode::PerNode) ? 1u : 0u;
+    this->push_constants.lod_mode = static_cast <uint> (scene_state.lod_mode);
+    this->push_constants.fixed_lod = scene_state.fixed_lod;
     this->push_constants.root_center = scene_state.octree_root_center;
     this->push_constants.lod_threshold_pixels = scene_state.lod_threshold_pixels;
     this->push_constants.fov_y = scene_state.camera.get_fov_y () * (3.14159265359f / 180.0f);

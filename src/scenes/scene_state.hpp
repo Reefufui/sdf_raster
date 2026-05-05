@@ -18,7 +18,8 @@ enum class DrawMethod : uint8_t { None
 };
 
 enum class LODMode : uint8_t {
-    Global,  // Single LOD for entire model
+    Fixed,   // Fixed LOD value from slider
+    Global,  // Single LOD for entire model (distance-based)
     PerNode  // Per-node LOD based on node position
 };
 
@@ -33,7 +34,8 @@ struct SceneState {
     int max_lod {16};
     int frustum_culling_level {16};
     int occlusion_culling_level {16};
-    LODMode lod_mode = LODMode::Global;
+    LODMode lod_mode = LODMode::Fixed;
+    int fixed_lod = 6;
     LiteMath::float4 octree_root_center {0.0f, 0.0f, 0.0f, 0.0f};
     float lod_threshold_pixels {2.0f};
 };
@@ -55,7 +57,8 @@ constexpr std::string_view draw_method_name (DrawMethod m) {
 
 constexpr std::string_view lod_mode_name (LODMode m) {
     switch (m) {
-        case LODMode::Global:  return "Global (whole model)";
+        case LODMode::Fixed:   return "Fixed LOD";
+        case LODMode::Global:  return "Global (distance-based)";
         case LODMode::PerNode: return "Per-Node (dynamic)";
     }
     return "Unknown";
@@ -64,6 +67,7 @@ constexpr std::string_view lod_mode_name (LODMode m) {
 } // sdf_raster
 
 NLOHMANN_JSON_SERIALIZE_ENUM(sdf_raster::LODMode, {
+    {sdf_raster::LODMode::Fixed, "fixed"},
     {sdf_raster::LODMode::Global, "global"},
     {sdf_raster::LODMode::PerNode, "per_node"},
 });

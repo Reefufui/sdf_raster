@@ -497,31 +497,55 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
         ImGui::Text ("No scene loaded");
     }
 
-    ImGui::SeparatorText ("Level of Detail");
+    const auto& method = scene_state.draw_method;
 
-    ImGui::Text ("distance: %.3f", stats.distance);
-    ImGui::Text ("calculated LOD level: %d", stats.lod);
-    ImGui::InputInt ("max lod", &scene_state.max_lod);
-    if (scene_state.octree_depth) {
-        scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.cpu_traversed, scene_state.octree_depth);
-    } else {
-        scene_state.max_lod = LiteMath::max (scene_state.max_lod, scene_state.cpu_traversed);
-    }
+    bool needs_octree_lod = method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh
+        || method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
+        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred;
 
-    ImGui::SeparatorText ("LOD Selection");
-    const char* lod_mode_items[] = { "Fixed LOD for the whole model", "Dynamic LOD for each node" };
-    int current_lod_mode = (scene_state.lod_mode == LODMode::Global) ? 0 : 1;
-    if (ImGui::Combo ("##LODMode", &current_lod_mode, lod_mode_items, IM_ARRAYSIZE (lod_mode_items))) {
-        scene_state.lod_mode = (current_lod_mode == 0) ? LODMode::Global : LODMode::PerNode;
-        this->pending_config_notify = true;
-    }
+    if (needs_octree_lod) {
+        ImGui::SeparatorText ("Level of Detail");
+        ImGui::Text ("distance: %.3f", stats.distance);
+        ImGui::Text ("calculated LOD level: %d", stats.lod);
 
-    ImGui::Text ("LOD threshold:");
-    if (ImGui::IsItemHovered ()) {
-        ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
-    }
-    if (ImGui::DragFloat ("##LODThreshold", &scene_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px")) {
-        this->pending_config_notify = true;
+        if (ImGui::BeginTabBar ("##LODTabBar", ImGuiTabBarFlags_None)) {
+            if (ImGui::BeginTabItem ("Fixed")) {
+                scene_state.lod_mode = LODMode::Fixed;
+                ImGui::SliderInt ("Fixed LOD", &scene_state.fixed_lod, 0, 16);
+                ImGui::EndTabItem ();
+            }
+            if (ImGui::BeginTabItem ("Global")) {
+                scene_state.lod_mode = LODMode::Global;
+                ImGui::InputInt ("max lod", &scene_state.max_lod);
+                if (scene_state.octree_depth) {
+                    scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.cpu_traversed, scene_state.octree_depth);
+                } else {
+                    scene_state.max_lod = LiteMath::max (scene_state.max_lod, scene_state.cpu_traversed);
+                }
+                ImGui::Text ("LOD threshold:");
+                if (ImGui::IsItemHovered ()) {
+                    ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
+                }
+                ImGui::DragFloat ("##LODThreshold", &scene_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
+                ImGui::EndTabItem ();
+            }
+            if (ImGui::BeginTabItem ("Per-Node")) {
+                scene_state.lod_mode = LODMode::PerNode;
+                ImGui::InputInt ("max lod", &scene_state.max_lod);
+                if (scene_state.octree_depth) {
+                    scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.cpu_traversed, scene_state.octree_depth);
+                } else {
+                    scene_state.max_lod = LiteMath::max (scene_state.max_lod, scene_state.cpu_traversed);
+                }
+                ImGui::Text ("LOD threshold:");
+                if (ImGui::IsItemHovered ()) {
+                    ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
+                }
+                ImGui::DragFloat ("##LODThreshold", &scene_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
+                ImGui::EndTabItem ();
+            }
+            ImGui::EndTabBar ();
+        }
     }
 
     ImGui::SeparatorText ("Octree");

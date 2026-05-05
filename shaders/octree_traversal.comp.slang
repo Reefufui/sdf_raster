@@ -104,7 +104,7 @@ void dfs_octree (NodeContext root, uint lod) {
         float3 child_coord = coord_stack [dfs_level - 1] + child_corner_offset;
 
         float3 child_center = child_coord + float3 (child_voxel_size * 0.5f);
-        uint child_lod = (pc.lod_mode == 1)
+        uint child_lod = (pc.lod_mode == 2)
             ? calc_lod_for_node (child_center, child_voxel_size, pc.subtree_root_level, pc.max_lod)
             : lod;
 
@@ -147,7 +147,7 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout NodeContext curren
             current_context.min_corner_y + ((child_index >> 1) & 1) * node_size + node_size * 0.5f,
             current_context.min_corner_z + ((child_index >> 2) & 1) * node_size + node_size * 0.5f
         );
-        uint node_lod = (pc.lod_mode == 1)
+        uint node_lod = (pc.lod_mode == 2)
             ? calc_lod_for_node (child_center, node_size, pc.subtree_root_level, pc.max_lod)
             : lod;
 

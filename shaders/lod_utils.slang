@@ -26,5 +26,8 @@ uint calc_lod_for_node (float3 node_center, float node_size, uint subtree_root_l
 }
 
 uint get_global_lod () {
+    if (pc.lod_mode == 0) {
+        return pc.fixed_lod;
+    }
     return calc_lod_for_node (pc.root_center.xyz, pc.max_voxel_size, pc.subtree_root_level, pc.max_lod);
 }

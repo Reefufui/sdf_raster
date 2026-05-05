@@ -22,35 +22,50 @@ float4 main (float4 sv_pos : SV_Position) : SV_Target {
     float3 position = tex_position.Sample (uv).xyz;
     float4 albedo = tex_albedo.Sample (uv);
 
-    float bestNeighborDepth = 1.0f;
-    int2  best_offset = int2 (0, 0);
-    bool  isHole = false;
+    const float similarity_threshold = pc.depth_threshold * 2.0f;
 
-    [unroll]
-    for (int y = -2; y <= 2; y++) {
-        [unroll]
-        for (int x = -2; x <= 2; x++) {
-            if (x == 0 && y == 0) continue;
+    // 1px Cross samples
+    float d_l = tex_depth.Sample (uv + float2 (-1.0f, 0.0f) * texel_size).r;
+    float d_r = tex_depth.Sample (uv + float2 (1.0f, 0.0f) * texel_size).r;
+    float d_u = tex_depth.Sample (uv + float2 (0.0f, 1.0f) * texel_size).r;
+    float d_d = tex_depth.Sample (uv + float2 (0.0f, -1.0f) * texel_size).r;
 
-            float2 sample_uv = uv + float2 (x, y) * texel_size;
-            float d = tex_depth.Sample (sample_uv).r;
+    // 2px Diagonal samples
+    float d_tl = tex_depth.Sample (uv + float2 (-2.0f, 2.0f) * texel_size).r;
+    float d_br = tex_depth.Sample (uv + float2 (2.0f, -2.0f) * texel_size).r;
+    float d_tr = tex_depth.Sample (uv + float2 (2.0f, 2.0f) * texel_size).r;
+    float d_bl = tex_depth.Sample (uv + float2 (-2.0f, -2.0f) * texel_size).r;
 
-            if (d < depth - pc.depth_threshold) {
-                isHole = true;
-                if (d < bestNeighborDepth) {
-                    bestNeighborDepth = d;
-                    best_offset = int2 (x, y);
-                }
+    bool hole_x = (depth > min (d_l, d_r) + pc.depth_threshold) && (abs (d_l - d_r) < similarity_threshold);
+    bool hole_y = (depth > min (d_u, d_d) + pc.depth_threshold) && (abs (d_u - d_d) < similarity_threshold);
+    bool hole_d1 = (depth > min (d_tl, d_br) + pc.depth_threshold) && (abs (d_tl - d_br) < similarity_threshold);
+    bool hole_d2 = (depth > min (d_tr, d_bl) + pc.depth_threshold) && (abs (d_tr - d_bl) < similarity_threshold);
+
+    if (hole_x || hole_y || hole_d1 || hole_d2) {
+        float min_d = depth;
+        float2 best_offset = float2 (0.0f, 0.0f);
+
+        // Priority list: check 1px neighbors first, then 2px diagonals
+        float depths [] = {d_l, d_r, d_u, d_d, d_tl, d_br, d_tr, d_bl};
+        float2 offsets [] = {
+            float2 (-1.0f, 0.0f), float2 (1.0f, 0.0f), float2 (0.0f, 1.0f), float2 (0.0f, -1.0f)
+            , float2 (-2.0f, 2.0f), float2 (2.0f, -2.0f), float2 (2.0f, 2.0f), float2 (-2.0f, -2.0f)
+        };
+
+        for (int i = 0; i < 8; i++) {
+            if (depths [i] < min_d) {
+                min_d = depths [i];
+                best_offset = offsets [i];
             }
         }
-    }
 
-    if (isHole) {
-        float2 offset_uv = uv + float2 (best_offset) * texel_size;
-        normal = tex_normal.Sample (offset_uv).xyz;
-        position = tex_position.Sample (offset_uv).xyz;
-        albedo = tex_albedo.Sample (offset_uv);
-        depth = bestNeighborDepth;
+        if (min_d < depth) {
+            float2 offset_uv = uv + best_offset * texel_size;
+            normal = tex_normal.Sample (offset_uv).xyz;
+            position = tex_position.Sample (offset_uv).xyz;
+            albedo = tex_albedo.Sample (offset_uv);
+            depth = min_d;
+        }
     }
 
     if (pc.enable_hz_write != 0) {

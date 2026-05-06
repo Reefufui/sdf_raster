@@ -2051,11 +2051,9 @@ void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
 
     vkCmdEndRenderPass (cmd_buff);
 
-    this->hz_buffer_barrier (cmd_buff
-        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
-        , {.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = 0}
-        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
-        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = 0});
+    if (!this->frustum_draw_buffer) {
+        this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
+    }
 }
 
 void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer /*cmd_buff*/) {

@@ -72,7 +72,7 @@ float sample_sdf (const float3 p, float target_voxel_size) {
     return lerp (c0, c1, local.z);
 }
 
-float3 sample_normal (const float3 p, const float3 position, float voxel_size) {
+float3 sample_normal (const float3 p, float voxel_size) {
     float dx = sample_sdf (p + float3 (eps, 0, 0), voxel_size) - sample_sdf (p - float3 (eps, 0, 0), voxel_size);
     float dy = sample_sdf (p + float3 (0, eps, 0), voxel_size) - sample_sdf (p - float3 (0, eps, 0), voxel_size);
     float dz = sample_sdf (p + float3 (0, 0, eps), voxel_size) - sample_sdf (p - float3 (0, 0, eps), voxel_size);
@@ -123,7 +123,7 @@ void generate_geometry (uint active_leaf_index) {
 
         Vertex vertex;
         vertex.position = float4 (position, 1.0f);
-        vertex.normal = float4 (sample_normal (position, position, context.voxel_size), 1.0f);
+        vertex.normal = float4 (sample_normal (position, context.voxel_size), 1.0f);
         if (pc.color_leafs == 1u) {
             vertex.color = colors [context.node_index % COLORS_COUNT];
         } else if (pc.color_leafs == 2u) {

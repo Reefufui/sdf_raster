@@ -135,6 +135,7 @@ struct adl_serializer <sdf_raster::SceneState> {
             {"frustum_culling_level", scene_state.frustum_culling_level},
             {"occlusion_culling_level", scene_state.occlusion_culling_level},
             {"lod_mode", scene_state.lod_mode},
+            {"fixed_lod", scene_state.fixed_lod},
             {"octree_root_center", scene_state.octree_root_center},
             {"lod_threshold_pixels", scene_state.lod_threshold_pixels}
         };
@@ -151,7 +152,13 @@ struct adl_serializer <sdf_raster::SceneState> {
         j.at ("max_lod").get_to (scene_state.max_lod);
         j.at ("frustum_culling_level").get_to (scene_state.frustum_culling_level);
         j.at ("occlusion_culling_level").get_to (scene_state.occlusion_culling_level);
+
         j.at ("lod_mode").get_to (scene_state.lod_mode);
+
+        if (j.contains ("fixed_lod")) {
+            j.at ("fixed_lod").get_to (scene_state.fixed_lod);
+        }
+
         j.at ("octree_root_center").get_to (scene_state.octree_root_center);
         j.at ("lod_threshold_pixels").get_to (scene_state.lod_threshold_pixels);
     }

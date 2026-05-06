@@ -64,6 +64,8 @@ private:
     VkRenderPass render_pass = VK_NULL_HANDLE;
     std::vector <VkFramebuffer> framebuffers;
 
+    bool needs_lod_sync = true;
+    std::filesystem::path last_scene_path;
 private:
     void init_style ();
 
@@ -509,13 +511,26 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
         ImGui::Text ("calculated LOD level: %d", stats.lod);
 
         if (ImGui::BeginTabBar ("##LODTabBar", ImGuiTabBarFlags_None)) {
-            if (ImGui::BeginTabItem ("Fixed")) {
-                scene_state.lod_mode = LODMode::Fixed;
+            if (this->last_scene_path != scene_state.path) {
+                this->needs_lod_sync = true;
+                this->last_scene_path = scene_state.path;
+            }
+
+            auto begin_lod_tab = [&](const char* label, LODMode mode) {
+                ImGuiTabItemFlags flags = ImGuiTabItemFlags_None;
+                if (this->needs_lod_sync && scene_state.lod_mode == mode) {
+                    flags |= ImGuiTabItemFlags_SetSelected;
+                }
+                return ImGui::BeginTabItem(label, nullptr, flags);
+            };
+
+            if (begin_lod_tab ("Fixed", LODMode::Fixed)) {
+                if (ImGui::IsItemVisible()) scene_state.lod_mode = LODMode::Fixed;
                 ImGui::SliderInt ("Fixed LOD", &scene_state.fixed_lod, 0, 16);
                 ImGui::EndTabItem ();
             }
-            if (ImGui::BeginTabItem ("Global")) {
-                scene_state.lod_mode = LODMode::Global;
+            if (begin_lod_tab ("Global", LODMode::Global)) {
+                if (ImGui::IsItemVisible()) scene_state.lod_mode = LODMode::Global;
                 ImGui::InputInt ("max lod", &scene_state.max_lod);
                 if (scene_state.octree_depth) {
                     scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.cpu_traversed, scene_state.octree_depth);
@@ -529,8 +544,8 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
                 ImGui::DragFloat ("##LODThreshold", &scene_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
                 ImGui::EndTabItem ();
             }
-            if (ImGui::BeginTabItem ("Per-Node")) {
-                scene_state.lod_mode = LODMode::PerNode;
+            if (begin_lod_tab ("Per-Node", LODMode::PerNode)) {
+                if (ImGui::IsItemVisible()) scene_state.lod_mode = LODMode::PerNode;
                 ImGui::InputInt ("max lod", &scene_state.max_lod);
                 if (scene_state.octree_depth) {
                     scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.cpu_traversed, scene_state.octree_depth);
@@ -544,6 +559,8 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
                 ImGui::DragFloat ("##LODThreshold", &scene_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
                 ImGui::EndTabItem ();
             }
+
+            this->needs_lod_sync = false;
             ImGui::EndTabBar ();
         }
     }

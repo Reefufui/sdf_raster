@@ -89,6 +89,7 @@ void Renderer::destroy_pipelines () {
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->marching_cubes_octree_pipeline, this->marching_cubes_octree_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->marching_cubes_scomtree_pipeline, this->marching_cubes_scomtree_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->mesh_shading_octree_pipeline, this->mesh_shading_octree_pipeline_layout);
+    vk_utils::destroyPipelineIfExists (this->context->get_device (), this->mesh_shading_scomtree_pipeline, this->mesh_shading_scomtree_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->traverse_octree_pipeline, this->traverse_octree_pipeline_layout);
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->traverse_scomtree_pipeline, this->traverse_scomtree_pipeline_layout);
 }
@@ -140,6 +141,10 @@ void Renderer::create_required_pipelines () {
     if (method == DrawMethod::ExplicitDeferred) {
         this->init_graphics_gbuffer_pipeline ("shaders/view_proj.vert.slang.spv", "shaders/gbuffer.frag.slang.spv");
         this->init_graphics_lighting_pipeline ();
+    }
+
+    if (method == DrawMethod::SComTreeMesh) {
+        this->init_mesh_shading_scomtree_pipeline ();
     }
 
     if (method == DrawMethod::OctreeMesh) {
@@ -909,12 +914,148 @@ void Renderer::init_mesh_shading_octree_pipeline () {
 
 void Renderer::init_mesh_shading_scomtree_pipeline () {
     assert (this->context && "required for 'mesh_shading_scomtree_pipeline'");
-    assert (this->sdf_scomtree_ds && "required for 'mesh_shading_scomtree_pipeline'");
-    assert (this->marching_cubes_lookup_table_ds && "required for 'mesh_shading_scomtree_pipeline'");
     assert (this->active_leafs_ds && "required for 'mesh_shading_scomtree_pipeline'");
+    assert (this->forward_shading && "required for 'mesh_shading_scomtree_pipeline'"); // TODO: support deferred_shading
+    assert (this->marching_cubes_lookup_table_ds && "required for 'mesh_shading_scomtree_pipeline'");
+    assert (this->sdf_scomtree_ds && "required for 'mesh_shading_scomtree_pipeline'");
 
-    // TODO:
-    assert (false && "not yet implemented");
+    const size_t shaders_count = 2;
+    std::vector <VkShaderModule> shader_modules (shaders_count);
+    std::vector <VkPipelineShaderStageCreateInfo> shader_stages (shaders_count);
+
+    shader_stages [0] = vk_utils::loadShader (this->context->get_device ()
+            , "./shaders/marching_cubes_scomtree.mesh.slang.spv"
+            , VK_SHADER_STAGE_MESH_BIT_EXT
+            , shader_modules);
+
+    shader_stages [1] = vk_utils::loadShader (this->context->get_device ()
+            , "shaders/blinn_phong.frag.slang.spv"
+            , VK_SHADER_STAGE_FRAGMENT_BIT
+            , shader_modules);
+
+    VkPushConstantRange pushConstantRange {};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.size = sizeof (PushConstantsData);
+    pushConstantRange.offset = 0;
+
+    std::vector <VkDescriptorSetLayout> descriptor_set_layouts {};
+    descriptor_set_layouts.push_back (this->sdf_scomtree_ds->get_layout ());
+    descriptor_set_layouts.push_back (this->marching_cubes_lookup_table_ds->get_layout ());
+    descriptor_set_layouts.push_back (this->active_leafs_ds->get_layout ());
+    descriptor_set_layouts.push_back (this->lod_ds->get_layout ());
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = descriptor_set_layouts.size ();
+    pipelineLayoutInfo.pSetLayouts = descriptor_set_layouts.data ();
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+    VK_CHECK_RESULT (vkCreatePipelineLayout (this->context->get_device (), &pipelineLayoutInfo, nullptr, &this->mesh_shading_scomtree_pipeline_layout));
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo {};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly {};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    auto extent = this->render_target->get_extent ();
+
+    VkViewport viewport {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float) extent.width;
+    viewport.height = (float) extent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor {};
+    scissor.offset = {0, 0};
+    scissor.extent = {(uint32_t) extent.width, (uint32_t) extent.height};
+
+    VkPipelineViewportStateCreateInfo viewportState {};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer {};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    // rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling {};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil {};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment {};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending {};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    std::vector <VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState {};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast <uint32_t> (dynamicStates.size ());
+    dynamicState.pDynamicStates = dynamicStates.data ();
+
+    VkGraphicsPipelineCreateInfo pipelineInfo {};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = static_cast <uint32_t> (shader_stages.size ());
+    pipelineInfo.pStages = shader_stages.data ();
+
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+
+    pipelineInfo.layout = this->mesh_shading_scomtree_pipeline_layout;
+    pipelineInfo.renderPass = this->forward_shading->get_render_pass ();
+    pipelineInfo.subpass = 0;
+
+    VK_CHECK_RESULT (vkCreateGraphicsPipelines (this->context->get_device ()
+        , VK_NULL_HANDLE
+        , 1
+        , &pipelineInfo
+        , nullptr
+        , &this->mesh_shading_scomtree_pipeline));
+
+    for (VkShaderModule module : shader_modules) {
+        if (module != VK_NULL_HANDLE) {
+            vkDestroyShaderModule (this->context->get_device (), module, nullptr);
+        }
+    }
+    shader_modules.clear ();
 }
 
 void Renderer::init_frustum_demo_pipeline () {
@@ -1985,6 +2126,8 @@ void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     assert (this->lod_ds && "required for 'raster_octree_via_mesh_shading'");
     assert (this->indirect_dispatch_ds && "required for 'raster_octree_via_mesh_shading'");
     assert (this->forward_shading && "required for 'raster_octree_via_mesh_shading'"); // TODO: add deferred_shading variant
+    assert (this->mesh_shading_octree_pipeline != VK_NULL_HANDLE && "required for 'raster_octree_via_mesh_shading'");
+    assert (this->mesh_shading_octree_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_octree_via_mesh_shading'");
 
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
@@ -2056,7 +2199,77 @@ void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     }
 }
 
-void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer /*cmd_buff*/) {
+void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
+    assert (this->sdf_scomtree_ds && "required for 'raster_scomtree_via_mesh_shading'");
+    assert (this->marching_cubes_lookup_table_ds && "required for 'raster_scomtree_via_mesh_shading'");
+    assert (this->active_leafs_ds && "required for 'raster_scomtree_via_mesh_shading'");
+    assert (this->lod_ds && "required for 'raster_scomtree_via_mesh_shading'");
+    assert (this->indirect_dispatch_ds && "required for 'raster_scomtree_via_mesh_shading'");
+    assert (this->forward_shading && "required for 'raster_scomtree_via_mesh_shading'"); // TODO: add deferred_shading variant
+    assert (this->mesh_shading_scomtree_pipeline != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading'"); // TODO: add deferred_shading variant
+    assert (this->mesh_shading_scomtree_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading'"); // TODO: add deferred_shading variant
+
+    this->copy_subtrees (cmd_buff);
+    this->reset_active_leafs_counter (cmd_buff);
+
+    this->traverse_scomtree (cmd_buff);
+
+    this->prepare_indirect (cmd_buff, uint32_t {1}); // NOTE: brick == meshlet
+
+    const auto extent = this->render_target->get_extent ();
+    const uint32_t image_index = this->render_target->get_current_image_index ();
+
+    std::array <VkClearValue, 2> clear_values {};
+    clear_values [0].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.0f}};
+    clear_values [1].depthStencil = {1.0f, 0};
+
+    VkRenderPassBeginInfo render_pass_info {};
+    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    render_pass_info.renderPass = this->forward_shading->get_render_pass ();
+    render_pass_info.framebuffer = this->forward_shading->get_framebuffer (image_index);
+    render_pass_info.renderArea.offset = {0, 0};
+    render_pass_info.renderArea.extent = extent;
+    render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
+    render_pass_info.pClearValues = clear_values.data ();
+
+    vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport viewport {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast <float> (extent.width);
+    viewport.height = static_cast <float> (extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_scomtree_pipeline);
+
+    std::array <VkDescriptorSet, 4> ds = {
+        this->sdf_scomtree_ds->get_descriptor_set (this->frame_index)
+        , this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index)
+        , this->active_leafs_ds->get_descriptor_set (this->frame_index)
+        , this->lod_ds->get_descriptor_set (this->frame_index)
+    };
+
+    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_scomtree_pipeline_layout
+        , 0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
+
+    vkCmdPushConstants (cmd_buff, this->mesh_shading_scomtree_pipeline_layout, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+
+    assert (sizeof (IndirectDispatch) == sizeof (VkDrawMeshTasksIndirectCommandEXT));
+    vkCmdDrawMeshTasksIndirectEXT (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0, 1, sizeof (VkDrawMeshTasksIndirectCommandEXT));
+
+    vkCmdEndRenderPass (cmd_buff);
+
+    if (!this->frustum_draw_buffer) {
+        this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
+    }
 }
 
 void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
@@ -2205,6 +2418,7 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
     }
 
     if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
+        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
         || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
         this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_physical_device ()

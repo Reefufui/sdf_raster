@@ -122,10 +122,9 @@ void generate_geometry (const NodeContext voxel, const uint vertex_offset, const
 
         const uint2 corner_indices = edge_corners [i];
         float3 position = interpolate (corners [corner_indices.x]
-                     , corners [corner_indices.y]
-                     , leaf_node.values [corner_indices.x]
-                     , leaf_node.values [corner_indices.y]);
-
+            , corners [corner_indices.y]
+            , leaf_node.values [corner_indices.x]
+            , leaf_node.values [corner_indices.y]);
 
         MeshOutput v;
         v.clip_position  = mul (pc.view_proj, float4 (position, 1.0f));

@@ -91,8 +91,8 @@ void p_size_desider (uint2 p_size, uint lod, out bool cull, out bool hit_lod) {
     const float3 node_coord = float3 (-1.0f, -1.0f, -1.0f) + node_size * float3 (p);
 
     float max_dim;
-    bool frustum_culling = true; // TODO
-    bool occlusion_culling = true; // TODO
+    bool frustum_culling = (1u << (pc.frustum_culling_level - 1u)) > level_sz;
+    bool occlusion_culling = (1u << (pc.occlusion_culling_level - 1u)) > level_sz;
     cull = !is_visible_node (frustum_culling, occlusion_culling, node_coord, node_size, max_dim);
 
     if (pc.lod_mode == LOD_MODE_PER_NODE) { // NOTE: per-node LOD mode

@@ -55,10 +55,9 @@ private:
     void init_marching_cubes_octree_pipeline ();
     void init_marching_cubes_scomtree_pipeline ();
     void init_forward_rendering_pipeline (const std::string& vert_shader_path, const std::string& frag_shader_path, VkFrontFace front_face);
-    // TODO: init_deferred_rendering_pipelines
     void init_graphics_lighting_pipeline ();
     void init_graphics_gbuffer_pipeline (const std::string& vert_shader_path, const std::string& frag_shader_path);
-    // TODO: ^^^^
+    void init_mesh_gbuffer_pipeline (const std::string& vert_shader_path, const std::string& frag_shader_path);
     void init_mesh_shading_octree_pipeline ();
     void init_mesh_shading_scomtree_pipeline ();
 
@@ -108,8 +107,10 @@ private:
     std::unique_ptr <LODDescriptorSetInfo> lod_ds {};
     std::unique_ptr <DummyDescriptorSetInfo> dummy_ds {};
 
+    VkPipeline mesh_gbuffer_pipeline {VK_NULL_HANDLE};
     VkPipeline mesh_shading_octree_pipeline {VK_NULL_HANDLE};
     VkPipeline mesh_shading_scomtree_pipeline {VK_NULL_HANDLE};
+    VkPipelineLayout mesh_gbuffer_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout mesh_shading_octree_pipeline_layout {VK_NULL_HANDLE};
     VkPipelineLayout mesh_shading_scomtree_pipeline_layout {VK_NULL_HANDLE};
 
@@ -144,6 +145,7 @@ private:
     void raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff);
     void raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff);
     void raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff);
+    void raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_buff);
     using RenderMethodPtr = void (Renderer::*)(VkCommandBuffer);
     RenderMethodPtr draw = &Renderer::forward_rendering;
 
@@ -162,7 +164,7 @@ private:
         , { DrawMethod::SComTreeCompute, &Renderer::raster_scomtree_via_compute_shading, false }
         , { DrawMethod::SComTreeComputeDeferred, &Renderer::raster_scomtree_via_compute_shading, false }
         , { DrawMethod::SComTreeMesh, &Renderer::raster_scomtree_via_mesh_shading, true }
-        , { DrawMethod::SComTreeMeshDeferred, &Renderer::raster_scomtree_via_mesh_shading, true }
+        , { DrawMethod::SComTreeMeshDeferred, &Renderer::raster_scomtree_via_mesh_shading_deferred, true }
     }};
 
     FrustumGeometry frustum {};

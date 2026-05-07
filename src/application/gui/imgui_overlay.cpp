@@ -530,33 +530,55 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
                 ImGui::EndTabItem ();
             }
             if (begin_lod_tab ("Global", LODMode::Global)) {
-                if (ImGui::IsItemVisible()) scene_state.lod_mode = LODMode::Global;
+                if (ImGui::IsItemVisible ()) scene_state.lod_mode = LODMode::Global;
                 ImGui::InputInt ("max lod", &scene_state.max_lod);
+                ImGui::InputInt ("min lod", &scene_state.min_lod);
+
+                scene_state.min_lod = LiteMath::clamp (scene_state.min_lod, scene_state.cpu_traversed, scene_state.max_lod);
                 if (scene_state.octree_depth) {
-                    scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.cpu_traversed, scene_state.octree_depth);
+                    scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.min_lod, scene_state.octree_depth);
                 } else {
-                    scene_state.max_lod = LiteMath::max (scene_state.max_lod, scene_state.cpu_traversed);
+                    scene_state.max_lod = LiteMath::max (scene_state.max_lod, scene_state.min_lod);
                 }
+
                 ImGui::Text ("LOD threshold:");
                 if (ImGui::IsItemHovered ()) {
                     ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
                 }
                 ImGui::DragFloat ("##LODThreshold", &scene_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
+
+                ImGui::Text ("LOD aggressivity:");
+                if (ImGui::IsItemHovered ()) {
+                    ImGui::SetTooltip ("Logarithmic scaling factor. Larger = more aggressive LOD simplification with distance.");
+                }
+                ImGui::DragFloat ("##LODAggressivity", &scene_state.lod_aggressivity, 0.05f, 0.1f, 10.0f, "%.2f");
+
                 ImGui::EndTabItem ();
             }
             if (begin_lod_tab ("Per-Node", LODMode::PerNode)) {
-                if (ImGui::IsItemVisible()) scene_state.lod_mode = LODMode::PerNode;
+                if (ImGui::IsItemVisible ()) scene_state.lod_mode = LODMode::PerNode;
                 ImGui::InputInt ("max lod", &scene_state.max_lod);
+                ImGui::InputInt ("min lod", &scene_state.min_lod);
+
+                scene_state.min_lod = LiteMath::clamp (scene_state.min_lod, scene_state.cpu_traversed, scene_state.max_lod);
                 if (scene_state.octree_depth) {
-                    scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.cpu_traversed, scene_state.octree_depth);
+                    scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.min_lod, scene_state.octree_depth);
                 } else {
-                    scene_state.max_lod = LiteMath::max (scene_state.max_lod, scene_state.cpu_traversed);
+                    scene_state.max_lod = LiteMath::max (scene_state.max_lod, scene_state.min_lod);
                 }
+
                 ImGui::Text ("LOD threshold:");
                 if (ImGui::IsItemHovered ()) {
                     ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
                 }
                 ImGui::DragFloat ("##LODThreshold", &scene_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
+
+                ImGui::Text ("LOD aggressivity:");
+                if (ImGui::IsItemHovered ()) {
+                    ImGui::SetTooltip ("Logarithmic scaling factor. Larger = more aggressive LOD simplification with distance.");
+                }
+                ImGui::DragFloat ("##LODAggressivity", &scene_state.lod_aggressivity, 0.05f, 0.1f, 10.0f, "%.2f");
+
                 ImGui::EndTabItem ();
             }
 

@@ -77,6 +77,7 @@ struct PushConstantsData {
     alignas (4)  float near_plane;
     alignas (4)  uint max_octree_depth;
     alignas (4)  uint max_lod;
+    alignas (4)  uint min_lod;
     alignas (4)  uint subtree_root_level;
     alignas (4)  uint active_leafs_max_count;
     alignas (4)  uint occlusion_culling_level;
@@ -86,6 +87,7 @@ struct PushConstantsData {
     alignas (4)  uint fixed_lod;
     alignas (16) float4 root_center;
     alignas (4)  float lod_threshold_pixels;
+    alignas (4)  float lod_aggressivity;
     alignas (4)  float fov_y;
     alignas (4)  uint screen_width;
     alignas (4)  uint screen_height;

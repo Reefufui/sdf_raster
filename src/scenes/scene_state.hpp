@@ -32,12 +32,14 @@ struct SceneState {
     int cpu_traversed {3};
     int gpu_descend {5}; // NOTE: deprecated
     int max_lod {16};
+    int min_lod {3};
     int frustum_culling_level {16};
     int occlusion_culling_level {16};
     LODMode lod_mode = LODMode::Fixed;
     int fixed_lod = 6;
     LiteMath::float4 octree_root_center {0.0f, 0.0f, 0.0f, 0.0f};
     float lod_threshold_pixels {2.0f};
+    float lod_aggressivity {1.0f};
 };
 
 constexpr std::string_view draw_method_name (DrawMethod m) {

@@ -20,11 +20,11 @@ uint calc_lod_for_node (float3 node_min, float node_size, uint subtree_root_leve
         / (2.0f * distance * tan_half_fov);
 
     const float lod_threshold_pixels = pc.lod_threshold_pixels;
-    uint desired_depth = subtree_root_level;
+    float desired_depth = float (subtree_root_level);
     if (projected_pixels > lod_threshold_pixels) {
-        desired_depth += uint (ceil (log2 (projected_pixels / lod_threshold_pixels)));
+        desired_depth += log2 (projected_pixels / lod_threshold_pixels) * pc.lod_aggressivity;
     }
-    return min (desired_depth, max_lod);
+    return uint (clamp (desired_depth, float (pc.min_lod), float (max_lod)));
 }
 
 uint get_global_lod () {

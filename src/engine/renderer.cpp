@@ -1429,15 +1429,17 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     }
     this->push_constants.far_plane = scene_state.camera.get_far_plane ();
     this->push_constants.near_plane = scene_state.camera.get_near_plane ();
-    this->push_constants.max_lod = scene_state.max_lod;
-    this->push_constants.subtree_root_level = scene_state.cpu_traversed;
-    this->push_constants.occlusion_culling_level = scene_state.occlusion_culling_level;
-    this->push_constants.frustum_culling_level = scene_state.frustum_culling_level;
+    this->push_constants.max_lod = static_cast <uint> (scene_state.max_lod);
+    this->push_constants.min_lod = static_cast <uint> (scene_state.min_lod);
+    this->push_constants.subtree_root_level = static_cast <uint> (scene_state.cpu_traversed);
+    this->push_constants.occlusion_culling_level = static_cast <uint> (scene_state.occlusion_culling_level);
+    this->push_constants.frustum_culling_level = static_cast <uint> (scene_state.frustum_culling_level);
     this->push_constants.color_leafs = settings.color_leafs;
     this->push_constants.lod_mode = static_cast <uint> (scene_state.lod_mode);
-    this->push_constants.fixed_lod = scene_state.fixed_lod;
+    this->push_constants.fixed_lod = static_cast <uint> (scene_state.fixed_lod);
     this->push_constants.root_center = scene_state.octree_root_center;
     this->push_constants.lod_threshold_pixels = scene_state.lod_threshold_pixels;
+    this->push_constants.lod_aggressivity = scene_state.lod_aggressivity;
     this->push_constants.fov_y = scene_state.camera.get_fov_y () * (3.14159265359f / 180.0f);
     auto extent = this->render_target->get_extent ();
     this->push_constants.screen_width = extent.width;

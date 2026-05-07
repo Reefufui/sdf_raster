@@ -207,7 +207,7 @@ void Renderer::init_push_constants () {
         throw std::runtime_error ("sizeof (PushConstantsData) exceeds VkPhysicalDeviceProperties::maxPushConstantsSize");
     }
 
-    this->push_constants.active_leafs_max_count = 999999; // TODO: settings
+    this->push_constants.active_leafs_max_count = 1500000; // TODO: settings
 }
 
 void Renderer::init_compute_hz_buffer_pipeline () {
@@ -728,9 +728,9 @@ void Renderer::init_mesh_gbuffer_pipeline (const std::string& vert_shader_path, 
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    // rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.cullMode = VK_CULL_MODE_NONE;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    // rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
     VkPipelineMultisampleStateCreateInfo multisampling {};

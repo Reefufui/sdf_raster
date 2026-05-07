@@ -167,6 +167,7 @@ void GUIApplication::init_scene_manager () {
     this->scene_manager = std::make_unique <SceneManager> ();
     this->scene_manager->register_scene_type <ObjScene> (".obj");
     this->scene_manager->register_scene_type <SComTreeScene> (".scomtree");
+    this->scene_manager->register_scene_type <SComTreeScene> (".bin");
     this->scene_manager->register_scene_type <SdfOctreeScene> (".octree");
 
     this->scene_manager->subscribe ([this] (SceneEventType type, const std::filesystem::path& path) {

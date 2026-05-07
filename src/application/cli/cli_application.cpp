@@ -114,6 +114,7 @@ std::shared_ptr <SceneManager> CLIApplication::create_scene_manager () {
     auto manager = std::make_shared <SceneManager> ();
     manager->register_scene_type <ObjScene> (".obj");
     manager->register_scene_type <SComTreeScene> (".scomtree");
+    manager->register_scene_type <SComTreeScene> (".bin");
     manager->register_scene_type <SdfOctreeScene> (".octree");
     manager->restore_states (this->session.scene_states);
     return manager;

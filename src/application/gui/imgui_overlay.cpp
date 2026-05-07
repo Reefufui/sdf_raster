@@ -757,7 +757,7 @@ void UI::status_bar (Settings& settings, const Stats& stats, SceneState& scene_s
             .text = std::format ("Roots:{:06}", stats.active_roots_count)
         });
         elements.push_back (StatusBarElement {
-            .text = std::format ("Leafs:{:06}", stats.active_leafs_count)
+            .text = std::format ("Leafs:{:07}", stats.active_leafs_count)
         });
     }
 

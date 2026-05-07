@@ -248,6 +248,11 @@ void VulkanContext::create_device () {
     eight_bit_storage_features_query.pNext = pNext_query_chain;
     pNext_query_chain = &eight_bit_storage_features_query;
 
+    VkPhysicalDeviceVulkan12Features vulkan12_features_query {};
+    vulkan12_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    vulkan12_features_query.pNext = pNext_query_chain;
+    pNext_query_chain = &vulkan12_features_query;
+
     VkPhysicalDeviceVulkan13Features vulkan13_features_query {};
     vulkan13_features_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     vulkan13_features_query.pNext = pNext_query_chain;
@@ -284,46 +289,38 @@ void VulkanContext::create_device () {
         pNext_create_chain = &vulkan11_features_enable;
     }
 
-    VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features_enable {};
+    VkPhysicalDeviceVulkan12Features vulkan12_features_enable {};
+    vulkan12_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+
+    if (vulkan12_features_query.hostQueryReset) {
+        vulkan12_features_enable.hostQueryReset = VK_TRUE;
+    } else {
+        LOG_WARN ("[VulkanContext] hostQueryReset is NOT supported on this physical device. Timestamps might fail.");
+    }
+
     if (timeline_semaphore_features_query.timelineSemaphore) {
-        timeline_semaphore_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
-        timeline_semaphore_features_enable.timelineSemaphore = VK_TRUE;
-        timeline_semaphore_features_enable.pNext = pNext_create_chain;
-        pNext_create_chain = &timeline_semaphore_features_enable;
+        vulkan12_features_enable.timelineSemaphore = VK_TRUE;
     }
 
-    VkPhysicalDeviceVulkanMemoryModelFeatures vulkan_memory_model_features_enable {};
     if (vulkan_memory_model_features_query.vulkanMemoryModel) {
-        vulkan_memory_model_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES;
-        vulkan_memory_model_features_enable.vulkanMemoryModel = VK_TRUE;
-        vulkan_memory_model_features_enable.vulkanMemoryModelDeviceScope = vulkan_memory_model_features_query.vulkanMemoryModelDeviceScope;
-        vulkan_memory_model_features_enable.pNext = pNext_create_chain;
-        pNext_create_chain = &vulkan_memory_model_features_enable;
+        vulkan12_features_enable.vulkanMemoryModel = VK_TRUE;
+        vulkan12_features_enable.vulkanMemoryModelDeviceScope = vulkan_memory_model_features_query.vulkanMemoryModelDeviceScope;
     }
 
-    VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features_enable {};
     if (buffer_device_address_features_query.bufferDeviceAddress) {
-        buffer_device_address_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
-        buffer_device_address_features_enable.bufferDeviceAddress = VK_TRUE;
-        buffer_device_address_features_enable.pNext = pNext_create_chain;
-        pNext_create_chain = &buffer_device_address_features_enable;
+        vulkan12_features_enable.bufferDeviceAddress = VK_TRUE;
     }
 
-    VkPhysicalDeviceScalarBlockLayoutFeatures scalar_block_layout_features_enable {};
     if (scalar_block_layout_features_query.scalarBlockLayout) {
-        scalar_block_layout_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES;
-        scalar_block_layout_features_enable.scalarBlockLayout = VK_TRUE;
-        scalar_block_layout_features_enable.pNext = pNext_create_chain;
-        pNext_create_chain = &scalar_block_layout_features_enable;
+        vulkan12_features_enable.scalarBlockLayout = VK_TRUE;
     }
 
-    VkPhysicalDevice8BitStorageFeatures eight_bit_storage_features_enable {};
     if (eight_bit_storage_features_query.storageBuffer8BitAccess) {
-        eight_bit_storage_features_enable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES;
-        eight_bit_storage_features_enable.storageBuffer8BitAccess = VK_TRUE;
-        eight_bit_storage_features_enable.pNext = pNext_create_chain;
-        pNext_create_chain = &eight_bit_storage_features_enable;
+        vulkan12_features_enable.storageBuffer8BitAccess = VK_TRUE;
     }
+
+    vulkan12_features_enable.pNext = pNext_create_chain;
+    pNext_create_chain = &vulkan12_features_enable;
 
     VkPhysicalDeviceMeshShaderFeaturesEXT requested_mesh_shader_features_enable {};
     if (mesh_shader_features_query.taskShader && mesh_shader_features_query.meshShader) {

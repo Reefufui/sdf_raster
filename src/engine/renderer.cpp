@@ -1885,7 +1885,7 @@ void Renderer::traverse_scomtree (VkCommandBuffer cmd_buff) {
 
     vkCmdPushConstants (cmd_buff, this->traverse_scomtree_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
 
-    vkCmdDispatch (cmd_buff, 1, 1, subtree_root_count); // TODO: direct descend with (8, 8, <cpu_roots>)
+    vkCmdDispatch (cmd_buff, 8, 8, subtree_root_count);
 }
 
 void Renderer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size) {

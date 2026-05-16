@@ -414,9 +414,7 @@ void Renderer::init_forward_rendering_pipeline (const std::string& vert_shader_p
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    // TODO: rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    // rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.cullMode = VK_CULL_MODE_NONE; // TODO: cull mode setting
     rasterizer.frontFace = front_face;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -581,7 +579,7 @@ void Renderer::init_graphics_gbuffer_pipeline (const std::string& vert_shader_pa
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.cullMode = VK_CULL_MODE_NONE; // TODO: cull mode setting
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -728,9 +726,7 @@ void Renderer::init_mesh_gbuffer_pipeline (const std::string& vert_shader_path, 
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    // rasterizer.cullMode = VK_CULL_MODE_NONE;
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.cullMode = VK_CULL_MODE_NONE; // TODO: cull mode setting
     rasterizer.depthBiasEnable = VK_FALSE;
 
     VkPipelineMultisampleStateCreateInfo multisampling {};
@@ -865,7 +861,7 @@ void Renderer::init_graphics_lighting_pipeline () {
     VkPipelineRasterizationStateCreateInfo rasterizer {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_NONE,
+        .cullMode = VK_CULL_MODE_NONE, // TODO: cull mode setting
         .lineWidth = 1.0f
     };
 
@@ -996,8 +992,7 @@ void Renderer::init_mesh_shading_octree_pipeline () {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    // rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.cullMode = VK_CULL_MODE_NONE; // TODO: cull mode setting
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -1142,8 +1137,7 @@ void Renderer::init_mesh_shading_scomtree_pipeline () {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    // rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.cullMode = VK_CULL_MODE_NONE; // TODO: cull mode setting
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -1295,8 +1289,7 @@ void Renderer::init_frustum_demo_pipeline () {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    // rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.cullMode = VK_CULL_MODE_NONE; // TODO: cull mode setting
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 

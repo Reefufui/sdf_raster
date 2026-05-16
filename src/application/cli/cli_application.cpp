@@ -138,6 +138,9 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
     if (!scene) {
         throw std::runtime_error ("Failed to load scene: " + config.scene_path.string ());
     }
+    scene->get_state ().camera.set_aspect_ratio (config.width / config.height);
+
+    LOG_INFO ("[Benchmark] Scene memory size: {:.2f} MB", scene->get_memory_size () / (1024.0 * 1024.0));
 
     auto render_target = std::make_shared <OffscreenRenderTarget> (
         vulkan_context,
@@ -152,10 +155,12 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
     uint32_t fif_index = 0;
     const uint32_t total_frames = config.warmup_frames + config.measurement_frames;
 
+    LOG_INFO ("[Benchmark] Starting warmup phase ({} frames).", config.warmup_frames);
+
     for (uint32_t frame_index = 0; frame_index < total_frames; ++frame_index) {
         if (frame_index == config.warmup_frames) {
             render_target->clear_gpu_times ();
-            LOG_INFO ("[Benchmark] Warmup complete. Starting measurement phase.");
+            LOG_INFO ("[Benchmark] Starting measurement phase ({} frames).", config.measurement_frames);
         }
 
         VkCommandBuffer cmd_buff = render_target->begin_frame (fif_index);
@@ -185,6 +190,7 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
         times_ns,
         config,
         vulkan_context,
+        scene,
         render_target->get_timestamp_period ()
     );
 
@@ -200,6 +206,7 @@ void CLIApplication::drain_pending_frames (std::shared_ptr <OffscreenRenderTarge
 void CLIApplication::write_results (const std::vector <double>& gpu_times_ns,
                                     const BenchmarkConfig& config,
                                     std::shared_ptr <VulkanContext> vulkan_context,
+                                    std::shared_ptr <Scene> scene,
                                     double timestamp_period) {
     if (gpu_times_ns.empty ()) {
         LOG_WARN ("[Benchmark] No GPU times recorded.");
@@ -256,7 +263,11 @@ void CLIApplication::write_results (const std::vector <double>& gpu_times_ns,
     const double variance = sq_sum / static_cast <double> (n) - mean * mean;
     const double std_dev = (variance > 0.0) ? std::sqrt (variance) : 0.0;
 
-    result["statistics"] = {
+    const size_t model_size_bytes = scene ? scene->get_memory_size () : 0;
+    result ["model_size_bytes"] = model_size_bytes;
+    result ["model_size_mbytes"] = static_cast <double> (model_size_bytes) / (1024.0 * 1024.0);
+
+    result ["statistics"] = {
         {"count", times_ms.size ()},
         {"mean_ms", mean},
         {"median_ms", median},
@@ -264,10 +275,24 @@ void CLIApplication::write_results (const std::vector <double>& gpu_times_ns,
         {"max_ms", sorted.back ()},
         {"p95_ms", p95},
         {"p99_ms", p99},
-        {"std_dev_ms", std_dev}
+        {"std_dev_ms", std_dev},
+        {"mean_fps", 1000.0 / mean},
+        {"median_fps", 1000.0 / median},
+        {"min_fps", 1000.0 / sorted.back ()},
+        {"max_fps", 1000.0 / sorted.front ()},
+        {"p95_fps", 1000.0 / p95},
+        {"p99_fps", 1000.0 / p99}
     };
 
     result["frames_ms"] = times_ms;
+
+    LOG_INFO ("[Benchmark] Statistics:");
+    LOG_INFO ("  Mean FPS:   {:.2f}", 1000.0 / mean);
+    LOG_INFO ("  Median FPS: {:.2f}", 1000.0 / median);
+    LOG_INFO ("  95% FPS:    {:.2f}", 1000.0 / p95);
+    LOG_INFO ("  99% FPS:    {:.2f}", 1000.0 / p99);
+    LOG_INFO ("  Min FPS:    {:.2f}", 1000.0 / sorted.back ());
+    LOG_INFO ("  Max FPS:    {:.2f}", 1000.0 / sorted.front ());
 
     std::ofstream out (config.output_path.string ());
     out << result.dump (2);

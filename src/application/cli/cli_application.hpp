@@ -53,6 +53,7 @@ private:
     void write_results (const std::vector <double>& gpu_times_ns,
                         const BenchmarkConfig& config,
                         std::shared_ptr <VulkanContext> vulkan_context,
+                        std::shared_ptr <Scene> scene,
                         double timestamp_period);
     void drain_pending_frames (std::shared_ptr <OffscreenRenderTarget> render_target);
     void run_benchmark (const BenchmarkConfig& config);

@@ -82,7 +82,9 @@ int main (int argc, char* argv []) {
         exit_code = EXIT_FAILURE;
     }
 
-    sdf_raster::dump_session (session, config.config_path);
+    if (!config.headless) {
+        sdf_raster::dump_session (session, config.config_path);
+    }
     sdf_raster::log_app_exit (exit_code);
 
     return exit_code;

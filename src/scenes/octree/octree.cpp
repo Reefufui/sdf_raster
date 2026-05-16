@@ -189,5 +189,13 @@ std::span <const DrawMethod> SdfOctreeScene::get_available_draw_methods () const
     return this->available_methods;
 }
 
+size_t SdfOctreeScene::get_memory_size () const {
+    size_t size = 0;
+    for (const auto& node : this->data.nodes) {
+        size += sizeof (node.values) + sizeof (node.offset);
+    }
+    return size;
+}
+
 } // sdf_raster
 

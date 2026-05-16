@@ -82,16 +82,18 @@ float4 main (float4 sv_pos : SV_Position) : SV_Target {
 
     float3 ambient_term = albedo.rgb * pc.ambient_strength;
 
-    float diff = saturate (dot (normal, light_dir));
+    float diff = max (0.0f, dot (normal, light_dir));
     float3 diffuse_term = albedo.rgb * diff * pc.light_color.xyz;
 
-    float spec = pow (saturate (dot (normal, half_dir)), pc.shininess);
+    float spec = pow (max (0.0f, dot (normal, half_dir)), pc.shininess);
     float3 specular_term = float3 (pc.specular_strength) * spec * pc.light_color.xyz;
 
     float3 final_color = ambient_term + diffuse_term + specular_term;
 
-    float fog_factor = smoothstep (pc.fog_start, pc.fog_end, depth);
-    final_color = lerp (final_color, pc.fog_color.xyz, fog_factor);
+    if (pc.fog_end > 0.0f) {
+        float fog_factor = smoothstep (pc.fog_start, pc.fog_end, depth);
+        final_color = lerp (final_color, pc.fog_color.xyz, fog_factor);
+    }
 
     return float4 (final_color, 1.0f);
 }

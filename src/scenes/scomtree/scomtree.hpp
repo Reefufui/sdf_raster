@@ -31,6 +31,8 @@ public:
 
     std::span <const DrawMethod> get_available_draw_methods () const override;
 
+    size_t get_memory_size () const override;
+
     ~SComTreeScene () override;
 
     const SComTree& get_octree_data () const;

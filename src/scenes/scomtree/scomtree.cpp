@@ -570,5 +570,11 @@ std::span <const DrawMethod> SComTreeScene::get_available_draw_methods () const 
     return this->available_methods;
 }
 
+size_t SComTreeScene::get_memory_size () const {
+    return sizeof (Header)
+         + this->data.nodes.size () * sizeof (uint32_t)
+         + this->data.bricks.size () * sizeof (uint32_t);
+}
+
 } // sdf_raster
 

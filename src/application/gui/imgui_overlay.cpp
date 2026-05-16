@@ -275,8 +275,8 @@ void camera_input (Camera& camera) {
     move.x -= static_cast <float> (ImGui::IsKeyDown (ImGuiKey_S));
     move.y += static_cast <float> (ImGui::IsKeyDown (ImGuiKey_D));
     move.y -= static_cast <float> (ImGui::IsKeyDown (ImGuiKey_A));
-    move.z -= static_cast <float> (ImGui::IsKeyDown (ImGuiKey_Space));
-    move.z += static_cast <float> (ImGui::IsKeyDown (ImGuiKey_LeftCtrl));
+    move.z += static_cast <float> (ImGui::IsKeyDown (ImGuiKey_Space));
+    move.z -= static_cast <float> (ImGui::IsKeyDown (ImGuiKey_LeftCtrl));
 
     if (LiteMath::length (move) > 0.0f) {
         camera.move (LiteMath::normalize (move), io.DeltaTime);

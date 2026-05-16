@@ -34,6 +34,7 @@ public:
     void set_state (const SceneState& scene_state) override;
     std::span <const DrawMethod> get_available_draw_methods () const override;
     void invalidate_cache () override {}
+    size_t get_memory_size () const override;
 
     const ObjModel& get_model_data () const;
 

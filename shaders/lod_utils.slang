@@ -16,13 +16,16 @@ uint calc_lod_for_node (float3 node_min, float node_size, uint subtree_root_leve
 
     const float distance = max (distance_to_aabb (pc.camera_pos.xyz, node_min, node_max), 1e-5f);
     const float tan_half_fov = tan (pc.fov_y * 0.5f);
-    const float projected_pixels = node_size * float (pc.screen_height)
+
+    // Use absolute world scale (2.0) to calculate projected pixels,
+    // making LOD independent of current node_size (and subtree_root_level)
+    const float world_size = 2.0f;
+    const float world_projected_pixels = world_size * float (pc.screen_height)
         / (2.0f * distance * tan_half_fov);
 
-    const float lod_threshold_pixels = pc.lod_threshold_pixels;
-    float desired_depth = float (subtree_root_level);
-    if (projected_pixels > lod_threshold_pixels) {
-        desired_depth += log2 (projected_pixels / lod_threshold_pixels) * pc.lod_aggressivity;
+    float desired_depth = 0.0f;
+    if (world_projected_pixels > pc.lod_threshold_pixels) {
+        desired_depth = log2 (world_projected_pixels / pc.lod_threshold_pixels) * pc.lod_aggressivity;
     }
     return uint (clamp (desired_depth, float (pc.min_lod), float (max_lod)));
 }

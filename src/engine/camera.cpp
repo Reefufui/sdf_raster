@@ -2,6 +2,7 @@
 #include "camera.hpp"
 
 #include "shader_common.hpp"
+#include "logger.hpp"
 
 #include <vk_buffers.h>
 #include <vk_utils.h>
@@ -65,8 +66,8 @@ void Camera::rotate (float x_offset, float y_offset) {
     x_offset *= this->mouse_sensitivity;
     y_offset *= this->mouse_sensitivity;
 
-    // Yaw around world up (0, -1, 0)
-    math::Quat q_yaw = math::quat_from_axis_angle (LiteMath::float3 (0.0f, -1.0f, 0.0f), -x_offset);
+    // Yaw around world up (0, 1, 0)
+    math::Quat q_yaw = math::quat_from_axis_angle (LiteMath::float3 (0.0f, 1.0f, 0.0f), -x_offset);
     // Pitch around local right (1, 0, 0)
     math::Quat q_pitch = math::quat_from_axis_angle (LiteMath::float3 (1.0f, 0.0f, 0.0f), -y_offset);
 
@@ -84,12 +85,17 @@ void Camera::update () {
     LiteMath::float4x4 rot_mat = math::quat_to_mat4 (this->orientation);
 
     // Extract basis vectors from rotation matrix columns
-    this->right = LiteMath::normalize (LiteMath::float3 (rot_mat.col (0).x, rot_mat.col (0).y, rot_mat.col (0).z));
-    this->up    = LiteMath::normalize (LiteMath::float3 (-rot_mat.col (1).x, -rot_mat.col (1).y, -rot_mat.col (1).z));
+    this->up    = LiteMath::normalize (LiteMath::float3 (rot_mat.col (1).x, rot_mat.col (1).y, rot_mat.col (1).z));
     this->front = LiteMath::normalize (LiteMath::float3 (rot_mat.col (2).x, rot_mat.col (2).y, rot_mat.col (2).z));
+    this->right = LiteMath::cross (this->front, this->up);
 
     this->view_matrix = LiteMath::lookAt (this->position, this->position + this->front, this->up);
+
     this->projection_matrix = LiteMath::perspectiveMatrix (this->fov_y, this->aspect_ratio, this->near_plane, this->far_plane);
+
+    // Vulkan NDC: Y is down, Z is [0, 1]
+    this->projection_matrix (1, 1) *= -1.0f;
+
     this->view_projection_matrix = this->projection_matrix * this->view_matrix;
     this->inv_view_projection_matrix = LiteMath::inverse4x4 (this->view_projection_matrix);
 

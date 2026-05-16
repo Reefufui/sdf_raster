@@ -15,6 +15,7 @@ public:
     virtual void set_state (const SceneState& scene_state) = 0;
     virtual SceneState& get_state () = 0;
     virtual std::span <const DrawMethod> get_available_draw_methods () const = 0;
+    virtual size_t get_memory_size () const = 0;
 
     DrawMethod get_current_draw_method () const;
     void set_current_draw_method (DrawMethod method);

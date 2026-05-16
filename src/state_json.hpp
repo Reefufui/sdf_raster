@@ -15,6 +15,30 @@ using json = nlohmann::json;
 namespace nlohmann {
 
 template <>
+struct adl_serializer <LiteMath::float4x4> {
+    static void to_json (json& j, const LiteMath::float4x4& mat) {
+        j = json::array();
+        for (int i = 0; i < 4; i++) {
+            j.push_back(mat.col(i).x);
+            j.push_back(mat.col(i).y);
+            j.push_back(mat.col(i).z);
+            j.push_back(mat.col(i).w);
+        }
+    }
+
+    static void from_json (const json& j, LiteMath::float4x4& mat) {
+        for (int i = 0; i < 4; i++) {
+            LiteMath::float4 c;
+            c.x = j.at(i * 4 + 0).get<float>();
+            c.y = j.at(i * 4 + 1).get<float>();
+            c.z = j.at(i * 4 + 2).get<float>();
+            c.w = j.at(i * 4 + 3).get<float>();
+            mat.set_col(i, c);
+        }
+    }
+};
+
+template <>
 struct adl_serializer <LiteMath::float3> {
     static void to_json (json& j, const LiteMath::float3& vec) {
         j = {vec.x, vec.y, vec.z};
@@ -87,6 +111,7 @@ struct adl_serializer <sdf_raster::Trajectory> {
 template <>
 struct adl_serializer <sdf_raster::Camera> {
     static void to_json (json& j, const sdf_raster::Camera& cam) {
+        auto camera_target = cam.position + cam.front;
         j = json {
             {"position", cam.position}
             , {"orientation", cam.orientation}
@@ -97,6 +122,11 @@ struct adl_serializer <sdf_raster::Camera> {
             , {"far_plane", cam.far_plane}
             , {"aspect_ratio", cam.aspect_ratio}
             , {"trajectories", cam.trajectories}
+            , {"LiteRT", json {
+                {"camera_pos", cam.position},
+                {"camera_target", camera_target},
+                {"camera_up", cam.up}
+            }}
         };
     }
 
@@ -137,7 +167,9 @@ struct adl_serializer <sdf_raster::SceneState> {
             {"lod_mode", scene_state.lod_mode},
             {"fixed_lod", scene_state.fixed_lod},
             {"octree_root_center", scene_state.octree_root_center},
-            {"lod_threshold_pixels", scene_state.lod_threshold_pixels}
+            {"lod_threshold_pixels", scene_state.lod_threshold_pixels},
+            {"min_lod", scene_state.min_lod},
+            {"lod_aggressivity", scene_state.lod_aggressivity}
         };
     }
 
@@ -161,6 +193,13 @@ struct adl_serializer <sdf_raster::SceneState> {
 
         j.at ("octree_root_center").get_to (scene_state.octree_root_center);
         j.at ("lod_threshold_pixels").get_to (scene_state.lod_threshold_pixels);
+
+        if (j.contains ("min_lod")) {
+            j.at ("min_lod").get_to (scene_state.min_lod);
+        }
+        if (j.contains ("lod_aggressivity")) {
+            j.at ("lod_aggressivity").get_to (scene_state.lod_aggressivity);
+        }
     }
 };
 
@@ -191,6 +230,7 @@ namespace sdf_raster {
         light_pos,
         light_color,
         fog_color,
+        clear_color,
         ambient_strength,
         specular_strength,
         shininess,

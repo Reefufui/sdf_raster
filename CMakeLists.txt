@@ -18,29 +18,29 @@ set (REQUIRED_VULKAN_MINOR 4)
 set (REQUIRED_VULKAN_VERSION_STRING "${REQUIRED_VULKAN_MAJOR}.${REQUIRED_VULKAN_MINOR}")
 
 if (NOT DEFINED Vulkan_VERSION OR "${Vulkan_VERSION}" STREQUAL "")
-    message (FATAL_ERROR "Could not determine Vulkan API version from found Vulkan installation. 'Vulkan_VERSION' variable is not set by find_package (Vulkan).")
-endif ()
-
-string (REGEX MATCH "^([0-9]+)\\.([0-9]+)" _match_result "${Vulkan_VERSION}")
-if (NOT _match_result)
-    message (FATAL_ERROR "Could not parse major.minor version from Vulkan_VERSION string '${Vulkan_VERSION}'. Expected format like 'X.Y.Z'.")
-endif ()
-
-set (FOUND_VULKAN_MAJOR "${CMAKE_MATCH_1}")
-set (FOUND_VULKAN_MINOR "${CMAKE_MATCH_2}")
-
-message (STATUS "Parsed Vulkan API version from string: ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR}")
-
-if (FOUND_VULKAN_MAJOR LESS REQUIRED_VULKAN_MAJOR)
-    message (FATAL_ERROR "Found Vulkan API version ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR} is below the required minimum version ${REQUIRED_VULKAN_VERSION_STRING}. Please update your Vulkan drivers/SDK.")
-elseif (FOUND_VULKAN_MAJOR EQUAL REQUIRED_VULKAN_MAJOR AND FOUND_VULKAN_MINOR LESS REQUIRED_VULKAN_MINOR)
-    message(FATAL_ERROR "Found Vulkan API version ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR} is below the required minimum version ${REQUIRED_VULKAN_VERSION_STRING}. Please update your Vulkan drivers/SDK.")
+    message (WARNING "Could not determine Vulkan API version from found Vulkan installation. 'Vulkan_VERSION' variable is not set by find_package (Vulkan).")
 else ()
-    message(STATUS "Found Vulkan API version ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR} meets or exceeds the required minimum version ${REQUIRED_VULKAN_VERSION_STRING}.")
+    string (REGEX MATCH "^([0-9]+)\\.([0-9]+)" _match_result "${Vulkan_VERSION}")
+    if (NOT _match_result)
+        message (FATAL_ERROR "Could not parse major.minor version from Vulkan_VERSION string '${Vulkan_VERSION}'. Expected format like 'X.Y.Z'.")
+    endif ()
+
+    set (FOUND_VULKAN_MAJOR "${CMAKE_MATCH_1}")
+    set (FOUND_VULKAN_MINOR "${CMAKE_MATCH_2}")
+
+    message (STATUS "Parsed Vulkan API version from string: ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR}")
+
+    if (FOUND_VULKAN_MAJOR LESS REQUIRED_VULKAN_MAJOR)
+        message (FATAL_ERROR "Found Vulkan API version ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR} is below the required minimum version ${REQUIRED_VULKAN_VERSION_STRING}. Please update your Vulkan drivers/SDK.")
+    elseif (FOUND_VULKAN_MAJOR EQUAL REQUIRED_VULKAN_MAJOR AND FOUND_VULKAN_MINOR LESS REQUIRED_VULKAN_MINOR)
+        message(FATAL_ERROR "Found Vulkan API version ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR} is below the required minimum version ${REQUIRED_VULKAN_VERSION_STRING}. Please update your Vulkan drivers/SDK.")
+    else ()
+        message(STATUS "Found Vulkan API version ${FOUND_VULKAN_MAJOR}.${FOUND_VULKAN_MINOR} meets or exceeds the required minimum version ${REQUIRED_VULKAN_VERSION_STRING}.")
+    endif ()
 endif ()
 
 message (STATUS "Checking for system glfw3...")
-set (REQUIRED_GLFW_VERSION "3.3.10")
+set (REQUIRED_GLFW_VERSION "3.3.6")
 find_package (glfw3 CONFIG REQUIRED)
 if (glfw3_VERSION VERSION_GREATER REQUIRED_GLFW_VERSION)
     message (WARNING 
@@ -108,6 +108,7 @@ add_library (tinyobjloader STATIC
     submodules/tinyobjloader/tiny_obj_loader.h
 )
 target_include_directories (tinyobjloader PUBLIC submodules/tinyobjloader)
+target_compile_definitions (tinyobjloader PRIVATE TINYOBJLOADER_STREAM_READER_MAX_BYTES=4294967296)
 add_library (tinyobjloader::tinyobjloader ALIAS tinyobjloader)
 
 if (CMAKE_BUILD_TYPE MATCHES Debug)

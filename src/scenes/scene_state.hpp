@@ -38,6 +38,9 @@ struct SceneState {
     LODMode lod_mode = LODMode::Fixed;
     int fixed_lod = 6;
     LiteMath::float4 octree_root_center {0.0f, 0.0f, 0.0f, 0.0f};
+    LiteMath::float3 position {0.0f, 0.0f, 0.0f};
+    LiteMath::float3 rotation {0.0f, 0.0f, 0.0f}; // in degrees
+    LiteMath::float3 scale {1.0f, 1.0f, 1.0f};
     float lod_threshold_pixels {2.0f};
     float lod_aggressivity {1.0f};
 };

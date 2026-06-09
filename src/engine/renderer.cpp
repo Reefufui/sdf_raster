@@ -1377,6 +1377,11 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     auto& scene_state = current_scene->get_state ();
     scene_state.camera.update (delta_time);
 
+    if (settings.animate_rotation) {
+        scene_state.rotation.y += 45.0f * delta_time;
+        if (scene_state.rotation.y > 360.0f) scene_state.rotation.y -= 360.0f;
+    }
+
     if (!settings.frustum_view && this->frustum_draw_buffer) {
         this->clear_color = this->clear_color * 2.f;
         scene_state.camera = this->frustum_draw_buffer->get_camera ();
@@ -1396,7 +1401,7 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     if (this->sdf_octree_ds) {
         this->stats.active_roots_count = this->sdf_octree_ds->get_subtree_count ();
     } else if (this->sdf_scomtree_ds) {
-        this->stats.active_roots_count = this->sdf_scomtree_ds->get_subtree_count ();
+    this->stats.active_roots_count = this->sdf_scomtree_ds->get_subtree_count ();
     } else {
         this->stats.active_roots_count = 0;
     }
@@ -1411,7 +1416,7 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     }
 
     if (this->hz_buffer_ds) {
-        this->push_constants.prev_view_proj = this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj;
+        this->push_constants.prev_mvp = this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp;
     }
 
     this->push_constants.view_proj = scene_state.camera.get_view_projection_matrix ();
@@ -1445,8 +1450,13 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
         auto& lighting_pc = this->deferred_shading->push_constants_ref ();
         const auto& lighting = settings.lighting;
 
-        lighting_pc.camera_pos        = LiteMath::to_float4 (scene_state.camera.get_position (), 1.0f);
-        lighting_pc.light_pos         = LiteMath::to_float4 (lighting.light_pos, 1.0f);
+        LiteMath::float4x4 inv_model;
+        if (this->current_scene) {
+            inv_model = LiteMath::inverse4x4 (this->current_scene->get_model_matrix ());
+        }
+
+        lighting_pc.camera_pos        = inv_model * LiteMath::to_float4 (scene_state.camera.get_position (), 1.0f);
+        lighting_pc.light_pos         = inv_model * LiteMath::to_float4 (lighting.light_pos, 1.0f);
         lighting_pc.light_color       = LiteMath::to_float4 (lighting.light_color, 1.0f);
         lighting_pc.fog_color         = LiteMath::to_float4 (lighting.fog_color, 1.0f);
 
@@ -1463,7 +1473,13 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
 
     if (!settings.frustum_view && this->frustum_ds) {
         FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds->get_frustum_geometry_memory_ptr (this->frame_index));
-        this->update_frustum_buffer (scene_state.camera);
+        
+        LiteMath::float4x4 inv_model;
+        if (this->current_scene) {
+            inv_model = LiteMath::inverse4x4 (this->current_scene->get_model_matrix ());
+        }
+
+        this->update_frustum_buffer (scene_state.camera, inv_model);
         *ptr = this->frustum;
 
         if (this->sdf_octree_ds) {
@@ -1484,9 +1500,12 @@ LiteMath::float3 face_normal (const LiteMath::float4& a, const LiteMath::float4&
 
 }
 
-void Renderer::update_frustum_buffer (const Camera& camera) {
+void Renderer::update_frustum_buffer (const Camera& camera, const LiteMath::float4x4& inv_model) {
     const auto& vertices = camera.get_frustum_corners ();
-    std::copy (vertices.begin (), vertices.end (), this->frustum.vertices);
+    
+    for (size_t i = 0; i < 8; ++i) {
+        this->frustum.vertices [i] = inv_model * vertices [i];
+    }
 
     this->frustum.normals [0] = LiteMath::to_float4 (face_normal (this->frustum.vertices [1], this->frustum.vertices [0], this->frustum.vertices [2]), 1.f); // Near
     this->frustum.normals [1] = LiteMath::to_float4 (face_normal (this->frustum.vertices [4], this->frustum.vertices [5], this->frustum.vertices [7]), 1.f); // Far
@@ -1934,7 +1953,7 @@ void Renderer::prepare_hzbuffer_after_forward_rendering (VkCommandBuffer cmd_buf
     assert (this->hz_buffer_ds && "required for 'prepare_hzbuffer_after_forward_rendering");
     assert (this->forward_shading && "required for 'prepare_hzbuffer_after_forward_rendering");
 
-    this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
+    this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
 
     this->hz_buffer_barrier (cmd_buff
         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
@@ -2278,6 +2297,19 @@ void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     assert (this->mesh_shading_octree_pipeline != VK_NULL_HANDLE && "required for 'raster_octree_via_mesh_shading'");
     assert (this->mesh_shading_octree_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_octree_via_mesh_shading'");
 
+    auto original_push_constants = this->push_constants;
+
+    if (this->current_scene) {
+        using namespace LiteMath;
+        float4x4 model = this->current_scene->get_model_matrix();
+        float4x4 inv_model = LiteMath::inverse4x4(model);
+
+        this->push_constants.view_proj = original_push_constants.view_proj * model;
+
+        float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
+        this->push_constants.camera_pos = local_cam_pos;
+    }
+
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
@@ -2289,6 +2321,7 @@ void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
         if (this->context->get_use_mesh_shading ()) {
             throw std::logic_error ("Mesh shader pipeline is NULL_HANDLE despite mesh shading being supported.");
         }
+        this->push_constants = original_push_constants;
         return;
     }
 
@@ -2358,6 +2391,19 @@ void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     assert (this->mesh_shading_scomtree_pipeline != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading'"); // TODO: add deferred_shading variant
     assert (this->mesh_shading_scomtree_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading'"); // TODO: add deferred_shading variant
 
+    auto original_push_constants = this->push_constants;
+
+    if (this->current_scene) {
+        using namespace LiteMath;
+        float4x4 model = this->current_scene->get_model_matrix();
+        float4x4 inv_model = LiteMath::inverse4x4(model);
+
+        this->push_constants.view_proj = original_push_constants.view_proj * model;
+
+        float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
+        this->push_constants.camera_pos = local_cam_pos;
+    }
+
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
@@ -2419,6 +2465,8 @@ void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     if (!this->frustum_draw_buffer) {
         this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
     }
+
+    this->push_constants = original_push_constants;
 }
 
 void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_buff) {
@@ -2438,9 +2486,9 @@ void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_bu
 
     this->prepare_indirect (cmd_buff, uint32_t {1}); // NOTE: brick == meshlet
 
-    if (!this->frustum_draw_buffer) {
-        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
-    }
+        if (!this->frustum_draw_buffer) {
+            this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
+        }
 
     this->hz_buffer_barrier (cmd_buff
         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
@@ -2547,6 +2595,19 @@ void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_bu
 }
 
 void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
+    auto original_push_constants = this->push_constants;
+
+    if (this->current_scene) {
+        using namespace LiteMath;
+        float4x4 model = this->current_scene->get_model_matrix();
+        float4x4 inv_model = LiteMath::inverse4x4(model);
+
+        this->push_constants.view_proj = original_push_constants.view_proj * model;
+
+        float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
+        this->push_constants.camera_pos = local_cam_pos;
+    }
+
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
@@ -2561,9 +2622,24 @@ void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
     if (!this->frustum_draw_buffer) {
         this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
     }
+
+    this->push_constants = original_push_constants;
 }
 
 void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
+    auto original_push_constants = this->push_constants;
+
+    if (this->current_scene) {
+        using namespace LiteMath;
+        float4x4 model = this->current_scene->get_model_matrix();
+        float4x4 inv_model = LiteMath::inverse4x4(model);
+
+        this->push_constants.view_proj = original_push_constants.view_proj * model;
+        
+        float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
+        this->push_constants.camera_pos = local_cam_pos;
+    }
+
     this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
 
@@ -2576,7 +2652,7 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
 
     if (this->deferred_shading) {
         if (!this->frustum_draw_buffer) {
-            this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = this->push_constants.view_proj;
+            this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
         }
 
         this->hz_buffer_barrier (cmd_buff
@@ -2604,6 +2680,8 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
         this->forward_rendering (cmd_buff);
         this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
     }
+
+    this->push_constants = original_push_constants;
 }
 
 void Renderer::render (VkCommandBuffer cmd_buff) {

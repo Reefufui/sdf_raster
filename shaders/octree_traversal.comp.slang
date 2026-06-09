@@ -59,7 +59,7 @@ bool is_visible_node (int level, float3 node_coord, float node_size, out float m
             child_corners [i].z = node_coord.z + (((i >> 2) & 1) * node_size);
         }
 
-        if (voxel_occluded (g_depth_sampler, pc.prev_view_proj, child_corners, max_dim)) {
+        if (voxel_occluded (g_depth_sampler, pc.prev_mvp, child_corners, max_dim)) {
             return false;
         }
     }

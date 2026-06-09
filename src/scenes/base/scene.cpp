@@ -32,4 +32,14 @@ void Scene::apply_state (const SceneState& scene_state) {
     }
 }
 
+LiteMath::float4x4 Scene::get_model_matrix () const {
+    using namespace LiteMath;
+    float4x4 m = LiteMath::translate4x4 (state.position);
+    m = m * LiteMath::rotate4x4Y (state.rotation.y * M_PI / 180.0f);
+    m = m * LiteMath::rotate4x4X (state.rotation.x * M_PI / 180.0f);
+    m = m * LiteMath::rotate4x4Z (state.rotation.z * M_PI / 180.0f);
+    m = m * LiteMath::scale4x4 (state.scale);
+    return m;
+}
+
 } // sdf_raster

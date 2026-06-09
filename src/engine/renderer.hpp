@@ -82,7 +82,7 @@ private:
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
     void traverse_octree (VkCommandBuffer cmd_buff);
     void traverse_scomtree (VkCommandBuffer cmd_buff);
-    void update_frustum_buffer (const Camera& camera);
+    void update_frustum_buffer (const Camera& camera, const LiteMath::float4x4& inv_model = LiteMath::float4x4 ());
 
     struct LayoutStageAccess {
         VkImageLayout layout;

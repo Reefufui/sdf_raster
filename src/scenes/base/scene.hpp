@@ -21,6 +21,7 @@ public:
     void set_current_draw_method (DrawMethod method);
 
     virtual void invalidate_cache () = 0;
+    LiteMath::float4x4 get_model_matrix () const;
 
 protected:
     void apply_state (const SceneState& scene_state);

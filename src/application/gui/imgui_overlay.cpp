@@ -604,6 +604,11 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
 
     ImGui::SeparatorText ("Culling");
 
+    ImGui::Checkbox ("Animate rotation", &settings.animate_rotation);
+    ImGui::DragFloat3 ("Position", &scene_state.position.x, 0.1f);
+    ImGui::DragFloat3 ("Rotation", &scene_state.rotation.x, 1.0f);
+    ImGui::DragFloat3 ("Scale", &scene_state.scale.x, 0.1f);
+
     ImGui::InputInt ("frustum", &scene_state.frustum_culling_level);
     if (scene_state.octree_depth) {
         scene_state.frustum_culling_level = LiteMath::clamp (scene_state.frustum_culling_level, scene_state.cpu_traversed, scene_state.octree_depth);

@@ -38,6 +38,7 @@ struct Settings {
     bool show_ui = true;
     bool show_camera_window = false;
     bool show_renderer_window = false;
+    bool animate_rotation = false;
 
     LightingSettings lighting;
 };

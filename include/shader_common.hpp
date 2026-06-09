@@ -71,7 +71,7 @@ struct TaskPayload {
 
 struct PushConstantsData {
     alignas (16) column_major float4x4 view_proj;
-    alignas (16) column_major float4x4 prev_view_proj;
+    alignas (16) column_major float4x4 prev_mvp;
     alignas (16) float4 camera_pos;
     alignas (4)  float far_plane;
     alignas (4)  float near_plane;

@@ -3,8 +3,8 @@
 
 #include "gui_application.hpp"
 
-#include "scenes/base/scene_manager.hpp"
-#include "scenes/scene_state.hpp"
+#include "scenes/base/model_manager.hpp"
+#include "scenes/model_state.hpp"
 #include "state.hpp"
 
 #include <imgui_impl_glfw.h>
@@ -35,7 +35,7 @@ public:
         return ui;
     }
 
-    void init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <SceneManager> scene_manager, const InitInfo& info, Settings& settings);
+    void init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <ModelManager> model_manager, const InitInfo& info, Settings& settings);
     void update (Settings& settings, const Stats& stats);
     void draw (uint32_t image_index, VkCommandBuffer cmd_buff);
     void cleanup (Settings& settings);
@@ -65,16 +65,16 @@ private:
     std::vector <VkFramebuffer> framebuffers;
 
     bool needs_lod_sync = true;
-    std::filesystem::path last_scene_path;
+    std::filesystem::path last_model_path;
 private:
     void init_style ();
 
-    void key_input (Settings& settings, SceneState& scene_state);
+    void key_input (Settings& settings, ModelState& model_state);
     void handle_global_shortcuts (Settings& settings);
     void menu_bar (Settings& settings);
     void file_dialog ();
-    void renderer_window (Settings& settings, const Stats& stats, SceneState& scene_state);
-    void status_bar (Settings& settings, const Stats& stats, SceneState& scene_state);
+    void renderer_window (Settings& settings, const Stats& stats, ModelState& model_state);
+    void status_bar (Settings& settings, const Stats& stats, ModelState& model_state);
 
 private:
     ImGui::FileBrowser file_browser;
@@ -86,7 +86,7 @@ private:
     bool lock_occlusion_culling = false;
     bool pending_config_notify = false;
 
-    std::shared_ptr <SceneManager> scene_manager;
+    std::shared_ptr <ModelManager> model_manager;
 };
 
 void UI::create_render_pass () {
@@ -153,9 +153,9 @@ void UI::create_imgui_framebuffers () {
     }
 }
 
-void UI::init (std::shared_ptr <VulkanContext> /*vulkan_context*/, std::shared_ptr <SceneManager> scene_manager, const InitInfo& info, Settings& settings) {
-    assert (scene_manager);
-    this->scene_manager = scene_manager;
+void UI::init (std::shared_ptr <VulkanContext> /*vulkan_context*/, std::shared_ptr <ModelManager> model_manager, const InitInfo& info, Settings& settings) {
+    assert (model_manager);
+    this->model_manager = model_manager;
 
     assert (info.device != VK_NULL_HANDLE && "InitInfo.device must be valid.");
     assert (info.window != nullptr && "InitInfo.window must be valid.");
@@ -224,7 +224,7 @@ void UI::init (std::shared_ptr <VulkanContext> /*vulkan_context*/, std::shared_p
 
     this->file_browser = ImGui::FileBrowser (0, settings.scenes_directory);
     this->file_browser.SetTitle ("Pick SDF-scene file");
-    this->file_browser.SetTypeFilters (this->scene_manager->get_registered_extensions ());
+    this->file_browser.SetTypeFilters (this->model_manager->get_registered_extensions ());
 }
 
 void UI::handle_global_shortcuts (Settings& settings) {
@@ -290,7 +290,7 @@ void camera_input (Camera& camera) {
 
 }
 
-void UI::key_input (Settings& settings, SceneState& scene_state) {
+void UI::key_input (Settings& settings, ModelState& model_state) {
     ImGuiIO& io = ImGui::GetIO ();
 
     if (io.WantCaptureKeyboard) {
@@ -298,11 +298,11 @@ void UI::key_input (Settings& settings, SceneState& scene_state) {
     }
 
     if (settings.disabled_cursor) {
-        camera_input (scene_state.camera);
+        camera_input (model_state.camera);
     }
 
     if (ImGui::IsKeyPressed (ImGuiKey_R, false)) {
-        scene_state.camera.reset ();
+        model_state.camera.reset ();
     }
 
     if (ImGui::IsKeyPressed (ImGuiKey_V, false)) {
@@ -460,28 +460,28 @@ void UI::file_dialog () {
         const auto& path = this->file_browser.GetSelected ();
         LOG_INFO ("[UI] selected SDF filename: {}", path.string ());
         this->file_browser.ClearSelected ();
-        this->scene_manager->load_scene (path);
+        this->model_manager->load_model (path);
     }
 }
 
-void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& scene_state) {
+void UI::renderer_window (Settings& settings, const Stats& stats, ModelState& model_state) {
     ImGui::Begin ("Rendering");
 
     ImGui::Text ("Screen size: %dx%d pixels", this->surface_extent.width, this->surface_extent.height);
 
     ImGui::SeparatorText ("Render Method");
 
-    auto scene = this->scene_manager->get_scene ();
+    auto scene = this->model_manager->get_model ();
     if (scene) {
         auto available_methods = scene->get_available_draw_methods ();
         int current_method = 0;
         for (int i = 0; i < static_cast<int>(available_methods.size ()); i++) {
-            if (scene_state.draw_method == available_methods [i]) {
+            if (model_state.draw_method == available_methods [i]) {
                 current_method = i;
                 break;
             }
         }
-        assert (std::find (available_methods.begin (), available_methods.end (), scene_state.draw_method) != available_methods.end ());
+        assert (std::find (available_methods.begin (), available_methods.end (), model_state.draw_method) != available_methods.end ());
 
         std::vector <const char*> method_name_ptrs;
         method_name_ptrs.reserve (available_methods.size ());
@@ -489,9 +489,9 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
             method_name_ptrs.push_back (draw_method_name (method).data ());
         }
 
-        ImGui::BeginDisabled (scene_state.draw_method == DrawMethod::None);
+        ImGui::BeginDisabled (model_state.draw_method == DrawMethod::None);
         if (ImGui::Combo ("##draw_method", &current_method, method_name_ptrs.data (), method_name_ptrs.size ())) {
-            scene_state.draw_method = available_methods [current_method];
+            model_state.draw_method = available_methods [current_method];
             this->pending_config_notify = true;
         }
         ImGui::EndDisabled ();
@@ -499,7 +499,7 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
         ImGui::Text ("No scene loaded");
     }
 
-    const auto& method = scene_state.draw_method;
+    const auto& method = model_state.draw_method;
 
     bool needs_octree_lod = method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh
         || method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
@@ -511,73 +511,73 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
         ImGui::Text ("calculated LOD level: %d", stats.lod);
 
         if (ImGui::BeginTabBar ("##LODTabBar", ImGuiTabBarFlags_None)) {
-            if (this->last_scene_path != scene_state.path) {
+            if (this->last_model_path != model_state.path) {
                 this->needs_lod_sync = true;
-                this->last_scene_path = scene_state.path;
+                this->last_model_path = model_state.path;
             }
 
             auto begin_lod_tab = [&](const char* label, LODMode mode) {
                 ImGuiTabItemFlags flags = ImGuiTabItemFlags_None;
-                if (this->needs_lod_sync && scene_state.lod_mode == mode) {
+                if (this->needs_lod_sync && model_state.lod_mode == mode) {
                     flags |= ImGuiTabItemFlags_SetSelected;
                 }
                 return ImGui::BeginTabItem(label, nullptr, flags);
             };
 
             if (begin_lod_tab ("Fixed", LODMode::Fixed)) {
-                if (ImGui::IsItemVisible()) scene_state.lod_mode = LODMode::Fixed;
-                ImGui::SliderInt ("Fixed LOD", &scene_state.fixed_lod, 0, 16);
+                if (ImGui::IsItemVisible()) model_state.lod_mode = LODMode::Fixed;
+                ImGui::SliderInt ("Fixed LOD", &model_state.fixed_lod, 0, 16);
                 ImGui::EndTabItem ();
             }
             if (begin_lod_tab ("Global", LODMode::Global)) {
-                if (ImGui::IsItemVisible ()) scene_state.lod_mode = LODMode::Global;
-                ImGui::InputInt ("max lod", &scene_state.max_lod);
-                ImGui::InputInt ("min lod", &scene_state.min_lod);
+                if (ImGui::IsItemVisible ()) model_state.lod_mode = LODMode::Global;
+                ImGui::InputInt ("max lod", &model_state.max_lod);
+                ImGui::InputInt ("min lod", &model_state.min_lod);
 
-                scene_state.min_lod = LiteMath::clamp (scene_state.min_lod, scene_state.cpu_traversed, scene_state.max_lod);
-                if (scene_state.octree_depth) {
-                    scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.min_lod, scene_state.octree_depth);
+                model_state.min_lod = LiteMath::clamp (model_state.min_lod, model_state.cpu_traversed, model_state.max_lod);
+                if (model_state.octree_depth) {
+                    model_state.max_lod = LiteMath::clamp (model_state.max_lod, model_state.min_lod, model_state.octree_depth);
                 } else {
-                    scene_state.max_lod = LiteMath::max (scene_state.max_lod, scene_state.min_lod);
+                    model_state.max_lod = LiteMath::max (model_state.max_lod, model_state.min_lod);
                 }
 
                 ImGui::Text ("LOD threshold:");
                 if (ImGui::IsItemHovered ()) {
                     ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
                 }
-                ImGui::DragFloat ("##LODThreshold", &scene_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
+                ImGui::DragFloat ("##LODThreshold", &model_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
 
                 ImGui::Text ("LOD aggressivity:");
                 if (ImGui::IsItemHovered ()) {
                     ImGui::SetTooltip ("Logarithmic scaling factor. Larger = more aggressive LOD simplification with distance.");
                 }
-                ImGui::DragFloat ("##LODAggressivity", &scene_state.lod_aggressivity, 0.05f, 0.1f, 10.0f, "%.2f");
+                ImGui::DragFloat ("##LODAggressivity", &model_state.lod_aggressivity, 0.05f, 0.1f, 10.0f, "%.2f");
 
                 ImGui::EndTabItem ();
             }
             if (begin_lod_tab ("Per-Node", LODMode::PerNode)) {
-                if (ImGui::IsItemVisible ()) scene_state.lod_mode = LODMode::PerNode;
-                ImGui::InputInt ("max lod", &scene_state.max_lod);
-                ImGui::InputInt ("min lod", &scene_state.min_lod);
+                if (ImGui::IsItemVisible ()) model_state.lod_mode = LODMode::PerNode;
+                ImGui::InputInt ("max lod", &model_state.max_lod);
+                ImGui::InputInt ("min lod", &model_state.min_lod);
 
-                scene_state.min_lod = LiteMath::clamp (scene_state.min_lod, scene_state.cpu_traversed, scene_state.max_lod);
-                if (scene_state.octree_depth) {
-                    scene_state.max_lod = LiteMath::clamp (scene_state.max_lod, scene_state.min_lod, scene_state.octree_depth);
+                model_state.min_lod = LiteMath::clamp (model_state.min_lod, model_state.cpu_traversed, model_state.max_lod);
+                if (model_state.octree_depth) {
+                    model_state.max_lod = LiteMath::clamp (model_state.max_lod, model_state.min_lod, model_state.octree_depth);
                 } else {
-                    scene_state.max_lod = LiteMath::max (scene_state.max_lod, scene_state.min_lod);
+                    model_state.max_lod = LiteMath::max (model_state.max_lod, model_state.min_lod);
                 }
 
                 ImGui::Text ("LOD threshold:");
                 if (ImGui::IsItemHovered ()) {
                     ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
                 }
-                ImGui::DragFloat ("##LODThreshold", &scene_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
+                ImGui::DragFloat ("##LODThreshold", &model_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
 
                 ImGui::Text ("LOD aggressivity:");
                 if (ImGui::IsItemHovered ()) {
                     ImGui::SetTooltip ("Logarithmic scaling factor. Larger = more aggressive LOD simplification with distance.");
                 }
-                ImGui::DragFloat ("##LODAggressivity", &scene_state.lod_aggressivity, 0.05f, 0.1f, 10.0f, "%.2f");
+                ImGui::DragFloat ("##LODAggressivity", &model_state.lod_aggressivity, 0.05f, 0.1f, 10.0f, "%.2f");
 
                 ImGui::EndTabItem ();
             }
@@ -588,16 +588,16 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
     }
 
     ImGui::SeparatorText ("Octree");
-    ImGui::Text ("octree depth: %d/%d", scene_state.max_lod, scene_state.octree_depth);
+    ImGui::Text ("octree depth: %d/%d", model_state.max_lod, model_state.octree_depth);
 
-    ImGui::Text ("gpu traversed: %d", scene_state.max_lod - scene_state.cpu_traversed);
+    ImGui::Text ("gpu traversed: %d", model_state.max_lod - model_state.cpu_traversed);
     ImGui::Text ("cpu traversed:");
     if (ImGui::IsItemHovered ()) {
         ImGui::SetTooltip ("Levels to descend on cpu prior GPU.");
     }
     for (int i = 0; i <= 5; i++) {
         ImGui::SameLine ();
-        if (ImGui::RadioButton (std::to_string (i).c_str (), &scene_state.cpu_traversed, i)) {
+        if (ImGui::RadioButton (std::to_string (i).c_str (), &model_state.cpu_traversed, i)) {
             this->pending_config_notify = true;
         }
     }
@@ -605,21 +605,21 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
     ImGui::SeparatorText ("Culling");
 
     ImGui::Checkbox ("Animate rotation", &settings.animate_rotation);
-    ImGui::DragFloat3 ("Position", &scene_state.position.x, 0.1f);
-    ImGui::DragFloat3 ("Rotation", &scene_state.rotation.x, 1.0f);
-    ImGui::DragFloat3 ("Scale", &scene_state.scale.x, 0.1f);
+    ImGui::DragFloat3 ("Position", &model_state.position.x, 0.1f);
+    ImGui::DragFloat3 ("Rotation", &model_state.rotation.x, 1.0f);
+    ImGui::DragFloat3 ("Scale", &model_state.scale.x, 0.1f);
 
-    ImGui::InputInt ("frustum", &scene_state.frustum_culling_level);
-    if (scene_state.octree_depth) {
-        scene_state.frustum_culling_level = LiteMath::clamp (scene_state.frustum_culling_level, scene_state.cpu_traversed, scene_state.octree_depth);
-    } else if (scene_state.cpu_traversed) {
-        scene_state.frustum_culling_level = LiteMath::max (scene_state.frustum_culling_level, scene_state.cpu_traversed);
+    ImGui::InputInt ("frustum", &model_state.frustum_culling_level);
+    if (model_state.octree_depth) {
+        model_state.frustum_culling_level = LiteMath::clamp (model_state.frustum_culling_level, model_state.cpu_traversed, model_state.octree_depth);
+    } else if (model_state.cpu_traversed) {
+        model_state.frustum_culling_level = LiteMath::max (model_state.frustum_culling_level, model_state.cpu_traversed);
     }
     if (ImGui::IsItemHovered ()) {
         ImGui::SetTooltip ("Disables rendering of objects outside the camera's view frustum.");
     }
 
-    if (!this->previous_frame_settings.frustum_view && settings.frustum_view && !scene_state.occlusion_culling_level) {
+    if (!this->previous_frame_settings.frustum_view && settings.frustum_view && !model_state.occlusion_culling_level) {
         LOG_WARN ("[UI] Frustum view mode entered w/o occlusion culling. Toggling disabled: depth data missing.");
         this->lock_occlusion_culling = true;
     } else if (!settings.frustum_view) {
@@ -630,9 +630,9 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
         ImGui::BeginDisabled ();
     }
 
-    ImGui::InputInt ("occlusion", &scene_state.occlusion_culling_level);
-    if (scene_state.octree_depth) {
-        scene_state.occlusion_culling_level = LiteMath::clamp (scene_state.occlusion_culling_level, 0, scene_state.octree_depth);
+    ImGui::InputInt ("occlusion", &model_state.occlusion_culling_level);
+    if (model_state.octree_depth) {
+        model_state.occlusion_culling_level = LiteMath::clamp (model_state.occlusion_culling_level, 0, model_state.octree_depth);
     }
     if (ImGui::IsItemHovered (ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::BeginTooltip ();
@@ -733,7 +733,7 @@ void UI::renderer_window (Settings& settings, const Stats& stats, SceneState& sc
     ImGui::End ();
 }
 
-void UI::status_bar (Settings& settings, const Stats& stats, SceneState& scene_state) {
+void UI::status_bar (Settings& settings, const Stats& stats, ModelState& model_state) {
     ImGuiIO& io = ImGui::GetIO ();
 
     struct StatusBarElement {
@@ -742,10 +742,10 @@ void UI::status_bar (Settings& settings, const Stats& stats, SceneState& scene_s
 
     std::vector <StatusBarElement> elements;
     elements.push_back (StatusBarElement {
-        .text = std::format ("Scene:{}", scene_state.name)
+        .text = std::format ("Scene:{}", model_state.name)
     });
     elements.push_back (StatusBarElement {
-        .text = std::format ("Method:{}", scene_state.draw_method)
+        .text = std::format ("Method:{}", model_state.draw_method)
     });
     elements.push_back (StatusBarElement {
         .text = std::format ("Mode:{}", (settings.frustum_view) ? "frustum" : "camera")
@@ -754,7 +754,7 @@ void UI::status_bar (Settings& settings, const Stats& stats, SceneState& scene_s
         .text = std::format ("Cursor:{}", (settings.disabled_cursor) ? "disabled" : "normal")
     });
 
-    const auto& method = scene_state.draw_method;
+    const auto& method = model_state.draw_method;
     if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
         || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
         || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
@@ -824,7 +824,7 @@ void UI::update (Settings& settings, const Stats& stats) {
 
     ImGui::NewFrame ();
 
-    if (this->scene_manager->is_loading_scene ()) {
+    if (this->model_manager->is_loading_scene ()) {
         this->menu_bar (settings);
         this->file_dialog ();
 
@@ -836,12 +836,12 @@ void UI::update (Settings& settings, const Stats& stats) {
         return;
     }
 
-    auto current_scene = this->scene_manager->get_scene ();
+    auto current_model = this->model_manager->get_model ();
 
-    if (current_scene) {
-        SceneState& scene_state = current_scene->get_state ();
+    if (current_model) {
+        ModelState& model_state = current_model->get_state ();
 
-        this->key_input (settings, scene_state);
+        this->key_input (settings, model_state);
         this->show_ui = settings.show_ui;
 
         if (this->show_ui) {
@@ -850,12 +850,12 @@ void UI::update (Settings& settings, const Stats& stats) {
             this->file_dialog ();
 
             if (settings.show_camera_window) {
-                camera_window (scene_state.camera);
+                camera_window (model_state.camera);
             }
             if (settings.show_renderer_window) {
-                this->renderer_window (settings, stats, scene_state);
+                this->renderer_window (settings, stats, model_state);
             }
-            this->status_bar (settings, stats, scene_state);
+            this->status_bar (settings, stats, model_state);
         }
     } else {
         if (settings.show_ui) {
@@ -875,7 +875,7 @@ void UI::update (Settings& settings, const Stats& stats) {
     }
 
     if (this->pending_config_notify) {
-        this->scene_manager->notify (SceneEventType::CONFIG_CHANGED);
+        this->model_manager->notify (ModelEventType::CONFIG_CHANGED);
         this->pending_config_notify = false;
     }
 
@@ -1043,8 +1043,8 @@ void UI::init_style () {
     }
 }
 
-void init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <SceneManager> scene_manager, const InitInfo& info, Settings& settings) {
-    UI::get_instance ().init (vulkan_context, scene_manager, info, settings);
+void init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <ModelManager> model_manager, const InitInfo& info, Settings& settings) {
+    UI::get_instance ().init (vulkan_context, model_manager, info, settings);
 }
 
 void update (Settings& settings, const Stats& stats) {

@@ -18,24 +18,24 @@ SComTreeTreeDescriptorSetInfo::SComTreeTreeDescriptorSetInfo (VkDevice device
     , VkPhysicalDevice physical_device
     , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
     , VkShaderStageFlags shader_stage_flags
-    , std::shared_ptr <SComTreeScene> scene
+    , std::shared_ptr <SComTreeModel> scene
     , size_t max_frames_in_flight) : device (device), scene (scene) {
     if (!copy_helper) {
         throw std::runtime_error ("ICopyEngine shared_ptr cannot be null.");
     }
 
-    const SComTree& scene_data = scene->get_octree_data ();
-    const SceneState& scene_state = scene->get_state ();
+    const SComTree& model_data = scene->get_octree_data ();
+    const ModelState& model_state = scene->get_state ();
 
     std::vector <uint32_t> nodes;
     std::vector <uint32_t> bricks;
 
     VkDeviceSize header_size = sizeof (SComTreeHeader);
-    VkDeviceSize nodes_size = scene_data.nodes.size () * sizeof (uint32_t);
-    VkDeviceSize bricks_size = scene_data.bricks.size () * sizeof (uint32_t);
+    VkDeviceSize nodes_size = model_data.nodes.size () * sizeof (uint32_t);
+    VkDeviceSize bricks_size = model_data.bricks.size () * sizeof (uint32_t);
     VkDeviceSize rotation_modifiers_size = 3 * 48 * sizeof (LiteMath::int4);
     VkDeviceSize rotation_add_size = 2304 * sizeof (uint32_t);
-    VkDeviceSize subtree_size = (1LL << (3 * scene_state.cpu_traversed)) * sizeof (SComTreeStackElement);
+    VkDeviceSize subtree_size = (1LL << (3 * model_state.cpu_traversed)) * sizeof (SComTreeStackElement);
 
     if (nodes_size == 0) {
         throw std::runtime_error ("SComTree is empty, cannot create descriptor set.");
@@ -65,9 +65,9 @@ SComTreeTreeDescriptorSetInfo::SComTreeTreeDescriptorSetInfo (VkDevice device
 
     this->memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
 
-    copy_helper->UpdateBuffer (this->header_buffer, 0, &scene_data.header, header_size);
-    copy_helper->UpdateBuffer (this->nodes_buffer, 0, scene_data.nodes.data (), nodes_size);
-    copy_helper->UpdateBuffer (this->bricks_buffer, 0, scene_data.bricks.data (), bricks_size);
+    copy_helper->UpdateBuffer (this->header_buffer, 0, &model_data.header, header_size);
+    copy_helper->UpdateBuffer (this->nodes_buffer, 0, model_data.nodes.data (), nodes_size);
+    copy_helper->UpdateBuffer (this->bricks_buffer, 0, model_data.bricks.data (), bricks_size);
     copy_helper->UpdateBuffer (this->rotation_modifiers_buffer, 0, rotation_modifiers, rotation_modifiers_size);
     copy_helper->UpdateBuffer (this->rotation_add_buffer, 0, rotation_add, rotation_add_size);
 

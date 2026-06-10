@@ -51,7 +51,7 @@ int get_octree_max_depth (const std::vector <SdfOctreeNode>& nodes) {
 
 namespace sdf_raster {
 
-bool SdfOctreeScene::load (const std::filesystem::path& path) {
+bool SdfOctreeModel::load (const std::filesystem::path& path) {
     std::ifstream fs (path, std::ios::binary);
     unsigned sz = 0;
     fs.read ((char *) &sz, sizeof (unsigned));
@@ -61,7 +61,7 @@ bool SdfOctreeScene::load (const std::filesystem::path& path) {
 
     const int depth = get_octree_max_depth (this->data.nodes);
 
-    this->state = SceneState {
+    this->state = ModelState {
         .camera = Camera (),
         .name = path.stem ().string (),
         .path = path,
@@ -77,19 +77,19 @@ bool SdfOctreeScene::load (const std::filesystem::path& path) {
     return true;
 }
 
-SceneState& SdfOctreeScene::get_state () {
+ModelState& SdfOctreeModel::get_state () {
     return this->state;
 }
 
-void SdfOctreeScene::set_state (const SceneState& scene_state) {
-    this->apply_state (scene_state);
+void SdfOctreeModel::set_state (const ModelState& model_state) {
+    this->apply_state (model_state);
 }
 
-const SdfOctree& SdfOctreeScene::get_octree_data () const {
+const SdfOctree& SdfOctreeModel::get_octree_data () const {
     return this->data;
 }
 
-SdfOctreeScene::~SdfOctreeScene () {
+SdfOctreeModel::~SdfOctreeModel () {
     this->data.nodes.clear ();
 }
 
@@ -175,21 +175,21 @@ std::vector <NodeContext> get_octree_subtrees_payloads (const SdfOctree& scene, 
 
 }
 
-void SdfOctreeScene::invalidate_cache () {
+void SdfOctreeModel::invalidate_cache () {
     this->cached_all_subtrees = get_octree_subtrees_payloads (this->data, this->state.cpu_traversed);
 }
 
-std::vector <NodeContext> SdfOctreeScene::collect_visible_subtrees (const FrustumGeometry& frustum) const {
+std::vector <NodeContext> SdfOctreeModel::collect_visible_subtrees (const FrustumGeometry& frustum) const {
     std::vector <NodeContext> visible;
     frustum_culling (this->cached_all_subtrees, frustum, visible);
     return visible;
 }
 
-std::span <const DrawMethod> SdfOctreeScene::get_available_draw_methods () const {
+std::span <const DrawMethod> SdfOctreeModel::get_available_draw_methods () const {
     return this->available_methods;
 }
 
-size_t SdfOctreeScene::get_memory_size () const {
+size_t SdfOctreeModel::get_memory_size () const {
     size_t size = 0;
     for (const auto& node : this->data.nodes) {
         size += sizeof (node.values) + sizeof (node.offset);

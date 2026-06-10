@@ -23,7 +23,7 @@ public:
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
         , VkShaderStageFlags shader_stage_flags
-        , std::shared_ptr <SComTreeScene> scene
+        , std::shared_ptr <SComTreeModel> scene
         , size_t max_frames_in_flight);
     ~SComTreeTreeDescriptorSetInfo ();
 
@@ -42,7 +42,7 @@ private:
     std::vector <VkDescriptorSet> descriptor_sets;
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
-    std::shared_ptr <SComTreeScene> scene {};
+    std::shared_ptr <SComTreeModel> scene {};
     std::vector <VkBuffer> subtree_roots_staging_buffers {};
     std::vector <VkDeviceMemory> staging_buffer_memories {};
     std::vector <void*> subtrees_memory_mapped {};

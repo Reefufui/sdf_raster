@@ -1,8 +1,8 @@
 // scenes/obj/obj.hpp
 #pragma once
 
-#include "scenes/scene_state.hpp"
-#include "scenes/base/scene.hpp"
+#include "scenes/model_state.hpp"
+#include "scenes/base/model.hpp"
 
 #include "shader_common.hpp"
 
@@ -19,27 +19,27 @@ struct Vertex {
     LiteMath::float4 color;
 };
 
-struct ObjModel {
+struct ObjModelData {
     std::vector <Vertex> vertices;
     std::vector <uint32_t> indices;
 };
 
-class ObjScene : public Scene {
+class ObjModel : public Model {
 public:
-    ObjScene () = default;
-    ~ObjScene () override;
+    ObjModel () = default;
+    ~ObjModel () override;
 
     bool load (const std::filesystem::path& path) override;
-    SceneState& get_state () override;
-    void set_state (const SceneState& scene_state) override;
+    ModelState& get_state () override;
+    void set_state (const ModelState& model_state) override;
     std::span <const DrawMethod> get_available_draw_methods () const override;
     void invalidate_cache () override {}
     size_t get_memory_size () const override;
 
-    const ObjModel& get_model_data () const;
+    const ObjModelData& get_model_data () const;
 
 private:
-    ObjModel data;
+    ObjModelData data;
     static inline constexpr std::array <DrawMethod, 2> available_methods = {{
         DrawMethod::Explicit, DrawMethod::ExplicitDeferred
     }};

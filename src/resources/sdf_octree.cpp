@@ -15,17 +15,17 @@ SdfOctreeDescriptorSetInfo::SdfOctreeDescriptorSetInfo (VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
         , VkShaderStageFlags shader_stage_flags
-        , std::shared_ptr <SdfOctreeScene> scene
+        , std::shared_ptr <SdfOctreeModel> scene
         , size_t max_frames_in_flight) : device (device) , scene (scene) {
     if (!copy_helper) {
         throw std::runtime_error ("ICopyEngine shared_ptr cannot be null.");
     }
 
-    const SdfOctree& scene_data = scene->get_octree_data ();
-    const SceneState& scene_state = scene->get_state ();
+    const SdfOctree& model_data = scene->get_octree_data ();
+    const ModelState& model_state = scene->get_state ();
 
-    VkDeviceSize octree_nodes_size = scene_data.nodes.size () * sizeof (SdfOctreeNode);
-    VkDeviceSize subtree_size = (1LL << (3 * scene_state.cpu_traversed)) * sizeof (NodeContext);
+    VkDeviceSize octree_nodes_size = model_data.nodes.size () * sizeof (SdfOctreeNode);
+    VkDeviceSize subtree_size = (1LL << (3 * model_state.cpu_traversed)) * sizeof (NodeContext);
 
     if (octree_nodes_size == 0) {
         throw std::runtime_error ("SdfOctree is empty, cannot create descriptor set.");
@@ -46,7 +46,7 @@ SdfOctreeDescriptorSetInfo::SdfOctreeDescriptorSetInfo (VkDevice device
 
     this->memory = vk_utils::allocateAndBindWithPadding (device, physical_device, buffers);
 
-    copy_helper->UpdateBuffer (this->nodes_buffer, 0, scene_data.nodes.data (), octree_nodes_size);
+    copy_helper->UpdateBuffer (this->nodes_buffer, 0, model_data.nodes.data (), octree_nodes_size);
 
     vk_utils::DescriptorTypesVec pool_sizes = {
         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * max_frames_in_flight }

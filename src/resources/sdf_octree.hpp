@@ -24,7 +24,7 @@ public:
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
         , VkShaderStageFlags shader_stage_flags
-        , std::shared_ptr <SdfOctreeScene> scene
+        , std::shared_ptr <SdfOctreeModel> scene
         , size_t max_frames_in_flight);
     ~SdfOctreeDescriptorSetInfo ();
 
@@ -43,7 +43,7 @@ private:
     std::vector <VkDescriptorSet> descriptor_sets;
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
-    std::shared_ptr <SdfOctreeScene> scene {};
+    std::shared_ptr <SdfOctreeModel> scene {};
     std::vector <VkBuffer> subtree_roots_staging_buffers {};
     std::vector <VkDeviceMemory> staging_buffer_memories {};
     std::vector <void*> subtrees_memory_mapped {};

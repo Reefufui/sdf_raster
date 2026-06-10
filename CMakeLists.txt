@@ -164,8 +164,8 @@ add_executable(${PROJECT_NAME}
 
     src/scenes/obj/obj.cpp
     src/scenes/octree/octree.cpp
-    src/scenes/base/scene.cpp
-    src/scenes/base/scene_manager.cpp
+    src/scenes/base/model.cpp
+    src/scenes/base/model_manager.cpp
     src/scenes/scomtree/scomtree.cpp
     src/scenes/scomtree/utils.cpp
 

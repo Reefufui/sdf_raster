@@ -1,7 +1,7 @@
 // state.hpp
 #pragma once
 
-#include "scenes/scene_state.hpp"
+#include "scenes/model_state.hpp"
 
 #include <LiteMath.h>
 
@@ -45,8 +45,8 @@ struct Settings {
 
 struct SessionState {
     Settings settings;
-    std::optional <std::filesystem::path> current_scene_path;
-    std::map <std::filesystem::path, SceneState> scene_states;
+    std::optional <std::filesystem::path> current_model_path;
+    std::map <std::filesystem::path, ModelState> model_states;
 };
 
 void dump_session (const SessionState& session, const std::string& filename);

@@ -151,54 +151,54 @@ struct adl_serializer <sdf_raster::Camera> {
 };
 
 template <>
-struct adl_serializer <sdf_raster::SceneState> {
-    static void to_json (json& j, const sdf_raster::SceneState& scene_state) {
+struct adl_serializer <sdf_raster::ModelState> {
+    static void to_json (json& j, const sdf_raster::ModelState& model_state) {
         j = json {
-            {"camera", scene_state.camera},
-            {"draw_method", scene_state.draw_method},
-            {"name", scene_state.name},
-            {"path", scene_state.path},
-            {"octree_depth", scene_state.octree_depth},
-            {"cpu_traversed", scene_state.cpu_traversed},
-            {"gpu_descend", scene_state.gpu_descend},
-            {"max_lod", scene_state.max_lod},
-            {"frustum_culling_level", scene_state.frustum_culling_level},
-            {"occlusion_culling_level", scene_state.occlusion_culling_level},
-            {"lod_mode", scene_state.lod_mode},
-            {"fixed_lod", scene_state.fixed_lod},
-            {"octree_root_center", scene_state.octree_root_center},
-            {"lod_threshold_pixels", scene_state.lod_threshold_pixels},
-            {"min_lod", scene_state.min_lod},
-            {"lod_aggressivity", scene_state.lod_aggressivity}
+            {"camera", model_state.camera},
+            {"draw_method", model_state.draw_method},
+            {"name", model_state.name},
+            {"path", model_state.path},
+            {"octree_depth", model_state.octree_depth},
+            {"cpu_traversed", model_state.cpu_traversed},
+            {"gpu_descend", model_state.gpu_descend},
+            {"max_lod", model_state.max_lod},
+            {"frustum_culling_level", model_state.frustum_culling_level},
+            {"occlusion_culling_level", model_state.occlusion_culling_level},
+            {"lod_mode", model_state.lod_mode},
+            {"fixed_lod", model_state.fixed_lod},
+            {"octree_root_center", model_state.octree_root_center},
+            {"lod_threshold_pixels", model_state.lod_threshold_pixels},
+            {"min_lod", model_state.min_lod},
+            {"lod_aggressivity", model_state.lod_aggressivity}
         };
     }
 
-    static void from_json (const json& j, sdf_raster::SceneState& scene_state) {
-        j.at ("camera").get_to (scene_state.camera);
-        j.at ("draw_method").get_to (scene_state.draw_method);
-        j.at ("name").get_to (scene_state.name);
-        j.at ("path").get_to (scene_state.path);
-        j.at ("octree_depth").get_to (scene_state.octree_depth);
-        j.at ("cpu_traversed").get_to (scene_state.cpu_traversed);
-        j.at ("gpu_descend").get_to (scene_state.gpu_descend);
-        j.at ("max_lod").get_to (scene_state.max_lod);
-        j.at ("frustum_culling_level").get_to (scene_state.frustum_culling_level);
-        j.at ("occlusion_culling_level").get_to (scene_state.occlusion_culling_level);
+    static void from_json (const json& j, sdf_raster::ModelState& model_state) {
+        j.at ("camera").get_to (model_state.camera);
+        j.at ("draw_method").get_to (model_state.draw_method);
+        j.at ("name").get_to (model_state.name);
+        j.at ("path").get_to (model_state.path);
+        j.at ("octree_depth").get_to (model_state.octree_depth);
+        j.at ("cpu_traversed").get_to (model_state.cpu_traversed);
+        j.at ("gpu_descend").get_to (model_state.gpu_descend);
+        j.at ("max_lod").get_to (model_state.max_lod);
+        j.at ("frustum_culling_level").get_to (model_state.frustum_culling_level);
+        j.at ("occlusion_culling_level").get_to (model_state.occlusion_culling_level);
 
-        j.at ("lod_mode").get_to (scene_state.lod_mode);
+        j.at ("lod_mode").get_to (model_state.lod_mode);
 
         if (j.contains ("fixed_lod")) {
-            j.at ("fixed_lod").get_to (scene_state.fixed_lod);
+            j.at ("fixed_lod").get_to (model_state.fixed_lod);
         }
 
-        j.at ("octree_root_center").get_to (scene_state.octree_root_center);
-        j.at ("lod_threshold_pixels").get_to (scene_state.lod_threshold_pixels);
+        j.at ("octree_root_center").get_to (model_state.octree_root_center);
+        j.at ("lod_threshold_pixels").get_to (model_state.lod_threshold_pixels);
 
         if (j.contains ("min_lod")) {
-            j.at ("min_lod").get_to (scene_state.min_lod);
+            j.at ("min_lod").get_to (model_state.min_lod);
         }
         if (j.contains ("lod_aggressivity")) {
-            j.at ("lod_aggressivity").get_to (scene_state.lod_aggressivity);
+            j.at ("lod_aggressivity").get_to (model_state.lod_aggressivity);
         }
     }
 };
@@ -255,8 +255,8 @@ namespace sdf_raster {
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE (
         SessionState,
         settings,
-        current_scene_path,
-        scene_states
+        current_model_path,
+        model_states
     )
 } // namespace sdf_raster
 

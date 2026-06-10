@@ -1,15 +1,15 @@
-// scenes/base/scene.cpp
-#include "scenes/base/scene.hpp"
+// scenes/base/model.cpp
+#include "scenes/base/model.hpp"
 
 #include <cassert>
 
 namespace sdf_raster {
 
-DrawMethod Scene::get_current_draw_method () const {
+DrawMethod Model::get_current_draw_method () const {
     return this->get_available_draw_methods () [this->current_draw_method_index];
 }
 
-void Scene::set_current_draw_method (DrawMethod method) {
+void Model::set_current_draw_method (DrawMethod method) {
     auto methods = this->get_available_draw_methods ();
     for (size_t i = 0; i < methods.size (); i++) {
         if (methods [i] == method) {
@@ -21,18 +21,18 @@ void Scene::set_current_draw_method (DrawMethod method) {
     assert (false && "method not found in available_draw_methods");
 }
 
-void Scene::apply_state (const SceneState& scene_state) {
-    this->state = scene_state;
+void Model::apply_state (const ModelState& model_state) {
+    this->state = model_state;
     auto methods = this->get_available_draw_methods ();
     for (size_t i = 0; i < methods.size (); i++) {
-        if (methods [i] == scene_state.draw_method) {
+        if (methods [i] == model_state.draw_method) {
             this->current_draw_method_index = i;
             break;
         }
     }
 }
 
-LiteMath::float4x4 Scene::get_model_matrix () const {
+LiteMath::float4x4 Model::get_model_matrix () const {
     using namespace LiteMath;
     float4x4 m = LiteMath::translate4x4 (state.position);
     m = m * LiteMath::rotate4x4Y (state.rotation.y * M_PI / 180.0f);

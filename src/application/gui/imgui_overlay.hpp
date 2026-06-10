@@ -14,7 +14,7 @@ struct GLFWwindow;
 namespace sdf_raster {
 
 struct Settings;
-class SceneManager;
+class ModelManager;
 
 namespace gui {
 
@@ -30,7 +30,7 @@ struct InitInfo {
     VkFormat surface_format;
 };
 
-void init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <SceneManager> scene_manager, const InitInfo& info, Settings& settings);
+void init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <ModelManager> model_manager, const InitInfo& info, Settings& settings);
 
 void update (Settings& settings, const Stats& stats);
 

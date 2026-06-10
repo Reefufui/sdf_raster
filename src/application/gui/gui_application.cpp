@@ -22,7 +22,7 @@ GUIApplication::GUIApplication (SessionState& session)
         init_window ();
         init_vulkan ();
         init_renderer ();
-        init_scene_manager ();
+        init_model_manager ();
         init_gui ();
     } catch (...) {
         cleanup ();
@@ -42,8 +42,8 @@ GUIApplication::~GUIApplication () {
         }
     }
 
-    this->session.scene_states = this->scene_manager->get_all_states ();
-    this->scene_manager.reset ();
+    this->session.model_states = this->model_manager->get_all_states ();
+    this->model_manager.reset ();
 
     cleanup ();
 }
@@ -70,7 +70,7 @@ void GUIApplication::run () {
                 continue;
             }
 
-            gui::update (this->session.settings, this->renderer->get_stats ());
+        gui::update (this->session.settings, this->renderer->get_stats ());
 
             double current_time = glfwGetTime ();
             float delta_time = static_cast <float> (current_time - this->last_time);
@@ -126,7 +126,7 @@ void GUIApplication::init_renderer () {
         const auto extent = this->presentation_render_target->get_extent ();
         const float height = static_cast <float> (extent.height);
         const float width = static_cast <float> (extent.width);
-        auto scene = this->scene_manager->get_scene ();
+        auto scene = this->model_manager->get_model ();
         if (scene) {
             scene->get_state ().camera.set_aspect_ratio (width / height);
         }
@@ -160,29 +160,29 @@ void GUIApplication::init_gui () {
         .surface_format = this->presentation_render_target->get_image_format (),
     };
 
-    gui::init (vulkan_context, scene_manager, init_info, this->session.settings);
+    gui::init (vulkan_context, model_manager, init_info, this->session.settings);
 }
 
-void GUIApplication::init_scene_manager () {
-    this->scene_manager = std::make_unique <SceneManager> ();
-    this->scene_manager->register_scene_type <ObjScene> (".obj");
-    this->scene_manager->register_scene_type <SComTreeScene> (".scomtree");
-    this->scene_manager->register_scene_type <SComTreeScene> (".bin");
-    this->scene_manager->register_scene_type <SdfOctreeScene> (".octree");
+void GUIApplication::init_model_manager () {
+    this->model_manager = std::make_unique <ModelManager> ();
+    this->model_manager->register_model_type <ObjModel> (".obj");
+    this->model_manager->register_model_type <SComTreeModel> (".scomtree");
+    this->model_manager->register_model_type <SComTreeModel> (".bin");
+    this->model_manager->register_model_type <SdfOctreeModel> (".octree");
 
-    this->scene_manager->subscribe ([this] (SceneEventType type, const std::filesystem::path& path) {
-        if (type == SceneEventType::LOADED) {
-            this->session.current_scene_path = this->scene_manager->get_current_scene_path ();
-        } else if (type == SceneEventType::UNLOADED) {
-            this->session.current_scene_path = std::nullopt;
+    this->model_manager->subscribe ([this] (ModelEventType type, const std::filesystem::path& path) {
+        if (type == ModelEventType::LOADED) {
+            this->session.current_model_path = this->model_manager->get_current_model_path ();
+        } else if (type == ModelEventType::UNLOADED) {
+            this->session.current_model_path = std::nullopt;
         }
         this->on_scene_event (type, path);
     });
 
-    this->scene_manager->restore_states (this->session.scene_states);
+    this->model_manager->restore_states (this->session.model_states);
 
-    if (session.current_scene_path.has_value ()) {
-        this->scene_manager->load_scene (*this->session.current_scene_path);
+    if (session.current_model_path.has_value ()) {
+        this->model_manager->load_model (*this->session.current_model_path);
     }
 }
 
@@ -232,12 +232,12 @@ void GUIApplication::mouse_button_callback (GLFWwindow* window, int button, int 
     }
 }
 
-void GUIApplication::on_scene_event (SceneEventType type, const std::filesystem::path& /*path*/) {
+void GUIApplication::on_scene_event (ModelEventType type, const std::filesystem::path& /*path*/) {
     auto enqueue_render_config = [this] () {
-        std::shared_ptr <Scene> scene = this->scene_manager->get_scene ();
+        std::shared_ptr <Model> scene = this->model_manager->get_model ();
         if (scene) {
             std::function<void()> command = [this, scene] () {
-                this->renderer->apply_scene_config (scene);
+                this->renderer->apply_model_config (scene);
             };
             std::lock_guard lock (this->render_command_mutex);
             this->render_commands.push (std::move (command));
@@ -245,14 +245,14 @@ void GUIApplication::on_scene_event (SceneEventType type, const std::filesystem:
     };
 
     switch (type) {
-        case SceneEventType::LOADED: {
+        case ModelEventType::LOADED: {
             enqueue_render_config ();
 
             auto resize_camera = [&] () {
                 const auto extent = this->presentation_render_target->get_extent ();
                 const float height = static_cast <float> (extent.height);
                 const float width = static_cast <float> (extent.width);
-                this->scene_manager->get_scene ()->get_state ().camera.set_aspect_ratio (width / height);
+                this->model_manager->get_model ()->get_state ().camera.set_aspect_ratio (width / height);
             };
 
             resize_camera ();
@@ -260,11 +260,11 @@ void GUIApplication::on_scene_event (SceneEventType type, const std::filesystem:
             break;
         }
 
-        case SceneEventType::UNLOADED: {
+        case ModelEventType::UNLOADED: {
             break;
         }
 
-        case SceneEventType::CONFIG_CHANGED: {
+        case ModelEventType::CONFIG_CHANGED: {
             enqueue_render_config ();
             break;
         }

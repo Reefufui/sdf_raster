@@ -16,24 +16,24 @@ bool operator== (const Vertex& a, const Vertex& b) {
     return memcmp (&a, &b, sizeof (Vertex)) == 0;
 }
 
-bool ObjScene::load (const std::filesystem::path& path) {
+bool ObjModel::load (const std::filesystem::path& path) {
     tinyobj::ObjReaderConfig reader_config;
     reader_config.triangulate = true; 
     tinyobj::ObjReader reader;
 
     if (!reader.ParseFromFile (path.string (), reader_config)) {
-        LOG_ERROR ("[ObjScene] Failed to parse file: {}", path.string ());
+        LOG_ERROR ("[ObjModel] Failed to parse file: {}", path.string ());
         if (!reader.Error ().empty ()) {
-            LOG_ERROR ("[ObjScene] TinyObj Error: {}", reader.Error ());
+            LOG_ERROR ("[ObjModel] TinyObj Error: {}", reader.Error ());
         }
         if (!reader.Warning ().empty ()) {
-            LOG_WARN ("[ObjScene] TinyObj Warning: {}", reader.Warning ());
+            LOG_WARN ("[ObjModel] TinyObj Warning: {}", reader.Warning ());
         }
         return false;
     }
 
     if (!reader.Warning ().empty ()) {
-        LOG_WARN ("[ObjScene] TinyObj Warning: {}", reader.Warning ());
+        LOG_WARN ("[ObjModel] TinyObj Warning: {}", reader.Warning ());
     }
 
     auto& attrib = reader.GetAttrib ();
@@ -97,7 +97,7 @@ bool ObjScene::load (const std::filesystem::path& path) {
     }
 
     if (!has_normals_in_file) {
-        LOG_INFO ("[ObjScene] No normals found in '{}'. Calculating from faces...", path.filename ().string ());
+        LOG_INFO ("[ObjModel] No normals found in '{}'. Calculating from faces...", path.filename ().string ());
 
         for (size_t i = 0; i < this->data.indices.size (); i += 3) {
             uint32_t i0 = this->data.indices [i + 0];
@@ -154,7 +154,7 @@ bool ObjScene::load (const std::filesystem::path& path) {
         }
     }
 
-    this->state = SceneState {
+    this->state = ModelState {
         .camera = Camera (),
         .name = path.stem ().string (),
         .path = path,
@@ -166,28 +166,28 @@ bool ObjScene::load (const std::filesystem::path& path) {
     return true;
 }
 
-SceneState& ObjScene::get_state () {
+ModelState& ObjModel::get_state () {
     return this->state;
 }
 
-void ObjScene::set_state (const SceneState& scene_state) {
-    this->apply_state (scene_state);
+void ObjModel::set_state (const ModelState& model_state) {
+    this->apply_state (model_state);
 }
 
-const ObjModel& ObjScene::get_model_data () const {
+const ObjModelData& ObjModel::get_model_data () const {
     return this->data;
 }
 
-ObjScene::~ObjScene () {
+ObjModel::~ObjModel () {
     this->data.vertices.clear ();
     this->data.indices.clear ();
 }
 
-std::span <const DrawMethod> ObjScene::get_available_draw_methods () const {
+std::span <const DrawMethod> ObjModel::get_available_draw_methods () const {
     return this->available_methods;
 }
 
-size_t ObjScene::get_memory_size () const {
+size_t ObjModel::get_memory_size () const {
     return this->data.vertices.size () * (sizeof (LiteMath::float3) * 2)
         + this->data.indices.size () * sizeof (uint32_t);
 }

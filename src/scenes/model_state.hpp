@@ -1,4 +1,4 @@
-// scenes/scene_state.hpp
+// models/model_state.hpp
 #pragma once
 
 #include "engine/camera.hpp"
@@ -23,7 +23,7 @@ enum class LODMode : uint8_t {
     PerNode  // Per-node LOD based on node position
 };
 
-struct SceneState {
+struct ModelState {
     Camera camera {};
     DrawMethod draw_method = DrawMethod::None;
     std::string name {"N/A"};

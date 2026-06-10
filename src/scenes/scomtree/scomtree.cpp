@@ -13,7 +13,7 @@
 
 namespace sdf_raster {
 
-bool SComTreeScene::load (const std::filesystem::path& path) {
+bool SComTreeModel::load (const std::filesystem::path& path) {
     std::ifstream fs (path, std::ios::binary);
 
     uint32_t magic_number = 0;
@@ -59,7 +59,7 @@ bool SComTreeScene::load (const std::filesystem::path& path) {
 
     const int depth = this->data.header.max_depth;
 
-    this->state = SceneState {
+    this->state = ModelState {
         .camera = Camera (),
         // .draw_method = DrawMethod::SComTreeCompute,
         .draw_method = DrawMethod::SComTreeComputeDeferred,
@@ -77,15 +77,15 @@ bool SComTreeScene::load (const std::filesystem::path& path) {
     return true;
 }
 
-SceneState& SComTreeScene::get_state () {
+ModelState& SComTreeModel::get_state () {
     return this->state;
 }
 
-void SComTreeScene::set_state (const SceneState& scene_state) {
-    this->apply_state (scene_state);
+void SComTreeModel::set_state (const ModelState& model_state) {
+    this->apply_state (model_state);
 }
 
-const SComTree& SComTreeScene::get_octree_data () const {
+const SComTree& SComTreeModel::get_octree_data () const {
     return this->data;
 }
 
@@ -394,7 +394,7 @@ void to_json (nlohmann::json& j, const SComTree& tree) {
     };
 }
 
-void SComTreeScene::dump_as_json (const std::filesystem::path& path) const {
+void SComTreeModel::dump_as_json (const std::filesystem::path& path) const {
     try {
         nlohmann::json j = this->data;
 
@@ -406,16 +406,16 @@ void SComTreeScene::dump_as_json (const std::filesystem::path& path) const {
         file << j.dump (4);
 
         file.close ();
-        LOG_INFO ("[SComTreeScene] Dump successful.");
+        LOG_INFO ("[SComTreeModel] Dump successful.");
 
     } catch (const nlohmann::json::exception& e) {
-        LOG_ERROR ("[SComTreeScene] JSON dump error: {}", e.what ());
+        LOG_ERROR ("[SComTreeModel] JSON dump error: {}", e.what ());
     } catch (const std::exception& e) {
-        LOG_ERROR ("[SComTreeScene] An unexpected error occurred during dump: {}", e.what ());
+        LOG_ERROR ("[SComTreeModel] An unexpected error occurred during dump: {}", e.what ());
     }
 }
 
-Mesh SComTreeScene::generate_mesh () const {
+Mesh SComTreeModel::generate_mesh () const {
     Mesh mesh;
     auto mesh_cb = [&](auto tri, const VoxelContext& /*ctx*/) {
         mesh.add_triangle (tri [0], tri [1], tri [2]);
@@ -457,7 +457,7 @@ void add_voxel_to_mesh (Mesh& mesh, LiteMath::float3 min_p, float size) {
 
 }
 
-Mesh SComTreeScene::generate_voxel_mesh () const {
+Mesh SComTreeModel::generate_voxel_mesh () const {
     Mesh mesh;
 
     auto voxel_cb = [&] (auto /*tri*/, const VoxelContext& ctx) {
@@ -472,7 +472,7 @@ Mesh SComTreeScene::generate_voxel_mesh () const {
     return mesh;
 }
 
-SComTreeScene::~SComTreeScene () {
+SComTreeModel::~SComTreeModel () {
     this->data.nodes.clear ();
     this->data.bricks.clear ();
 }
@@ -556,21 +556,21 @@ std::vector <SComTreeStackElement> get_octree_subtrees_payloads (const SComTree&
     return result;
 }
 
-void SComTreeScene::invalidate_cache () {
+void SComTreeModel::invalidate_cache () {
     this->cached_all_subtrees = get_octree_subtrees_payloads (this->data, this->state.cpu_traversed);
 }
 
-std::vector <SComTreeStackElement> SComTreeScene::collect_visible_subtrees (const FrustumGeometry& frustum) const {
+std::vector <SComTreeStackElement> SComTreeModel::collect_visible_subtrees (const FrustumGeometry& frustum) const {
     std::vector <SComTreeStackElement> visible;
     frustum_culling (this->cached_all_subtrees, frustum, visible);
     return visible;
 }
 
-std::span <const DrawMethod> SComTreeScene::get_available_draw_methods () const {
+std::span <const DrawMethod> SComTreeModel::get_available_draw_methods () const {
     return this->available_methods;
 }
 
-size_t SComTreeScene::get_memory_size () const {
+size_t SComTreeModel::get_memory_size () const {
     return sizeof (Header)
          + this->data.nodes.size () * sizeof (uint32_t)
          + this->data.bricks.size () * sizeof (uint32_t);

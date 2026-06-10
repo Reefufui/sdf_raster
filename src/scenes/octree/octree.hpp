@@ -1,8 +1,8 @@
 // scenes/octree/octree.hpp
 #pragma once
 
-#include "scenes/scene_state.hpp"
-#include "scenes/base/scene.hpp"
+#include "scenes/model_state.hpp"
+#include "scenes/base/model.hpp"
 
 #include <filesystem>
 
@@ -17,19 +17,19 @@ struct SdfOctree {
     std::vector <SdfOctreeNode> nodes;
 };
 
-class SdfOctreeScene : public Scene {
+class SdfOctreeModel : public Model {
 public:
     bool load (const std::filesystem::path& path) override;
 
-    SceneState& get_state () override;
+    ModelState& get_state () override;
 
-    void set_state (const SceneState& scene_state) override;
+    void set_state (const ModelState& model_state) override;
 
     std::span <const DrawMethod> get_available_draw_methods () const override;
 
     size_t get_memory_size () const override;
 
-    ~SdfOctreeScene () override;
+    ~SdfOctreeModel () override;
 
     const SdfOctree& get_octree_data () const;
 

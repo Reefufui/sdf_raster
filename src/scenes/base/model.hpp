@@ -1,19 +1,19 @@
-// scenes/base/scene.hpp
+// scenes/base/model.hpp
 #pragma once
 
-#include "scenes/scene_state.hpp"
+#include "scenes/model_state.hpp"
 
 #include <filesystem>
 #include <span>
 
 namespace sdf_raster {
 
-class Scene {
+class Model {
 public:
-    virtual ~Scene () = default;
+    virtual ~Model () = default;
     virtual bool load (const std::filesystem::path& path) = 0;
-    virtual void set_state (const SceneState& scene_state) = 0;
-    virtual SceneState& get_state () = 0;
+    virtual void set_state (const ModelState& model_state) = 0;
+    virtual ModelState& get_state () = 0;
     virtual std::span <const DrawMethod> get_available_draw_methods () const = 0;
     virtual size_t get_memory_size () const = 0;
 
@@ -24,8 +24,8 @@ public:
     LiteMath::float4x4 get_model_matrix () const;
 
 protected:
-    void apply_state (const SceneState& scene_state);
-    SceneState state;
+    void apply_state (const ModelState& model_state);
+    ModelState state;
     size_t current_draw_method_index = 0;
 };
 

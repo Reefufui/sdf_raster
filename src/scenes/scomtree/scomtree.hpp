@@ -2,8 +2,8 @@
 #pragma once
 
 #include "data/mesh.hpp"
-#include "scenes/scene_state.hpp"
-#include "scenes/base/scene.hpp"
+#include "scenes/model_state.hpp"
+#include "scenes/base/model.hpp"
 #include "scenes/scomtree/header.hpp"
 
 #include <cstdint>
@@ -21,19 +21,19 @@ struct SComTree {
     std::vector <uint32_t> bricks;
 };
 
-class SComTreeScene : public Scene {
+class SComTreeModel : public Model {
 public:
     bool load (const std::filesystem::path& path) override;
 
-    SceneState& get_state () override;
+    ModelState& get_state () override;
 
-    void set_state (const SceneState& scene_state) override;
+    void set_state (const ModelState& model_state) override;
 
     std::span <const DrawMethod> get_available_draw_methods () const override;
 
     size_t get_memory_size () const override;
 
-    ~SComTreeScene () override;
+    ~SComTreeModel () override;
 
     const SComTree& get_octree_data () const;
 

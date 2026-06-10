@@ -61,8 +61,8 @@ Renderer::~Renderer () {
     }
 
     if (this->frustum_draw_buffer) {
-        if (this->current_scene) {
-            this->current_scene->get_state ().camera = this->frustum_draw_buffer->get_camera ();
+        if (this->current_model) {
+            this->current_model->get_state ().camera = this->frustum_draw_buffer->get_camera ();
         }
         this->frustum_draw_buffer.reset ();
     }
@@ -96,11 +96,11 @@ void Renderer::destroy_pipelines () {
 }
 
 void Renderer::create_required_pipelines () {
-    if (!this->current_scene) {
+    if (!this->current_model) {
         return;
     }
 
-    const auto method = this->current_scene->get_state ().draw_method;
+    const auto method = this->current_model->get_state ().draw_method;
 
     if (method == DrawMethod::OctreeCompute
         || method == DrawMethod::OctreeMesh
@@ -1370,30 +1370,30 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
 
     this->frame_index = frame_index;
 
-    if (!this->current_scene) {
+    if (!this->current_model) {
         return;
     }
 
-    auto& scene_state = current_scene->get_state ();
-    scene_state.camera.update (delta_time);
+    auto& model_state = current_model->get_state ();
+    model_state.camera.update (delta_time);
 
     if (settings.animate_rotation) {
-        scene_state.rotation.y += 45.0f * delta_time;
-        if (scene_state.rotation.y > 360.0f) scene_state.rotation.y -= 360.0f;
+        model_state.rotation.y += 45.0f * delta_time;
+        if (model_state.rotation.y > 360.0f) model_state.rotation.y -= 360.0f;
     }
 
     if (!settings.frustum_view && this->frustum_draw_buffer) {
         this->clear_color = this->clear_color * 2.f;
-        scene_state.camera = this->frustum_draw_buffer->get_camera ();
+        model_state.camera = this->frustum_draw_buffer->get_camera ();
         this->frustum_draw_buffer.reset ();
         LOG_INFO ("[{}] Frustum view mode: OFF.", RENDERER_NAME);
     } else if (settings.frustum_view && !this->frustum_draw_buffer) {
         this->clear_color = this->clear_color * 0.5f;
-        this->frozen_camera_pos = LiteMath::to_float4 (scene_state.camera.get_position (), 1.0f);
+        this->frozen_camera_pos = LiteMath::to_float4 (model_state.camera.get_position (), 1.0f);
         this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()
-            , scene_state.camera);
+            , model_state.camera);
         LOG_INFO ("[{}] Frustum view mode: ON.", RENDERER_NAME);
     }
 
@@ -1419,31 +1419,31 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
         this->push_constants.prev_mvp = this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp;
     }
 
-    this->push_constants.view_proj = scene_state.camera.get_view_projection_matrix ();
+    this->push_constants.view_proj = model_state.camera.get_view_projection_matrix ();
     if (settings.frustum_view && this->frustum_draw_buffer) {
         this->push_constants.camera_pos = this->frozen_camera_pos;
     } else {
-        this->push_constants.camera_pos = LiteMath::to_float4 (scene_state.camera.get_position (), 1.0f);
+        this->push_constants.camera_pos = LiteMath::to_float4 (model_state.camera.get_position (), 1.0f);
     }
-    this->push_constants.far_plane = scene_state.camera.get_far_plane ();
-    this->push_constants.near_plane = scene_state.camera.get_near_plane ();
-    this->push_constants.max_lod = static_cast <uint> (scene_state.max_lod);
-    this->push_constants.min_lod = static_cast <uint> (scene_state.min_lod);
-    this->push_constants.subtree_root_level = static_cast <uint> (scene_state.cpu_traversed);
-    this->push_constants.occlusion_culling_level = static_cast <uint> (scene_state.occlusion_culling_level);
-    this->push_constants.frustum_culling_level = static_cast <uint> (scene_state.frustum_culling_level);
+    this->push_constants.far_plane = model_state.camera.get_far_plane ();
+    this->push_constants.near_plane = model_state.camera.get_near_plane ();
+    this->push_constants.max_lod = static_cast <uint> (model_state.max_lod);
+    this->push_constants.min_lod = static_cast <uint> (model_state.min_lod);
+    this->push_constants.subtree_root_level = static_cast <uint> (model_state.cpu_traversed);
+    this->push_constants.occlusion_culling_level = static_cast <uint> (model_state.occlusion_culling_level);
+    this->push_constants.frustum_culling_level = static_cast <uint> (model_state.frustum_culling_level);
     this->push_constants.color_leafs = settings.color_leafs;
-    this->push_constants.lod_mode = static_cast <uint> (scene_state.lod_mode);
-    this->push_constants.fixed_lod = static_cast <uint> (scene_state.fixed_lod);
-    this->push_constants.root_center = scene_state.octree_root_center;
-    this->push_constants.lod_threshold_pixels = scene_state.lod_threshold_pixels;
-    this->push_constants.lod_aggressivity = scene_state.lod_aggressivity;
-    this->push_constants.fov_y = scene_state.camera.get_fov_y () * (3.14159265359f / 180.0f);
+    this->push_constants.lod_mode = static_cast <uint> (model_state.lod_mode);
+    this->push_constants.fixed_lod = static_cast <uint> (model_state.fixed_lod);
+    this->push_constants.root_center = model_state.octree_root_center;
+    this->push_constants.lod_threshold_pixels = model_state.lod_threshold_pixels;
+    this->push_constants.lod_aggressivity = model_state.lod_aggressivity;
+    this->push_constants.fov_y = model_state.camera.get_fov_y () * (3.14159265359f / 180.0f);
     auto extent = this->render_target->get_extent ();
     this->push_constants.screen_width = extent.width;
     this->push_constants.screen_height = extent.height;
-    this->push_constants.max_voxel_size = 2.0f / std::pow (2.0f, scene_state.cpu_traversed);
-    this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, scene_state.octree_depth);
+    this->push_constants.max_voxel_size = 2.0f / std::pow (2.0f, model_state.cpu_traversed);
+    this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, model_state.octree_depth);
     this->clear_color = settings.lighting.clear_color;
 
     if (this->deferred_shading) {
@@ -1451,11 +1451,11 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
         const auto& lighting = settings.lighting;
 
         LiteMath::float4x4 inv_model;
-        if (this->current_scene) {
-            inv_model = LiteMath::inverse4x4 (this->current_scene->get_model_matrix ());
+        if (this->current_model) {
+            inv_model = LiteMath::inverse4x4 (this->current_model->get_model_matrix ());
         }
 
-        lighting_pc.camera_pos        = inv_model * LiteMath::to_float4 (scene_state.camera.get_position (), 1.0f);
+        lighting_pc.camera_pos        = inv_model * LiteMath::to_float4 (model_state.camera.get_position (), 1.0f);
         lighting_pc.light_pos         = inv_model * LiteMath::to_float4 (lighting.light_pos, 1.0f);
         lighting_pc.light_color       = LiteMath::to_float4 (lighting.light_color, 1.0f);
         lighting_pc.fog_color         = LiteMath::to_float4 (lighting.fog_color, 1.0f);
@@ -1475,11 +1475,11 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
         FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds->get_frustum_geometry_memory_ptr (this->frame_index));
         
         LiteMath::float4x4 inv_model;
-        if (this->current_scene) {
-            inv_model = LiteMath::inverse4x4 (this->current_scene->get_model_matrix ());
+        if (this->current_model) {
+            inv_model = LiteMath::inverse4x4 (this->current_model->get_model_matrix ());
         }
 
-        this->update_frustum_buffer (scene_state.camera, inv_model);
+        this->update_frustum_buffer (model_state.camera, inv_model);
         *ptr = this->frustum;
 
         if (this->sdf_octree_ds) {
@@ -2299,9 +2299,9 @@ void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
 
     auto original_push_constants = this->push_constants;
 
-    if (this->current_scene) {
+    if (this->current_model) {
         using namespace LiteMath;
-        float4x4 model = this->current_scene->get_model_matrix();
+        float4x4 model = this->current_model->get_model_matrix();
         float4x4 inv_model = LiteMath::inverse4x4(model);
 
         this->push_constants.view_proj = original_push_constants.view_proj * model;
@@ -2393,9 +2393,9 @@ void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
 
     auto original_push_constants = this->push_constants;
 
-    if (this->current_scene) {
+    if (this->current_model) {
         using namespace LiteMath;
-        float4x4 model = this->current_scene->get_model_matrix();
+        float4x4 model = this->current_model->get_model_matrix();
         float4x4 inv_model = LiteMath::inverse4x4(model);
 
         this->push_constants.view_proj = original_push_constants.view_proj * model;
@@ -2597,9 +2597,9 @@ void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_bu
 void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
     auto original_push_constants = this->push_constants;
 
-    if (this->current_scene) {
+    if (this->current_model) {
         using namespace LiteMath;
-        float4x4 model = this->current_scene->get_model_matrix();
+        float4x4 model = this->current_model->get_model_matrix();
         float4x4 inv_model = LiteMath::inverse4x4(model);
 
         this->push_constants.view_proj = original_push_constants.view_proj * model;
@@ -2629,9 +2629,9 @@ void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
 void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
     auto original_push_constants = this->push_constants;
 
-    if (this->current_scene) {
+    if (this->current_model) {
         using namespace LiteMath;
-        float4x4 model = this->current_scene->get_model_matrix();
+        float4x4 model = this->current_model->get_model_matrix();
         float4x4 inv_model = LiteMath::inverse4x4(model);
 
         this->push_constants.view_proj = original_push_constants.view_proj * model;
@@ -2694,7 +2694,7 @@ void Renderer::render (VkCommandBuffer cmd_buff) {
     }
 }
 
-const Stats& Renderer::get_stats () {
+const Stats& Renderer::get_stats () const {
     return this->stats;
 }
 
@@ -2723,7 +2723,7 @@ void Renderer::process_commands (std::queue <std::function<void()>>& commands, s
 void Renderer::release_render_resources () {
     vkDeviceWaitIdle (this->context->get_device ());
 
-    this->current_scene.reset ();
+    this->current_model.reset ();
 
     this->active_leafs_ds.reset ();
     this->draw_indexed_indirect_command_ds.reset ();
@@ -2741,21 +2741,21 @@ void Renderer::release_render_resources () {
     this->deferred_shading.reset ();
 }
 
-void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
+void Renderer::apply_model_config (std::shared_ptr <Model> model) {
     vkDeviceWaitIdle (this->context->get_device());
 
-    if (scene) {
-        scene->invalidate_cache ();
+    if (model) {
+        model->invalidate_cache ();
     }
     this->release_render_resources ();
-    this->current_scene = scene;
+    this->current_model = model;
 
-    if (!this->current_scene) {
-        LOG_WARN ("[{}] 'apply_scene_config' called with a null scene. Resources cleared.", RENDERER_NAME);
+    if (!this->current_model) {
+        LOG_WARN ("[{}] 'apply_model_config' called with a null scene. Resources cleared.", RENDERER_NAME);
         return;
     }
 
-    const auto method = scene->get_state ().draw_method;
+    const auto method = model->get_state ().draw_method;
 
     if (method == DrawMethod::ExplicitDeferred || method == DrawMethod::SComTreeComputeDeferred || method == DrawMethod::SComTreeMeshDeferred) {
         this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
@@ -2836,30 +2836,30 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
             , this->render_target);
     }
 
-    if (auto octree_scene = std::dynamic_pointer_cast <SdfOctreeScene> (scene)) {
+    if (auto octree_model = std::dynamic_pointer_cast <SdfOctreeModel> (model)) {
         this->sdf_octree_ds = std::make_unique <SdfOctreeDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()
             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-            , octree_scene
+            , octree_model
             , this->render_target->get_max_frames_in_flight ()
         );
 
-        const SceneState& scene_state = octree_scene->get_state ();
+        const ModelState& model_state = octree_model->get_state ();
 
         LOG_INFO ("[{}] Created gpu resources for sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
-             , scene_state.name
-             , scene_state.octree_depth
-             , scene_state.cpu_traversed
-             , scene_state.octree_depth - scene_state.cpu_traversed);
-    } else if (auto obj_scene = std::dynamic_pointer_cast <ObjScene> (scene)) {
-        LOG_INFO ("[{}] Received a scene that of type ObjScene.", RENDERER_NAME);
+             , model_state.name
+             , model_state.octree_depth
+             , model_state.cpu_traversed
+             , model_state.octree_depth - model_state.cpu_traversed);
+    } else if (auto obj_model = std::dynamic_pointer_cast <ObjModel> (model)) {
+        LOG_INFO ("[{}] Received a scene that of type ObjModel.", RENDERER_NAME);
 
-        const auto& model_data = obj_scene->get_model_data ();
-        const auto& scene_state = obj_scene->get_state ();
+        const auto& model_data = obj_model->get_model_data ();
+        const auto& model_state = obj_model->get_state ();
 
         if (model_data.vertices.empty ()) {
-            LOG_ERROR ("[{}] ObjScene '{}' has no vertices!", RENDERER_NAME, scene_state.name);
+            LOG_ERROR ("[{}] ObjModel '{}' has no vertices!", RENDERER_NAME, model_state.name);
             return;
         }
 
@@ -2901,23 +2901,23 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
         );
 
         LOG_INFO ("[{}] Created GPU resources for mesh scene '{}'. Vertices: {}, Indices: {}"
-            , RENDERER_NAME, scene_state.name, model_data.vertices.size (), model_data.indices.size ());
-    } else if (auto scomtree_scene = std::dynamic_pointer_cast <SComTreeScene> (scene)) {
-        const auto& scene_state = scomtree_scene->get_state ();
+            , RENDERER_NAME, model_state.name, model_data.vertices.size (), model_data.indices.size ());
+    } else if (auto scomtree_model = std::dynamic_pointer_cast <SComTreeModel> (model)) {
+        const auto& model_state = scomtree_model->get_state ();
 
         this->sdf_scomtree_ds = std::make_unique <SComTreeTreeDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()
             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-            , scomtree_scene
+            , scomtree_model
             , this->render_target->get_max_frames_in_flight ()
         );
 
         LOG_INFO ("[{}] Created gpu resources for sdf-scomtree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
-             , scene_state.name
-             , scene_state.octree_depth
-             , scene_state.cpu_traversed
-             , scene_state.octree_depth - scene_state.cpu_traversed);
+             , model_state.name
+             , model_state.octree_depth
+             , model_state.cpu_traversed
+             , model_state.octree_depth - model_state.cpu_traversed);
     } else {
         LOG_ERROR ("[{}] Received a scene that is not of any renderable type. Cannot render.", RENDERER_NAME);
         return;
@@ -2925,7 +2925,7 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
 
     this->create_required_pipelines ();
 
-    auto it = std::ranges::find_if (draw_strategies, [method] (const MethodTrait& t) { return t.method == method; });
+    auto it = std::find_if (draw_strategies.begin (), draw_strategies.end (), [method] (const MethodTrait& t) { return t.method == method; });
     if (it != draw_strategies.end ()) {
         if (it->needs_mesh_shading && !this->context->get_use_mesh_shading ()) {
             LOG_WARN ("[{}] Mesh shading is not supported", RENDERER_NAME);
@@ -2935,7 +2935,7 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
         }
     }
 
-    // LOG_INFO ("[{}] Rendering pipeline set to: {}", RENDERER_NAME, this->current_scene->get_state ().draw_method);
+    // LOG_INFO ("[{}] Rendering pipeline set to: {}", RENDERER_NAME, this->current_model->get_state ().draw_method);
 }
 
 } // namespace sdf_raster

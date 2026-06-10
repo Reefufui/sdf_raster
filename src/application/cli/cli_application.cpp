@@ -44,7 +44,7 @@ CLIArguments CLIApplication::parse_args (int argc, char* argv[]) {
             }
         } else if (arg == "--scene" || arg == "-s") {
             if (++i < argc) {
-                args.scene_path = std::filesystem::path (argv [i]);
+                args.model_path = std::filesystem::path (argv [i]);
             }
         } else if (arg == "--output" || arg == "-o") {
             if (++i < argc) {
@@ -63,7 +63,7 @@ CLIArguments CLIApplication::parse_args (int argc, char* argv[]) {
                 args.measurement_frames = static_cast <uint32_t> (std::stoul (argv [i]));
             }
         } else {
-            args.scene_path = std::filesystem::path (arg);
+            args.model_path = std::filesystem::path (arg);
         }
     }
 
@@ -85,10 +85,10 @@ BenchmarkConfig CLIApplication::fill_config (const CLIArguments& args, const Ses
         config.height = static_cast <uint32_t> (session.settings.window_height);
     }
 
-    if (args.scene_path) {
-        config.scene_path = *args.scene_path;
-    } else if (session.current_scene_path) {
-        config.scene_path = *session.current_scene_path;
+    if (args.model_path) {
+        config.model_path = *args.model_path;
+    } else if (session.current_model_path) {
+        config.model_path = *session.current_model_path;
     }
 
     if (args.output_path) {
@@ -110,20 +110,20 @@ BenchmarkConfig CLIApplication::fill_config (const CLIArguments& args, const Ses
     return config;
 }
 
-std::shared_ptr <SceneManager> CLIApplication::create_scene_manager () {
-    auto manager = std::make_shared <SceneManager> ();
-    manager->register_scene_type <ObjScene> (".obj");
-    manager->register_scene_type <SComTreeScene> (".scomtree");
-    manager->register_scene_type <SComTreeScene> (".bin");
-    manager->register_scene_type <SdfOctreeScene> (".octree");
-    manager->restore_states (this->session.scene_states);
+std::shared_ptr <ModelManager> CLIApplication::create_model_manager () {
+    auto manager = std::make_shared <ModelManager> ();
+    manager->register_model_type <ObjModel> (".obj");
+    manager->register_model_type <SComTreeModel> (".scomtree");
+    manager->register_model_type <SComTreeModel> (".bin");
+    manager->register_model_type <SdfOctreeModel> (".octree");
+    manager->restore_states (this->session.model_states);
     return manager;
 }
 
-std::shared_ptr <Scene> CLIApplication::load_scene (const std::filesystem::path& path, SceneManager& scene_manager) {
-    scene_manager.load_scene (path);
-    scene_manager.wait_for_scene ();
-    return scene_manager.get_scene ();
+std::shared_ptr <Model> CLIApplication::load_model (const std::filesystem::path& path, ModelManager& model_manager) {
+    model_manager.load_model (path);
+    model_manager.wait_for_scene ();
+    return model_manager.get_model ();
 }
 
 void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
@@ -133,10 +133,10 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
     auto vulkan_context = std::make_shared <VulkanContext> ();
     vulkan_context->init ();
 
-    auto scene_manager = this->create_scene_manager ();
-    auto scene = this->load_scene (config.scene_path, *scene_manager);
+    auto model_manager = this->create_model_manager ();
+    auto scene = this->load_model (config.model_path, *model_manager);
     if (!scene) {
-        throw std::runtime_error ("Failed to load scene: " + config.scene_path.string ());
+        throw std::runtime_error ("Failed to load scene: " + config.model_path.string ());
     }
     scene->get_state ().camera.set_aspect_ratio (config.width / config.height);
 
@@ -150,7 +150,7 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
     );
 
     auto renderer = std::make_unique <Renderer> (vulkan_context, render_target);
-    renderer->apply_scene_config (scene);
+    renderer->apply_model_config (scene);
 
     uint32_t fif_index = 0;
     const uint32_t total_frames = config.warmup_frames + config.measurement_frames;
@@ -206,7 +206,7 @@ void CLIApplication::drain_pending_frames (std::shared_ptr <OffscreenRenderTarge
 void CLIApplication::write_results (const std::vector <double>& gpu_times_ns,
                                     const BenchmarkConfig& config,
                                     std::shared_ptr <VulkanContext> vulkan_context,
-                                    std::shared_ptr <Scene> scene,
+                                    std::shared_ptr <Model> scene,
                                     double timestamp_period) {
     if (gpu_times_ns.empty ()) {
         LOG_WARN ("[Benchmark] No GPU times recorded.");
@@ -218,7 +218,7 @@ void CLIApplication::write_results (const std::vector <double>& gpu_times_ns,
     result["config"] = {
         {"width", config.width},
         {"height", config.height},
-        {"scene", config.scene_path.string ()},
+        {"scene", config.model_path.string ()},
         {"warmup_frames", config.warmup_frames},
         {"measurement_frames", config.measurement_frames},
         {"timestamp_period_ns", timestamp_period}

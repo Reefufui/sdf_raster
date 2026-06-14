@@ -121,6 +121,7 @@ public:
 
     void forward_rendering (VkCommandBuffer cmd_buff);
     void deferred_rendering (VkCommandBuffer cmd_buff);
+    void calculate_lighting (VkCommandBuffer cmd_buff);
     void raster_octree_via_compute_shading (VkCommandBuffer cmd_buff);
     void raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff);
     void raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff);

@@ -2205,8 +2205,6 @@ void Renderer::deferred_rendering (VkCommandBuffer cmd_buff) {
     assert (this->mesh_ds && "required for 'deferred_rendering'");
 
     const auto extent = this->render_target->get_extent ();
-    const uint32_t fif_idx = this->frame_index;
-    const uint32_t swap_idx = this->render_target->get_current_image_index ();
 
     VkViewport viewport {
         .x = 0.0f, .y = 0.0f,
@@ -2248,6 +2246,18 @@ void Renderer::deferred_rendering (VkCommandBuffer cmd_buff) {
     vkCmdDrawIndexedIndirect (cmd_buff, this->draw_indexed_indirect_command_ds->get_indirect_buffer (this->frame_index), 0, 1, 0);
 
     vkCmdEndRenderPass (cmd_buff);
+}
+
+void Renderer::calculate_lighting (VkCommandBuffer cmd_buff) {
+    const auto extent = this->render_target->get_extent ();
+    const uint32_t swap_idx = this->render_target->get_current_image_index ();
+    const uint32_t fif_idx = this->frame_index;
+    VkViewport viewport {
+        .x = 0.0f, .y = 0.0f,
+        .width = static_cast <float> (extent.width), .height = static_cast <float> (extent.height),
+        .minDepth = 0.0f, .maxDepth = 1.0f
+    };
+    VkRect2D scissor {{0, 0}, extent};
 
     VkClearValue swap_clear {};
     swap_clear.color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.f}};
@@ -2630,13 +2640,12 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
     auto original_push_constants = this->push_constants;
 
     if (this->current_model) {
-        using namespace LiteMath;
-        float4x4 model = this->current_model->get_model_matrix();
-        float4x4 inv_model = LiteMath::inverse4x4(model);
+        LiteMath::float4x4 model = this->current_model->get_model_matrix ();
+        LiteMath::float4x4 inv_model = LiteMath::inverse4x4 (model);
 
         this->push_constants.view_proj = original_push_constants.view_proj * model;
         
-        float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
+        LiteMath::float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
         this->push_constants.camera_pos = local_cam_pos;
     }
 
@@ -2662,6 +2671,7 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
             , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
 
         this->deferred_rendering (cmd_buff);
+        this->calculate_lighting (cmd_buff);
 
         this->hz_buffer_barrier (cmd_buff
             , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}

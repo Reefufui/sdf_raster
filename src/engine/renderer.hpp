@@ -73,6 +73,8 @@ private:
     void init_mesh_shading_scomtree_deferred_pipeline ();
     void init_frustum_demo_pipeline ();
 
+    void set_default_viewport_and_scissor (VkCommandBuffer cmd_buff);
+
     void update_frustum_buffer (const Camera& camera, const LiteMath::float4x4& inv_model);
 
     void clear_geometry (VkCommandBuffer cmd_buff);

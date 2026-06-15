@@ -559,6 +559,18 @@ void Renderer::init_frustum_demo_pipeline () {
     }, maker.inputAssembly);
 }
 
+void Renderer::set_default_viewport_and_scissor (VkCommandBuffer cmd_buff) {
+    auto extent = this->render_target->get_extent ();
+    VkViewport viewport {
+        .x = 0.0f, .y = 0.0f,
+        .width = static_cast <float> (extent.width), .height = static_cast <float> (extent.height),
+        .minDepth = 0.0f, .maxDepth = 1.0f
+    };
+    VkRect2D scissor {{0, 0}, extent};
+    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
+    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+}
+
 void Renderer::update (uint32_t frame_index, Settings& settings, float delta_time) {
     assert (frame_index < this->render_target->get_max_frames_in_flight () && "frame_index must be less than max_frames_in_flight");
 
@@ -1306,19 +1318,7 @@ void Renderer::forward_rendering (VkCommandBuffer cmd_buff) {
     assert (!(!this->mesh_ds && this->draw_indexed_indirect_command_ds) && "either both set (render) or not set (just clear) for 'forward_rendering'");
 
     if (this->mesh_ds && this->draw_indexed_indirect_command_ds) {
-        VkViewport viewport {};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = static_cast <float> (extent.width);
-        viewport.height = static_cast <float> (extent.height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
-
-        VkRect2D scissor {};
-        scissor.offset = {0, 0};
-        scissor.extent = extent;
-        vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+        this->set_default_viewport_and_scissor (cmd_buff);
 
         vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->forward_rendering_pipeline);
 
@@ -1360,19 +1360,7 @@ void Renderer::draw_frustum_demo (VkCommandBuffer cmd_buff) {
 
     vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
-    VkViewport viewport {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast <float> (extent.width);
-    viewport.height = static_cast <float> (extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = extent;
-    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+    this->set_default_viewport_and_scissor (cmd_buff);
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->frustum_demo_pipeline);
 
@@ -1400,13 +1388,6 @@ void Renderer::deferred_rendering (VkCommandBuffer cmd_buff) {
 
     const auto extent = this->render_target->get_extent ();
 
-    VkViewport viewport {
-        .x = 0.0f, .y = 0.0f,
-        .width = static_cast <float> (extent.width), .height = static_cast <float> (extent.height),
-        .minDepth = 0.0f, .maxDepth = 1.0f
-    };
-    VkRect2D scissor {{0, 0}, extent};
-
     std::array <VkClearValue, 4> gbuffer_clears {};
     gbuffer_clears [0].color = {{0.f, 0.f, 0.f, 0.f}}; // Position
     gbuffer_clears [1].color = {{0.f, 0.f, 0.f, 0.f}}; // Normal
@@ -1424,8 +1405,7 @@ void Renderer::deferred_rendering (VkCommandBuffer cmd_buff) {
 
     vkCmdBeginRenderPass (cmd_buff, &gbuffer_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
-    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+    this->set_default_viewport_and_scissor (cmd_buff);
     
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_gbuffer_pipeline);
 
@@ -1446,12 +1426,6 @@ void Renderer::calculate_lighting (VkCommandBuffer cmd_buff) {
     const auto extent = this->render_target->get_extent ();
     const uint32_t swap_idx = this->render_target->get_current_image_index ();
     const uint32_t fif_idx = this->frame_index;
-    VkViewport viewport {
-        .x = 0.0f, .y = 0.0f,
-        .width = static_cast <float> (extent.width), .height = static_cast <float> (extent.height),
-        .minDepth = 0.0f, .maxDepth = 1.0f
-    };
-    VkRect2D scissor {{0, 0}, extent};
 
     VkClearValue swap_clear {};
     swap_clear.color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.f}};
@@ -1467,8 +1441,7 @@ void Renderer::calculate_lighting (VkCommandBuffer cmd_buff) {
 
     vkCmdBeginRenderPass (cmd_buff, &lighting_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
-    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+    this->set_default_viewport_and_scissor (cmd_buff);
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_lighting_pipeline);
 
@@ -1547,19 +1520,7 @@ void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
 
     vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
-    VkViewport viewport {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast <float> (extent.width);
-    viewport.height = static_cast <float> (extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = extent;
-    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+    this->set_default_viewport_and_scissor (cmd_buff);
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_octree_pipeline);
 
@@ -1633,19 +1594,7 @@ void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
 
     vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
-    VkViewport viewport {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast <float> (extent.width);
-    viewport.height = static_cast <float> (extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = extent;
-    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+    this->set_default_viewport_and_scissor (cmd_buff);
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_scomtree_pipeline);
 
@@ -1704,13 +1653,6 @@ void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_bu
     const uint32_t fif_idx = this->frame_index;
     const uint32_t swap_idx = this->render_target->get_current_image_index ();
 
-    VkViewport viewport {
-        .x = 0.0f, .y = 0.0f,
-        .width = static_cast <float> (extent.width), .height = static_cast <float> (extent.height),
-        .minDepth = 0.0f, .maxDepth = 1.0f
-    };
-    VkRect2D scissor {{0, 0}, extent};
-
     std::array <VkClearValue, 4> gbuffer_clears {};
     gbuffer_clears [0].color = {{0.f, 0.f, 0.f, 0.f}}; // Position
     gbuffer_clears [1].color = {{0.f, 0.f, 0.f, 0.f}}; // Normal
@@ -1728,8 +1670,7 @@ void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_bu
 
     vkCmdBeginRenderPass (cmd_buff, &gbuffer_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
-    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+    this->set_default_viewport_and_scissor (cmd_buff);
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_gbuffer_pipeline);
 
@@ -1764,8 +1705,7 @@ void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_bu
 
     vkCmdBeginRenderPass (cmd_buff, &lighting_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdSetViewport (cmd_buff, 0, 1, &viewport);
-    vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
+    this->set_default_viewport_and_scissor (cmd_buff);
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_lighting_pipeline);
 

@@ -110,6 +110,29 @@ void ModelManager::wait_for_scene () const {
     }
 }
 
+std::shared_ptr <Model> ModelManager::create_model (const std::filesystem::path& path) {
+    std::lock_guard lock (this->mutex);
+    if (auto it = this->model_cache.find (path); it != this->model_cache.end ()) {
+        if (auto shared = it->second.lock ()) {
+            LOG_INFO ("[{}] Model {} found in cache.", SCENE_MANAGER_NAME, path.string ());
+            return shared;
+        }
+        this->model_cache.erase (it);
+    }
+    const std::string extension = path.extension ().string ();
+    auto factory_it = this->factory_registry.find (extension);
+    if (factory_it == this->factory_registry.end ()) {
+        LOG_ERROR ("[{}] No model type registered for extension '{}'.", SCENE_MANAGER_NAME, extension);
+        return nullptr;
+    }
+    std::shared_ptr <Model> model = factory_it->second ();
+    if (model && model->load (path)) {
+        this->model_cache [path] = model;
+        return model;
+    }
+    return nullptr;
+}
+
 std::shared_ptr <Model> ModelManager::get_model () {
     std::lock_guard lock (this->mutex);
     if (std::holds_alternative <std::shared_ptr <Model>> (this->managed_model)) {

@@ -1771,16 +1771,18 @@ void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
 }
 
 void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
-    auto original_push_constants = this->push_constants;
-
     if (this->current_model) {
         LiteMath::float4x4 model = this->current_model->get_model_matrix ();
-        LiteMath::float4x4 inv_model = LiteMath::inverse4x4 (model);
-
-        this->push_constants.view_proj = original_push_constants.view_proj * model;
+        this->push_constants.view_proj = this->current_model->get_state ().camera.get_view_projection_matrix () * model;
         
-        LiteMath::float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
-        this->push_constants.camera_pos = local_cam_pos;
+        LiteMath::float4x4 inv_model = LiteMath::inverse4x4 (model);
+        LiteMath::float4 camera_pos;
+        if (this->frustum_draw_buffer) {
+            camera_pos = this->frozen_camera_pos;
+        } else {
+            camera_pos = LiteMath::to_float4 (this->current_model->get_state ().camera.get_position (), 1.0f);
+        }
+        this->push_constants.camera_pos = inv_model * camera_pos;
     }
 
     this->copy_subtrees (cmd_buff);
@@ -1794,17 +1796,13 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
     this->geometry_barrier (cmd_buff);
 
     if (this->deferred_shading) {
-        if (!this->frustum_draw_buffer) {
-            this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
-        }
+        this->deferred_rendering (cmd_buff);
 
         this->hz_buffer_barrier (cmd_buff
             , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
             , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
             , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
             , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
-
-        this->deferred_rendering (cmd_buff);
         this->calculate_lighting (cmd_buff);
 
         this->hz_buffer_barrier (cmd_buff
@@ -1820,12 +1818,14 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
             , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
             , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
             , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
+
+        if (!this->frustum_draw_buffer) {
+            this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
+        }
     } else {
         this->forward_rendering (cmd_buff);
         this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
     }
-
-    this->push_constants = original_push_constants;
 }
 
 void Renderer::render (VkCommandBuffer cmd_buff) {

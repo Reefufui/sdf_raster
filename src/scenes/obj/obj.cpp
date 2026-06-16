@@ -161,7 +161,7 @@ bool ObjModel::load (const std::filesystem::path& path) {
         .octree_depth = 0,
         .cpu_traversed = 0
     };
-    this->set_current_draw_method (DrawMethod::ExplicitDeferred);
+    this->set_current_draw_method (DrawMethod::Explicit);
 
     return true;
 }

@@ -4,6 +4,7 @@
 #include "gui_application.hpp"
 
 #include "scenes/base/model_manager.hpp"
+#include "scenes/scene.hpp"
 #include "scenes/model_state.hpp"
 #include "state.hpp"
 
@@ -75,6 +76,7 @@ private:
     void file_dialog ();
     void renderer_window (Settings& settings, const Stats& stats, ModelState& model_state);
     void status_bar (Settings& settings, const Stats& stats, ModelState& model_state);
+    void scene_inspector_window (Settings& settings);
 
 private:
     ImGui::FileBrowser file_browser;
@@ -87,6 +89,8 @@ private:
     bool pending_config_notify = false;
 
     std::shared_ptr <ModelManager> model_manager;
+    Scene view_only_scene;
+    ImGui::FileBrowser scene_file_browser;
 };
 
 void UI::create_render_pass () {
@@ -225,6 +229,10 @@ void UI::init (std::shared_ptr <VulkanContext> /*vulkan_context*/, std::shared_p
     this->file_browser = ImGui::FileBrowser (0, settings.scenes_directory);
     this->file_browser.SetTitle ("Pick SDF-scene file");
     this->file_browser.SetTypeFilters (this->model_manager->get_registered_extensions ());
+
+    this->scene_file_browser = ImGui::FileBrowser (0, settings.scenes_directory);
+    this->scene_file_browser.SetTitle ("Inspect Scene JSON");
+    this->scene_file_browser.SetTypeFilters ({".json"});
 }
 
 void UI::handle_global_shortcuts (Settings& settings) {
@@ -236,6 +244,9 @@ void UI::handle_global_shortcuts (Settings& settings) {
     }
     if (ImGui::Shortcut (ImGuiMod_Ctrl | ImGuiKey_2, ImGuiInputFlags_RouteGlobal)) {
         settings.show_renderer_window = !settings.show_renderer_window;
+    }
+    if (ImGui::Shortcut (ImGuiMod_Ctrl | ImGuiKey_3, ImGuiInputFlags_RouteGlobal)) {
+        settings.show_scene_inspector = !settings.show_scene_inspector;
     }
 }
 
@@ -258,6 +269,8 @@ void UI::menu_bar (Settings& settings) {
             if (ImGui::MenuItem ("Show Renderer Window", "Ctrl+2", &settings.show_renderer_window)) { }
             ImGui::SetNextItemShortcut (ImGuiMod_Ctrl | ImGuiKey_1, ImGuiInputFlags_Tooltip);
             if (ImGui::MenuItem ("Show Camera Window", "Ctrl+1", &settings.show_camera_window)) { }
+            ImGui::SetNextItemShortcut (ImGuiMod_Ctrl | ImGuiKey_3, ImGuiInputFlags_Tooltip);
+            if (ImGui::MenuItem ("Show Scene Inspector", "Ctrl+3", &settings.show_scene_inspector)) { }
             ImGui::EndMenu ();
         }
 
@@ -733,6 +746,78 @@ void UI::renderer_window (Settings& settings, const Stats& stats, ModelState& mo
     ImGui::End ();
 }
 
+void UI::scene_inspector_window (Settings& settings) {
+    ImGui::Begin ("Scene Inspector", &settings.show_scene_inspector);
+
+    if (ImGui::Button ("Open Scene JSON...")) {
+        this->scene_file_browser.Open ();
+    }
+
+    this->scene_file_browser.Display ();
+    if (this->scene_file_browser.HasSelected ()) {
+        this->view_only_scene.load (this->scene_file_browser.GetSelected (), *this->model_manager);
+        this->scene_file_browser.ClearSelected ();
+    }
+
+    const auto& groups = this->view_only_scene.get_groups ();
+    if (!groups.empty ()) {
+        if (ImGui::CollapsingHeader ("Mesh Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::BeginTable ("MeshStatsTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn ("Mesh ID");
+                ImGui::TableSetupColumn ("Method");
+                ImGui::TableSetupColumn ("Instances");
+                ImGui::TableHeadersRow ();
+
+                for (const auto& group : groups) {
+                    for (const auto& batch : group.batches) {
+                        ImGui::TableNextRow ();
+                        ImGui::TableNextColumn ();
+                        ImGui::Text ("%s", batch.mesh_id.c_str ());
+                        ImGui::TableNextColumn ();
+                        ImGui::Text ("%s", std::string (draw_method_name (group.draw_method)).c_str ());
+                        ImGui::TableNextColumn ();
+                        ImGui::Text ("%zu", batch.items.size ());
+                    }
+                }
+                ImGui::EndTable ();
+            }
+        }
+
+        if (ImGui::CollapsingHeader ("Instances", ImGuiTreeNodeFlags_DefaultOpen)) {
+            for (const auto& group : groups) {
+                if (ImGui::TreeNode (std::string (draw_method_name (group.draw_method)).c_str ())) {
+                    for (const auto& batch : group.batches) {
+                        if (ImGui::TreeNode (batch.mesh_id.c_str ())) {
+                            for (size_t i = 0; i < batch.items.size (); ++i) {
+                                std::string label = std::format ("Instance [{}]", i);
+                                if (ImGui::TreeNode (label.c_str ())) {
+                                    if (ImGui::BeginTable ("##TransformTable", 4, ImGuiTableFlags_Borders)) {
+                                        for (int row = 0; row < 4; ++row) {
+                                            ImGui::TableNextRow ();
+                                            for (int col = 0; col < 4; ++col) {
+                                                ImGui::TableNextColumn ();
+                                                ImGui::Text ("%.3f", batch.items [i].transform (row, col));
+                                            }
+                                        }
+                                        ImGui::EndTable ();
+                                    }
+                                    ImGui::TreePop ();
+                                }
+                            }
+                            ImGui::TreePop ();
+                        }
+                    }
+                    ImGui::TreePop ();
+                }
+            }
+        }
+    } else {
+        ImGui::Text ("No scene file loaded for inspection.");
+    }
+
+    ImGui::End ();
+}
+
 void UI::status_bar (Settings& settings, const Stats& stats, ModelState& model_state) {
     ImGuiIO& io = ImGui::GetIO ();
 
@@ -854,6 +939,9 @@ void UI::update (Settings& settings, const Stats& stats) {
             }
             if (settings.show_renderer_window) {
                 this->renderer_window (settings, stats, model_state);
+            }
+            if (settings.show_scene_inspector) {
+                this->scene_inspector_window (settings);
             }
             this->status_bar (settings, stats, model_state);
         }

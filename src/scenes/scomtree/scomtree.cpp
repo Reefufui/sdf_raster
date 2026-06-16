@@ -61,7 +61,6 @@ bool SComTreeModel::load (const std::filesystem::path& path) {
 
     this->state = ModelState {
         .camera = Camera (),
-        // .draw_method = DrawMethod::SComTreeCompute,
         .draw_method = DrawMethod::SComTreeComputeDeferred,
         .name = path.stem ().string (),
         .path = path,

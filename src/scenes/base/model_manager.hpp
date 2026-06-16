@@ -57,6 +57,7 @@ public:
     void restore_states (const std::map <std::filesystem::path, ModelState>& states);
 
     void load_model (const std::filesystem::path& path);
+    std::shared_ptr <Model> create_model (const std::filesystem::path& path);
 
     std::shared_ptr <Model> get_model ();
 
@@ -80,6 +81,7 @@ private:
 
     std::map <std::filesystem::path, ModelState> cached_model_states;
     std::map <std::string, std::function <std::shared_ptr <Model> ()>> factory_registry;
+    std::map <std::filesystem::path, std::weak_ptr <Model>> model_cache;
     std::vector <ModelEventCallback> subscribers;
 
     mutable std::mutex mutex;

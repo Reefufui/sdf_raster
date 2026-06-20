@@ -44,13 +44,12 @@ bool Scene::load (const std::filesystem::path& path, ModelManager& model_manager
         }
     }
 
-    // Temporary flat storage to build hierarchy
     struct InstanceInfo {
         std::string mesh_id;
-        std::shared_ptr<Model> model;
+        std::shared_ptr <Model> model;
         LiteMath::float4x4 transform;
     };
-    std::vector<InstanceInfo> instances;
+    std::vector <InstanceInfo> instances;
 
     if (json_data.contains ("instances")) {
         for (const auto& instance_json : json_data ["instances"]) {
@@ -59,7 +58,7 @@ bool Scene::load (const std::filesystem::path& path, ModelManager& model_manager
                 InstanceInfo info;
                 info.mesh_id = mesh_id;
                 info.model = mesh_cache [mesh_id];
-                info.transform = LiteMath::float4x4 (); // Identity
+                info.transform = LiteMath::float4x4 ();
 
                 if (instance_json.contains ("transform")) {
                     instance_json ["transform"].get_to (info.transform);
@@ -71,44 +70,42 @@ bool Scene::load (const std::filesystem::path& path, ModelManager& model_manager
         }
     }
 
-    // 1. Group by DrawMethod and Model
-    std::map<DrawMethod, std::map<std::string, RenderBatch>> grouped_data;
+    std::map <DrawMethod, std::map <std::string, RenderBatch>> grouped_data;
     for (auto& inst : instances) {
-        DrawMethod method = inst.model->get_current_draw_method();
-        auto& batch = grouped_data[method][inst.mesh_id];
+        DrawMethod method = inst.model->get_current_draw_method ();
+        auto& batch = grouped_data [method] [inst.mesh_id];
         batch.mesh_id = inst.mesh_id;
         batch.model = inst.model;
-        batch.items.push_back({inst.transform});
+        batch.items.push_back ({inst.transform});
     }
 
-    // 2. Convert to vectors
     for (auto& [method, batches_map] : grouped_data) {
         RenderGroup group;
         group.draw_method = method;
         for (auto& [id, batch] : batches_map) {
-            group.batches.push_back(std::move(batch));
+            group.batches.push_back (std::move (batch));
         }
-        this->groups.push_back(std::move(group));
+        this->groups.push_back (std::move (group));
     }
 
-    // 3. Sort groups (Deferred before Forward)
-    std::sort(this->groups.begin(), this->groups.end(), [](const RenderGroup& a, const RenderGroup& b) {
-        std::string a_name = std::string(draw_method_name(a.draw_method));
-        std::string b_name = std::string(draw_method_name(b.draw_method));
-        bool a_is_deferred = a_name.find("Deferred") != std::string::npos;
-        bool b_is_deferred = b_name.find("Deferred") != std::string::npos;
+    // NOTE: Maybe draw_method should be bitset of flags for the ease of sorting.
+    std::sort (this->groups.begin (), this->groups.end (), [](const RenderGroup& a, const RenderGroup& b) {
+        std::string a_name = std::string (draw_method_name (a.draw_method));
+        std::string b_name = std::string (draw_method_name (b.draw_method));
+        bool a_is_deferred = a_name.find ("Deferred") != std::string::npos;
+        bool b_is_deferred = b_name.find ("Deferred") != std::string::npos;
         if (a_is_deferred != b_is_deferred) {
-            return a_is_deferred; // true (deferred) comes first
+            return a_is_deferred;
         }
         return a_name < b_name;
     });
 
     size_t total_instances = 0;
     for (const auto& g : groups) {
-        for (const auto& b : g.batches) total_instances += b.items.size();
+        for (const auto& b : g.batches) total_instances += b.items.size ();
     }
 
-    LOG_INFO ("Scene loaded: {} methods, {} instances", groups.size(), total_instances);
+    LOG_INFO ("Scene loaded: {} methods, {} instances", groups.size (), total_instances);
     return !this->groups.empty ();
 }
 

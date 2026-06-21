@@ -1828,6 +1828,132 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
     }
 }
 
+const std::unique_ptr <ModelResource>& Renderer::get_model_resource (const std::string& mesh_id, const std::shared_ptr <Model>& model) {
+    auto [it, inserted] = this->model_ds_map.try_emplace (mesh_id, nullptr);
+    if (inserted) {
+        if (auto octree_model = std::dynamic_pointer_cast <SdfOctreeModel> (model)) {
+            it->second = std::make_unique <SdfOctreeDescriptorSetInfo> (this->context->get_device ()
+                , this->context->get_physical_device ()
+                , this->context->get_copy_helper ()
+                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+                , octree_model
+                , this->render_target->get_max_frames_in_flight ()
+                );
+
+            const ModelState& model_state = octree_model->get_state ();
+
+            LOG_INFO ("[{}] Created gpu resources for sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
+                , model_state.name
+                , model_state.octree_depth
+                , model_state.cpu_traversed
+                , model_state.octree_depth - model_state.cpu_traversed);
+        } else if (auto obj_model = std::dynamic_pointer_cast <ObjModel> (model)) {
+            LOG_INFO ("[{}] Received a scene that of type ObjModel.", RENDERER_NAME);
+
+            const auto& model_data = obj_model->get_model_data ();
+            const auto& model_state = obj_model->get_state ();
+
+            if (model_data.vertices.empty ()) {
+                LOG_ERROR ("[{}] ObjModel '{}' has no vertices!", RENDERER_NAME, model_state.name);
+                return it->second;
+            }
+
+            it->second = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
+                , this->context->get_physical_device ()
+                , this->context->get_copy_helper ()
+                , 0x0 // NOTE: we don't need descriptors at all as we have no plan on using vertex/index buffers as shader input.
+                , model_data.vertices.size ()
+                , model_data.indices.size ()
+                , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
+
+            this->context->get_copy_helper ()->UpdateBuffer (
+                this->mesh_ds->get_vertex_buffer (0), 0
+                , model_data.vertices.data (), model_data.vertices.size () * sizeof (Vertex)
+            );
+
+            this->context->get_copy_helper ()->UpdateBuffer (
+                this->mesh_ds->get_index_buffer (0), 0
+                , model_data.indices.data (), model_data.indices.size () * sizeof (uint32_t)
+            );
+
+            VkDrawIndexedIndirectCommand cmd {
+                .indexCount    = static_cast <uint32_t> (model_data.indices.size ()),
+                .instanceCount = 1,
+                .firstIndex    = 0,
+                .vertexOffset  = 0,
+                .firstInstance = 0
+            };
+
+            this->draw_indexed_indirect_command_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
+                , this->context->get_physical_device ()
+                , VK_SHADER_STAGE_COMPUTE_BIT
+                , sizeof (cmd)
+                , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
+
+            this->context->get_copy_helper ()->UpdateBuffer (
+                this->draw_indexed_indirect_command_ds->get_indirect_buffer (0), 0
+                , &cmd, sizeof (cmd)
+            );
+
+            LOG_INFO ("[{}] Created GPU resources for mesh scene '{}'. Vertices: {}, Indices: {}"
+                      , RENDERER_NAME, model_state.name, model_data.vertices.size (), model_data.indices.size ());
+        } else if (auto scomtree_model = std::dynamic_pointer_cast <SComTreeModel> (model)) {
+            const auto& model_state = scomtree_model->get_state ();
+
+            it->second = std::make_unique <SComTreeTreeDescriptorSetInfo> (this->context->get_device ()
+                , this->context->get_physical_device ()
+                , this->context->get_copy_helper ()
+                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+                , scomtree_model
+                , this->render_target->get_max_frames_in_flight ()
+                );
+
+            LOG_INFO ("[{}] Created gpu resources for sdf-scomtree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
+                , model_state.name
+                , model_state.octree_depth
+                , model_state.cpu_traversed
+                , model_state.octree_depth - model_state.cpu_traversed);
+        } else {
+            LOG_ERROR ("[{}] Received a scene that is not of any renderable type. Cannot render.", RENDERER_NAME);
+            return it->second;
+        }
+    }
+    return it->second;
+}
+
+void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
+    // TODO:clean surface here
+    const auto& groups = scene.get_groups ();
+
+    for (const auto& [draw_method, batches] : groups) {
+        // const auto& method = this->methods [draw_method];
+        // method.begin ()
+
+        // TODO: rename mesh_id -> model_id
+        for (const auto& [mesh_id, model, items] : batches) {
+            const auto& model_ds = this->get_model_resource (mesh_id, model);
+            if (!model_ds) {
+                continue;
+            }
+
+            for (const auto& item : items) {
+                LiteMath::float4x4 model_matrix = item.transform;
+                // update push constants
+                // std::invoke (method.draw, this, cmd_buff, mesh);
+            }
+        }
+        // method.end ()
+    }
+
+    if (this->draw) {
+        std::invoke (this->draw, this, cmd_buff);
+    }
+
+    if (this->frustum_draw_buffer) {
+        this->draw_frustum_demo (cmd_buff);
+    }
+}
+
 void Renderer::render (VkCommandBuffer cmd_buff) {
     if (this->draw) {
         std::invoke (this->draw, this, cmd_buff);

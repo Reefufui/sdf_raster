@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "model_resource.hpp"
+
 #include "scenes/octree/octree.hpp"
 
 #include "shader_common.hpp"
@@ -18,7 +20,7 @@
 
 namespace sdf_raster {
 
-class SdfOctreeDescriptorSetInfo {
+class SdfOctreeDescriptorSetInfo : public ModelResource {
 public:
     SdfOctreeDescriptorSetInfo (VkDevice device
         , VkPhysicalDevice physical_device

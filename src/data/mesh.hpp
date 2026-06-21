@@ -1,16 +1,18 @@
 // data/mesh.hpp
 #pragma once
 
+#include "resources/model_resource.hpp"
+
+#include "shader_common.hpp"
+
+#include <LiteMath.h>
+#include <vk_copy.h>
+#include <vk_descriptor_sets.h>
+
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include "shader_common.hpp"
-
-#include "LiteMath.h"
-#include "vk_copy.h"
-#include "vk_descriptor_sets.h"
 
 namespace sdf_raster {
 
@@ -41,7 +43,7 @@ private:
 
 void save_mesh_as_obj (const Mesh& mesh, const std::string& filename);
 
-class MeshDescriptorSetInfo {
+class MeshDescriptorSetInfo : public ModelResource {
 public:
     MeshDescriptorSetInfo (VkDevice device
         , VkPhysicalDevice physical_device

@@ -13,9 +13,11 @@
 #include "resources/indirect_dispatch.hpp"
 #include "resources/lod.hpp"
 #include "resources/marching_cubes_lookup_table.hpp"
+#include "resources/model_resource.hpp"
 #include "resources/sdf_octree.hpp"
 #include "resources/sdf_scomtree.hpp"
 #include "scenes/base/model.hpp"
+#include "scenes/scene.hpp"
 #include "shader_common.hpp"
 #include "state.hpp"
 #include "vulkan/vulkan_context.hpp"
@@ -39,6 +41,7 @@ public:
 
     void update (uint32_t frame_index, Settings& settings, float delta_time);
     void render (VkCommandBuffer cmd_buff);
+    void render_scene (VkCommandBuffer cmd_buff, const Scene& scene);
     const Stats& get_stats () const;
     void process_commands (std::queue <std::function<void()>>& commands, std::mutex& mutex);
     void apply_model_config (std::shared_ptr <Model> model);
@@ -98,12 +101,16 @@ private:
     void hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src, LayoutStageAccess dst);
     void hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src_base, LayoutStageAccess dst_base, LayoutStageAccess src_levels, LayoutStageAccess dst_levels);
 
+    const std::unique_ptr <ModelResource>& get_model_resource (const std::string& mesh_id, const std::shared_ptr <Model>& model);
+
 public:
     std::shared_ptr <VulkanContext> context;
     std::shared_ptr <RenderTarget> render_target;
 
     std::unique_ptr <FrustumDrawBuffer> frustum_draw_buffer;
     std::unique_ptr <HZBufferDescriptorSetInfo> hz_buffer_ds;
+
+    std::unordered_map <std::string, std::unique_ptr <ModelResource>> model_ds_map {};
 
     std::unique_ptr <SdfOctreeDescriptorSetInfo> sdf_octree_ds {};
     std::unique_ptr <SComTreeTreeDescriptorSetInfo> sdf_scomtree_ds {};

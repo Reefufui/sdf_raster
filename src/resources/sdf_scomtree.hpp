@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "model_resource.hpp"
+
 #include "scenes/scomtree/scomtree.hpp"
 #include "shader_common.hpp"
 
@@ -17,7 +19,7 @@
 
 namespace sdf_raster {
 
-class SComTreeTreeDescriptorSetInfo {
+class SComTreeTreeDescriptorSetInfo : public ModelResource {
 public:
     SComTreeTreeDescriptorSetInfo (VkDevice device
         , VkPhysicalDevice physical_device

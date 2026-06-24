@@ -10,16 +10,16 @@
 
 namespace sdf_raster {
 
-ForwardShading::ForwardShading (VkDevice a_device, VkPhysicalDevice a_physical_device, std::shared_ptr <RenderTarget> a_render_target)
+ForwardShading::ForwardShading (VkDevice a_device, VkPhysicalDevice a_physical_device, std::shared_ptr <RenderTarget> a_render_target, const std::unique_ptr <vk_utils::VulkanImageMem>& a_depth_buffer)
     : render_target (std::move (a_render_target))
-    , device (a_device) {
+    , device (a_device)
+    , depth_buffer (a_depth_buffer) {
 
     if (!vk_utils::getSupportedDepthFormat (a_physical_device, {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &this->depth_format)) {
         throw std::runtime_error ("couldn't find supported depth format");
     }
 
     this->create_render_passes ();
-    this->create_depth_buffer (a_physical_device);
     this->create_framebuffers ();
 }
 
@@ -31,31 +31,9 @@ ForwardShading::~ForwardShading () {
     vkDeviceWaitIdle (this->device);
 
     this->destroy_framebuffers ();
-    this->destroy_depth_buffer ();
     this->destroy_render_passes ();
 
     this->device = VK_NULL_HANDLE;
-}
-
-ForwardShading::ForwardShading (ForwardShading&& other) noexcept {
-    *this = std::move (other);
-}
-
-ForwardShading& ForwardShading::operator= (ForwardShading&& other) noexcept {
-    if (this != &other) {
-        this->~ForwardShading ();
-
-        this->render_target = std::move (other.render_target);
-        this->device = other.device;
-        this->depth_format = other.depth_format;
-        this->depth_buffer = std::move (other.depth_buffer);
-        this->main = std::move (other.main);
-        this->after = std::move (other.after);
-
-        other.device = VK_NULL_HANDLE;
-        other.depth_format = VK_FORMAT_UNDEFINED;
-    }
-    return *this;
 }
 
 void ForwardShading::create_render_passes () {
@@ -142,34 +120,8 @@ VkRenderPass ForwardShading::create_render_pass (VkAttachmentLoadOp load_op) {
     return rp;
 }
 
-void ForwardShading::create_depth_buffer (VkPhysicalDevice a_physical_device) {
-    assert (this->depth_format != VK_FORMAT_UNDEFINED);
-
-    const auto extent = this->render_target->get_extent ();
-    assert (extent.width > 0 && extent.height > 0);
-
-    this->depth_buffer.format = this->depth_format;
-
-    VkImageUsageFlags usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    VkImageCreateInfo create_info = vk_utils::defaultImageCreateInfo (extent.width, extent.height, this->depth_format, usage, 1);
-
-    VK_CHECK_RESULT (vkCreateImage (this->device, &create_info, nullptr, &this->depth_buffer.image));
-    vkGetImageMemoryRequirements (this->device, this->depth_buffer.image, &this->depth_buffer.memReq);
-
-    VkMemoryAllocateInfo mem_alloc {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = this->depth_buffer.memReq.size,
-        .memoryTypeIndex = vk_utils::findMemoryType (this->depth_buffer.memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, a_physical_device)
-    };
-    VK_CHECK_RESULT (vkAllocateMemory (this->device, &mem_alloc, nullptr, &this->depth_buffer.mem));
-    VK_CHECK_RESULT (vkBindImageMemory (this->device, this->depth_buffer.image, this->depth_buffer.mem, 0));
-
-    VkImageViewCreateInfo view_info = vk_utils::defaultImageViewCreateInfo (this->depth_buffer.image, this->depth_format, 1, VK_IMAGE_ASPECT_DEPTH_BIT);
-    VK_CHECK_RESULT (vkCreateImageView (this->device, &view_info, nullptr, &this->depth_buffer.view));
-}
-
 void ForwardShading::create_framebuffers () {
-    std::array <VkImageView, 2> attachments = {VK_NULL_HANDLE, this->depth_buffer.view};
+    std::array <VkImageView, 2> attachments = {VK_NULL_HANDLE, this->depth_buffer->view};
 
     const auto extent = this->render_target->get_extent ();
     const uint32_t image_count = this->render_target->get_image_count ();
@@ -200,9 +152,6 @@ void ForwardShading::create_framebuffers () {
 
 void ForwardShading::recreate_framebuffers (VkPhysicalDevice a_physical_device) {
     this->destroy_framebuffers ();
-    this->destroy_depth_buffer ();
-
-    this->create_depth_buffer (a_physical_device);
     this->create_framebuffers ();
 }
 
@@ -214,21 +163,6 @@ void ForwardShading::destroy_render_passes () {
     if (this->after.render_pass != VK_NULL_HANDLE) {
         vkDestroyRenderPass (this->device, this->after.render_pass, nullptr);
         this->after.render_pass = VK_NULL_HANDLE;
-    }
-}
-
-void ForwardShading::destroy_depth_buffer () {
-    if (this->depth_buffer.view != VK_NULL_HANDLE) {
-        vkDestroyImageView (this->device, this->depth_buffer.view, nullptr);
-        this->depth_buffer.view = VK_NULL_HANDLE;
-    }
-    if (this->depth_buffer.mem != VK_NULL_HANDLE) {
-        vkFreeMemory (this->device, this->depth_buffer.mem, nullptr);
-        this->depth_buffer.mem = VK_NULL_HANDLE;
-    }
-    if (this->depth_buffer.image != VK_NULL_HANDLE) {
-        vkDestroyImage (this->device, this->depth_buffer.image, nullptr);
-        this->depth_buffer.image = VK_NULL_HANDLE;
     }
 }
 

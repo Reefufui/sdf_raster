@@ -19,6 +19,129 @@
 
 namespace sdf_raster {
 
+void Renderer::RasterSComTreeViaComputeShadingForward::begin (VkCommandBuffer /*cmd_buff*/) {
+}
+
+void Renderer::RasterSComTreeViaComputeShadingForward::draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) {
+    const auto scomtree_model = dynamic_cast <SComTreeTreeDescriptorSetInfo*> (model.get ());
+    assert (scomtree_model && "reqired for RasterSComTreeViaComputeShadingForward::draw");
+
+    auto subtree_count = scomtree_model->get_subtree_count ();
+    if (!subtree_count) {
+        return;
+    }
+
+    r.copy_subtrees (cmd_buff, scomtree_model->get_subtree_count () * sizeof (SComTreeStackElement)
+        , scomtree_model->get_subtree_root_staging_buffer (r.frame_index)
+        , scomtree_model->get_subtree_root_buffer (r.frame_index));
+    r.reset_active_leafs_counter (cmd_buff);
+    r.traverse_scomtree (cmd_buff, static_cast <uint32_t> (subtree_count), scomtree_model->get_descriptor_set (r.frame_index));
+    r.clear_geometry (cmd_buff);
+    r.prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
+    r.marching_cubes_scomtree (cmd_buff, scomtree_model->get_descriptor_set (r.frame_index));
+    r.geometry_barrier (cmd_buff);
+    r.forward_rendering (cmd_buff);
+}
+
+void Renderer::RasterSComTreeViaComputeShadingForward::end (VkCommandBuffer cmd_buff) {
+    r.prepare_hzbuffer_after_forward_rendering (cmd_buff);
+}
+
+void Renderer::RasterSComTreeViaComputeShadingDeferred::begin (VkCommandBuffer cmd_buff) {
+    r.prepare_deferred (cmd_buff);
+}
+
+void Renderer::RasterSComTreeViaComputeShadingDeferred::draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) {
+    const auto scomtree_model = dynamic_cast <SComTreeTreeDescriptorSetInfo*> (model.get ());
+    assert (scomtree_model && "reqired for RasterSComTreeViaComputeShadingDeferred::draw");
+
+    auto subtree_count = scomtree_model->get_subtree_count ();
+    if (!subtree_count) {
+        return;
+    }
+
+    r.copy_subtrees (cmd_buff, subtree_count * sizeof (SComTreeStackElement)
+        , scomtree_model->get_subtree_root_staging_buffer (r.frame_index)
+        , scomtree_model->get_subtree_root_buffer (r.frame_index));
+    r.reset_active_leafs_counter (cmd_buff);
+    r.traverse_scomtree (cmd_buff, static_cast <uint32_t> (subtree_count), scomtree_model->get_descriptor_set (r.frame_index));
+    r.clear_geometry (cmd_buff);
+    r.prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
+    r.marching_cubes_scomtree (cmd_buff, scomtree_model->get_descriptor_set (r.frame_index));
+    r.geometry_barrier (cmd_buff);
+    r.deferred_rendering (cmd_buff);
+}
+
+void Renderer::RasterSComTreeViaComputeShadingDeferred::end (VkCommandBuffer cmd_buff) {
+    vkCmdEndRenderPass (cmd_buff);
+
+    r.hz_buffer_barrier (cmd_buff
+        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
+    r.calculate_lighting (cmd_buff);
+
+    r.hz_buffer_barrier (cmd_buff
+        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
+
+    if (!r.frustum_draw_buffer) {
+        r.compute_hz_buffer (cmd_buff);
+    }
+
+    r.hz_buffer_barrier (cmd_buff
+        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
+
+    if (!r.frustum_draw_buffer) {
+        r.hz_buffer_ds->frame_resources_ref (r.frame_index).prev_mvp = r.push_constants.view_proj;
+    }
+}
+
+void Renderer::RasterMeshForward::begin (VkCommandBuffer cmd_buff) {
+    VkRenderPassBeginInfo render_pass_info {};
+    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    render_pass_info.renderPass = r.forward_shading->get_render_pass ();
+    render_pass_info.framebuffer = r.forward_shading->get_framebuffer (r.render_target->get_current_image_index ());
+    render_pass_info.renderArea.offset = {0, 0};
+    render_pass_info.renderArea.extent = r.render_target->get_extent ();
+    render_pass_info.clearValueCount = 0;
+    render_pass_info.pClearValues = nullptr;
+
+    vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    r.set_default_viewport_and_scissor (cmd_buff);
+
+    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, r.forward_rendering_pipeline);
+}
+
+void Renderer::RasterMeshForward::draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) {
+    const auto mesh_model = dynamic_cast <MeshDescriptorSetInfo*> (model.get ());
+    assert (mesh_model && "reqired for RasterSComTreeViaComputeShadingDeferred::draw");
+
+    assert (r.context && "required for 'forward_rendering'");
+    assert (r.forward_shading && "required for 'forward_rendering'");
+
+    assert (!(r.mesh_ds && !r.draw_indexed_indirect_command_ds) && "either both set (render) or not set (just clear) for 'forward_rendering'");
+    assert (!(!r.mesh_ds && r.draw_indexed_indirect_command_ds) && "either both set (render) or not set (just clear) for 'forward_rendering'");
+
+    vkCmdPushConstants (cmd_buff, r.forward_rendering_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &r.push_constants);
+
+    VkBuffer vertex_buffers [] = {mesh_model->get_vertex_buffer (r.frame_index)};
+    VkDeviceSize offsets [] = {0};
+    vkCmdBindVertexBuffers (cmd_buff, 0, 1, vertex_buffers, offsets);
+    vkCmdBindIndexBuffer (cmd_buff, mesh_model->get_index_buffer (r.frame_index), 0, VK_INDEX_TYPE_UINT32);
+
+    vkCmdDrawIndexedIndirect (cmd_buff, r.draw_indexed_indirect_command_ds->get_indirect_buffer (r.frame_index), 0, 1, 0);
+}
+
+void Renderer::RasterMeshForward::end (VkCommandBuffer cmd_buff) {
+    vkCmdEndRenderPass (cmd_buff);
+}
+
 #define RENDERER_NAME "Renderer"
 
 Renderer::Renderer (std::shared_ptr <VulkanContext> context, std::shared_ptr <RenderTarget> render_target)
@@ -33,6 +156,7 @@ Renderer::Renderer (std::shared_ptr <VulkanContext> context, std::shared_ptr <Re
     }
 
     this->init_push_constants (); // TODO: init in set_scene ?
+    this->init_depth_buffer ();
 
     this->frustum_ds = std::make_unique <FrustumDescriptorSetInfo> (this->context->get_device ()
         , this->context->get_physical_device ()
@@ -41,7 +165,8 @@ Renderer::Renderer (std::shared_ptr <VulkanContext> context, std::shared_ptr <Re
 
     this->forward_shading = std::make_unique <ForwardShading> (this->context->get_device ()
         , this->context->get_physical_device ()
-        , this->render_target);
+        , this->render_target
+        , this->depth_buffer);
 
     this->dummy_ds = std::make_unique <DummyDescriptorSetInfo> (this->context->get_device ()
         , this->context->get_physical_device ()
@@ -69,6 +194,11 @@ Renderer::~Renderer () {
 
     this->release_render_resources ();
 
+    if (this->depth_buffer) {
+        vk_utils::deleteImg (this->context->get_device (), this->depth_buffer.get ());
+        this->depth_buffer.reset ();
+    }
+
     this->dummy_ds.reset ();
     this->frustum_ds.reset ();
 }
@@ -95,13 +225,7 @@ void Renderer::destroy_pipelines () {
     vk_utils::destroyPipelineIfExists (this->context->get_device (), this->traverse_scomtree_pipeline, this->traverse_scomtree_pipeline_layout);
 }
 
-void Renderer::create_required_pipelines () {
-    if (!this->current_model) {
-        return;
-    }
-
-    const auto method = this->current_model->get_state ().draw_method;
-
+void Renderer::create_required_pipelines (DrawMethod method) {
     if (method == DrawMethod::OctreeCompute
         || method == DrawMethod::OctreeMesh
         || method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
@@ -161,39 +285,41 @@ void Renderer::create_required_pipelines () {
 }
 
 void Renderer::resize () {
-        this->destroy_pipelines ();
+    this->destroy_pipelines ();
+    this->init_depth_buffer ();
 
-        if (this->hz_buffer_ds) {
-            this->hz_buffer_ds.reset ();
-            this->hz_buffer_ds = std::make_unique <HZBufferDescriptorSetInfo> (this->context->get_device ()
-                , this->context->get_physical_device ()
-                , this->context->get_transfer_command_pool_reset ()
-                , this->context->get_transfer_queue ()
-                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-                , this->render_target->get_extent ()
-                , this->render_target->get_max_frames_in_flight ());
-        }
+    if (this->hz_buffer_ds) {
+        this->hz_buffer_ds.reset ();
+        this->hz_buffer_ds = std::make_unique <HZBufferDescriptorSetInfo> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_transfer_command_pool_reset ()
+            , this->context->get_transfer_queue ()
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+            , this->render_target->get_extent ()
+            , this->render_target->get_max_frames_in_flight ());
+    }
 
-        if (this->forward_shading) {
-            this->forward_shading.reset ();
-            this->forward_shading = std::make_unique <ForwardShading> (this->context->get_device ()
-                , this->context->get_physical_device ()
-                , this->render_target);
-        } else if (this->deferred_shading) {
-            this->deferred_shading.reset ();
-            this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
-                , this->context->get_physical_device ()
-                , this->context->get_transfer_command_pool_reset ()
-                , this->context->get_transfer_queue ()
-                , DeferredShadingConfig {
-                    .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
-                    .filter = VK_FILTER_LINEAR
-                }
-                , this->render_target);
-        }
+    if (this->forward_shading) {
+        this->forward_shading.reset ();
+        this->forward_shading = std::make_unique <ForwardShading> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->render_target
+            , this->depth_buffer);
+    } else if (this->deferred_shading) {
+        this->deferred_shading.reset ();
+        this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_transfer_command_pool_reset ()
+            , this->context->get_transfer_queue ()
+            , DeferredShadingConfig {
+                .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
+                .filter = VK_FILTER_LINEAR
+            }
+            , this->render_target
+            , this->depth_buffer);
+    }
 
-        this->create_required_pipelines ();
-
+    this->create_required_pipelines (this->current_model->get_state ().draw_method);
 }
 
 void Renderer::init_push_constants () {
@@ -208,6 +334,28 @@ void Renderer::init_push_constants () {
     }
 
     this->push_constants.active_leafs_max_count = 1500000; // TODO: settings
+}
+
+void Renderer::init_depth_buffer () {
+    if (this->depth_buffer) {
+        vk_utils::deleteImg (this->context->get_device (), this->depth_buffer.get ());
+        this->depth_buffer.reset ();
+    }
+
+    VkFormat depth_format;
+    if (!vk_utils::getSupportedDepthFormat (this->context->get_physical_device (), {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &depth_format)) {
+        throw std::runtime_error ("couldn't find supported depth format");
+    }
+
+    auto extent = this->render_target->get_extent ();
+    this->depth_buffer = std::make_unique <vk_utils::VulkanImageMem> (
+        vk_utils::createImg (this->context->get_device (), extent.width, extent.height, depth_format
+            , VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 1)
+    );
+    std::vector <vk_utils::VulkanImageMem> depth_images;
+    depth_images.push_back (std::move (*this->depth_buffer));
+    vk_utils::allocateImgsBindCreateView (this->context->get_device (), this->context->get_physical_device (), depth_images);
+    *this->depth_buffer = std::move (depth_images [0]);
 }
 
 void Renderer::init_compute_hz_buffer_pipeline () {
@@ -631,6 +779,8 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     } else {
         this->push_constants.camera_pos = LiteMath::to_float4 (model_state.camera.get_position (), 1.0f);
     }
+
+    // common
     this->push_constants.far_plane = model_state.camera.get_far_plane ();
     this->push_constants.near_plane = model_state.camera.get_near_plane ();
     this->push_constants.max_lod = static_cast <uint> (model_state.max_lod);
@@ -641,7 +791,6 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     this->push_constants.color_leafs = settings.color_leafs;
     this->push_constants.lod_mode = static_cast <uint> (model_state.lod_mode);
     this->push_constants.fixed_lod = static_cast <uint> (model_state.fixed_lod);
-    this->push_constants.root_center = model_state.octree_root_center;
     this->push_constants.lod_threshold_pixels = model_state.lod_threshold_pixels;
     this->push_constants.lod_aggressivity = model_state.lod_aggressivity;
     this->push_constants.fov_y = model_state.camera.get_fov_y () * (3.14159265359f / 180.0f);
@@ -649,8 +798,11 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     this->push_constants.screen_width = extent.width;
     this->push_constants.screen_height = extent.height;
     this->push_constants.max_voxel_size = 2.0f / std::pow (2.0f, model_state.cpu_traversed);
-    this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, model_state.octree_depth);
     this->clear_color = settings.lighting.clear_color;
+
+    // model
+    this->push_constants.root_center = model_state.octree_root_center;
+    this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, model_state.octree_depth);
 
     if (this->deferred_shading) {
         auto& lighting_pc = this->deferred_shading->push_constants_ref ();
@@ -766,7 +918,7 @@ void Renderer::copy_forward_rendered_depth (VkCommandBuffer cmd_buff) {
         depth_to_src.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         depth_to_src.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         depth_to_src.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        depth_to_src.image = this->forward_shading->get_depth_image ();
+        depth_to_src.image = this->depth_buffer->image;
         depth_to_src.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         depth_to_src.subresourceRange.baseMipLevel = 0;
         depth_to_src.subresourceRange.levelCount = 1;
@@ -796,7 +948,7 @@ void Renderer::copy_forward_rendered_depth (VkCommandBuffer cmd_buff) {
         };
 
         vkCmdCopyImageToBuffer (cmd_buff
-            , this->forward_shading->get_depth_image ()
+            , this->depth_buffer->image
             , VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
             , f.transition_buffer
             , 1, &buffer_image_copy_region);
@@ -838,7 +990,7 @@ void Renderer::copy_forward_rendered_depth (VkCommandBuffer cmd_buff) {
         depth_to_attachment.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depth_to_attachment.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         depth_to_attachment.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        depth_to_attachment.image = this->forward_shading->get_depth_image ();
+        depth_to_attachment.image = this->depth_buffer->image;
         depth_to_attachment.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         depth_to_attachment.subresourceRange.baseMipLevel = 0;
         depth_to_attachment.subresourceRange.levelCount = 1;
@@ -855,15 +1007,7 @@ void Renderer::copy_forward_rendered_depth (VkCommandBuffer cmd_buff) {
     }
 }
 
-void Renderer::copy_subtrees (VkCommandBuffer cmd_buff) {
-    VkDeviceSize subtrees_size {};
-
-    if (this->sdf_octree_ds) {
-        subtrees_size = this->sdf_octree_ds->get_subtree_count () * sizeof (NodeContext);
-    } else {
-        subtrees_size = this->sdf_scomtree_ds->get_subtree_count () * sizeof (SComTreeStackElement);
-    }
-
+void Renderer::copy_subtrees (VkCommandBuffer cmd_buff, VkDeviceSize subtrees_size, VkBuffer staging_buffer, VkBuffer buffer) {
     if (!subtrees_size) {
         return;
     }
@@ -873,13 +1017,7 @@ void Renderer::copy_subtrees (VkCommandBuffer cmd_buff) {
     copy_region.dstOffset = 0;
     copy_region.size = subtrees_size;
 
-    if (this->sdf_octree_ds) {
-        vkCmdCopyBuffer (cmd_buff, this->sdf_octree_ds->get_subtree_root_staging_buffer (this->frame_index), this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index), 1, &copy_region);
-    } else if (this->sdf_scomtree_ds) {
-        vkCmdCopyBuffer (cmd_buff, this->sdf_scomtree_ds->get_subtree_root_staging_buffer (this->frame_index), this->sdf_scomtree_ds->get_subtree_root_buffer (this->frame_index), 1, &copy_region);
-    } else {
-        assert (false && "missing source of subtrees");
-    }
+    vkCmdCopyBuffer (cmd_buff, staging_buffer, buffer, 1, &copy_region);
 
     VkBufferMemoryBarrier barr = {};
     barr.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -887,11 +1025,7 @@ void Renderer::copy_subtrees (VkCommandBuffer cmd_buff) {
     barr.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barr.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barr.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    if (this->sdf_octree_ds) {
-        barr.buffer = this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index);
-    } else if (this->sdf_scomtree_ds) {
-        barr.buffer = this->sdf_scomtree_ds->get_subtree_root_buffer (this->frame_index);
-    }
+    barr.buffer = buffer;
     barr.offset = 0;
     barr.size = subtrees_size;
 
@@ -1085,16 +1219,11 @@ void Renderer::traverse_octree (VkCommandBuffer cmd_buff) {
     vkCmdDispatch (cmd_buff, 8, 8, subtree_root_count);
 }
 
-void Renderer::traverse_scomtree (VkCommandBuffer cmd_buff) {
-    size_t subtree_root_count = this->sdf_scomtree_ds->get_subtree_count ();
-    if (!subtree_root_count) {
-        return;
-    }
-
+void Renderer::traverse_scomtree (VkCommandBuffer cmd_buff, uint32_t subtree_root_count, VkDescriptorSet scomtree_ds) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->traverse_scomtree_pipeline);
 
     std::vector <VkDescriptorSet> ds (5);
-    ds [0] = this->sdf_scomtree_ds->get_descriptor_set (this->frame_index);
+    ds [0] = scomtree_ds;
     ds [1] = this->active_leafs_ds->get_descriptor_set (this->frame_index);
     ds [2] = this->frustum_ds->get_descriptor_set (this->frame_index);
     ds [3] = this->hz_buffer_ds->frame_resources_ref (this->frame_index).descriptor_set;
@@ -1208,7 +1337,7 @@ void Renderer::marching_cubes_octree (VkCommandBuffer cmd_buff) {
     vkCmdDispatchIndirect (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0);
 }
 
-void Renderer::marching_cubes_scomtree (VkCommandBuffer cmd_buff) {
+void Renderer::marching_cubes_scomtree (VkCommandBuffer cmd_buff, VkDescriptorSet scomtree_ds) {
     assert (this->context && "required for 'marching_cubes_scomtree'");
     assert (this->sdf_scomtree_ds && "required for 'marching_cubes_scomtree'");
     assert (this->mesh_ds && "required for 'marching_cubes_scomtree'");
@@ -1220,7 +1349,7 @@ void Renderer::marching_cubes_scomtree (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->marching_cubes_scomtree_pipeline);
 
     std::array <VkDescriptorSet, 6> ds = {
-        this->sdf_scomtree_ds->get_descriptor_set (this->frame_index),
+        scomtree_ds,
         this->mesh_ds->get_descriptor_set (this->frame_index),
         this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index),
         this->active_leafs_ds->get_descriptor_set (this->frame_index),
@@ -1376,15 +1505,9 @@ void Renderer::draw_frustum_demo (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void Renderer::deferred_rendering (VkCommandBuffer cmd_buff) {
-    assert (this->context && "required for 'deferred_rendering'");
-    assert (this->deferred_shading && "required for 'deferred_rendering'");
-    assert (this->draw_indexed_indirect_command_ds && "required for 'deferred_rendering'");
-    assert (this->graphics_gbuffer_pipeline != VK_NULL_HANDLE && "required for 'deferred_shading'");
-    assert (this->graphics_gbuffer_pipeline_layout != VK_NULL_HANDLE && "required for 'deferred_shading'");
-    assert (this->graphics_lighting_pipeline != VK_NULL_HANDLE && "required for 'deferred_shading'");
-    assert (this->graphics_lighting_pipeline_layout != VK_NULL_HANDLE && "required for 'deferred_shading'");
-    assert (this->mesh_ds && "required for 'deferred_rendering'");
+void Renderer::prepare_deferred (VkCommandBuffer cmd_buff) {
+    assert (this->context && "required for 'prepare_deferred'");
+    assert (this->deferred_shading && "required for 'prepare_deferred'");
 
     const auto extent = this->render_target->get_extent ();
 
@@ -1406,7 +1529,18 @@ void Renderer::deferred_rendering (VkCommandBuffer cmd_buff) {
     vkCmdBeginRenderPass (cmd_buff, &gbuffer_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
     this->set_default_viewport_and_scissor (cmd_buff);
-    
+}
+
+void Renderer::deferred_rendering (VkCommandBuffer cmd_buff) {
+    assert (this->context && "required for 'deferred_rendering'");
+    assert (this->deferred_shading && "required for 'deferred_rendering'");
+    assert (this->draw_indexed_indirect_command_ds && "required for 'deferred_rendering'");
+    assert (this->graphics_gbuffer_pipeline != VK_NULL_HANDLE && "required for 'deferred_shading'");
+    assert (this->graphics_gbuffer_pipeline_layout != VK_NULL_HANDLE && "required for 'deferred_shading'");
+    assert (this->graphics_lighting_pipeline != VK_NULL_HANDLE && "required for 'deferred_shading'");
+    assert (this->graphics_lighting_pipeline_layout != VK_NULL_HANDLE && "required for 'deferred_shading'");
+    assert (this->mesh_ds && "required for 'deferred_rendering'");
+
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_gbuffer_pipeline);
 
     vkCmdPushConstants (cmd_buff, this->graphics_gbuffer_pipeline_layout
@@ -1487,7 +1621,9 @@ void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
         this->push_constants.camera_pos = local_cam_pos;
     }
 
-    this->copy_subtrees (cmd_buff);
+    this->copy_subtrees (cmd_buff, this->sdf_octree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
+        , this->sdf_octree_ds->get_subtree_root_staging_buffer (this->frame_index)
+        , this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index));
     this->reset_active_leafs_counter (cmd_buff);
 
     this->traverse_octree (cmd_buff);
@@ -1569,10 +1705,14 @@ void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
         this->push_constants.camera_pos = local_cam_pos;
     }
 
-    this->copy_subtrees (cmd_buff);
+    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
+        , this->sdf_scomtree_ds->get_subtree_root_staging_buffer (this->frame_index)
+        , this->sdf_scomtree_ds->get_subtree_root_buffer (this->frame_index));
     this->reset_active_leafs_counter (cmd_buff);
 
-    this->traverse_scomtree (cmd_buff);
+    this->traverse_scomtree (cmd_buff
+        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_subtree_count ())
+        , this->sdf_scomtree_ds->get_descriptor_set (this->frame_index));
 
     this->prepare_indirect (cmd_buff, uint32_t {1}); // NOTE: brick == meshlet
 
@@ -1632,11 +1772,13 @@ void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_bu
     assert (this->graphics_lighting_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading_deferred'");
     assert (this->sdf_scomtree_ds && "required for 'raster_scomtree_via_mesh_shading_deferred'");
 
-    this->copy_subtrees (cmd_buff);
+    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
+        , this->sdf_scomtree_ds->get_subtree_root_staging_buffer (this->frame_index)
+        , this->sdf_scomtree_ds->get_subtree_root_buffer (this->frame_index));
     this->reset_active_leafs_counter (cmd_buff);
-
-    this->traverse_scomtree (cmd_buff);
-
+    this->traverse_scomtree (cmd_buff
+        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_subtree_count ())
+        , this->sdf_scomtree_ds->get_descriptor_set (this->frame_index));
     this->prepare_indirect (cmd_buff, uint32_t {1}); // NOTE: brick == meshlet
 
         if (!this->frustum_draw_buffer) {
@@ -1752,7 +1894,9 @@ void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
         this->push_constants.camera_pos = local_cam_pos;
     }
 
-    this->copy_subtrees (cmd_buff);
+    this->copy_subtrees (cmd_buff, this->sdf_octree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
+        , this->sdf_octree_ds->get_subtree_root_staging_buffer (this->frame_index)
+        , this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index));
     this->reset_active_leafs_counter (cmd_buff);
 
     this->traverse_octree (cmd_buff);
@@ -1771,6 +1915,7 @@ void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
 }
 
 void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
+    /* update push constants */
     if (this->current_model) {
         LiteMath::float4x4 model = this->current_model->get_model_matrix ();
         this->push_constants.view_proj = this->current_model->get_state ().camera.get_view_projection_matrix () * model;
@@ -1785,19 +1930,28 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
         this->push_constants.camera_pos = inv_model * camera_pos;
     }
 
-    this->copy_subtrees (cmd_buff);
+    /* draw */
+    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
+        , this->sdf_scomtree_ds->get_subtree_root_staging_buffer (this->frame_index)
+        , this->sdf_scomtree_ds->get_subtree_root_buffer (this->frame_index));
     this->reset_active_leafs_counter (cmd_buff);
-
-    this->traverse_scomtree (cmd_buff);
-
+    this->traverse_scomtree (cmd_buff
+        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_subtree_count ())
+        , this->sdf_scomtree_ds->get_descriptor_set (this->frame_index));
     this->clear_geometry (cmd_buff);
     this->prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
-    this->marching_cubes_scomtree (cmd_buff);
+    this->marching_cubes_scomtree (cmd_buff, this->sdf_scomtree_ds->get_descriptor_set (this->frame_index));
     this->geometry_barrier (cmd_buff);
 
     if (this->deferred_shading) {
+        this->prepare_deferred (cmd_buff);
         this->deferred_rendering (cmd_buff);
+    } else {
+        this->forward_rendering (cmd_buff);
+    }
 
+    /* end */
+    if (this->deferred_shading) {
         this->hz_buffer_barrier (cmd_buff
             , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
             , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
@@ -1823,14 +1977,32 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
             this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
         }
     } else {
-        this->forward_rendering (cmd_buff);
         this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
     }
+}
+
+const std::unique_ptr <Renderer::RenderMethod>& Renderer::get_render_method (DrawMethod draw_method) {
+    auto [it, inserted] = this->render_method_map.try_emplace (draw_method, nullptr);
+    if (inserted) {
+        if (draw_method == DrawMethod::SComTreeCompute) {
+            it->second = std::make_unique <Renderer::RasterSComTreeViaComputeShadingForward> (*this);
+        } else if (draw_method == DrawMethod::SComTreeComputeDeferred) {
+            it->second = std::make_unique <Renderer::RasterSComTreeViaComputeShadingDeferred> (*this);
+        } else if (draw_method == DrawMethod::Explicit) {
+            it->second = std::make_unique <Renderer::RasterMeshForward> (*this);
+        } else {
+            LOG_ERROR ("[{}] Received a draw_method that is not implemented yet. Cannot render.", RENDERER_NAME);
+            return it->second;
+        }
+    }
+    return it->second;
 }
 
 const std::unique_ptr <ModelResource>& Renderer::get_model_resource (const std::string& mesh_id, const std::shared_ptr <Model>& model) {
     auto [it, inserted] = this->model_ds_map.try_emplace (mesh_id, nullptr);
     if (inserted) {
+        model->invalidate_cache ();
+
         if (auto octree_model = std::dynamic_pointer_cast <SdfOctreeModel> (model)) {
             it->second = std::make_unique <SdfOctreeDescriptorSetInfo> (this->context->get_device ()
                 , this->context->get_physical_device ()
@@ -1926,10 +2098,14 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
     const auto& groups = scene.get_groups ();
 
     for (const auto& [draw_method, batches] : groups) {
-        // const auto& method = this->methods [draw_method];
-        // method.begin ()
+        const auto& method = this->get_render_method (draw_method);
+        if (!method) {
+            continue;
+        }
+        this->ensure_resources (draw_method);
 
-        // TODO: rename mesh_id -> model_id
+        // method->begin (cmd_buff);
+
         for (const auto& [mesh_id, model, items] : batches) {
             const auto& model_ds = this->get_model_resource (mesh_id, model);
             if (!model_ds) {
@@ -1937,16 +2113,17 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
             }
 
             for (const auto& item : items) {
-                LiteMath::float4x4 model_matrix = item.transform;
-                // update push constants
-                // std::invoke (method.draw, this, cmd_buff, mesh);
+                LiteMath::float4x4 inv_model = LiteMath::inverse4x4 (item.transform);
+                LiteMath::float4 world_camera_pos = (this->frustum_draw_buffer) ? this->frozen_camera_pos : LiteMath::to_float4 (scene.get_camera ().get_position (), 1.0f);
+
+                this->push_constants.view_proj = scene.get_camera ().get_view_projection_matrix () * item.transform;
+                this->push_constants.camera_pos = inv_model * world_camera_pos;
+
+                // method->draw (cmd_buff, model_ds);
             }
         }
-        // method.end ()
-    }
 
-    if (this->draw) {
-        std::invoke (this->draw, this, cmd_buff);
+        // method->end (cmd_buff);
     }
 
     if (this->frustum_draw_buffer) {
@@ -2011,6 +2188,101 @@ void Renderer::release_render_resources () {
     this->deferred_shading.reset ();
 }
 
+void Renderer::ensure_resources (DrawMethod method) {
+    if (!this->forward_shading) {
+        this->forward_shading = std::make_unique <ForwardShading> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->render_target
+            , this->depth_buffer);
+    }
+
+    if (!this->deferred_shading && (method == DrawMethod::ExplicitDeferred || method == DrawMethod::SComTreeComputeDeferred || method == DrawMethod::SComTreeMeshDeferred)) {
+        this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_transfer_command_pool_reset ()
+            , this->context->get_transfer_queue ()
+            , DeferredShadingConfig {
+                .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
+                .filter = VK_FILTER_LINEAR
+            }
+            , this->render_target
+            , this->depth_buffer);
+    }
+
+    if (!this->mesh_ds && (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
+        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
+        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh)) {
+        this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_copy_helper ()
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+            , this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS
+            , this->push_constants.active_leafs_max_count * MAX_LEAF_PRIMS * 3
+            , this->render_target->get_max_frames_in_flight ());
+    }
+
+    if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
+        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
+        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
+        if (!this->marching_cubes_lookup_table_ds) {
+            this->marching_cubes_lookup_table_ds = std::make_unique <MarchingCubesLookupTableDescriptorSetInfo> (this->context->get_device ()
+                , this->context->get_physical_device ()
+                , this->context->get_copy_helper ()
+                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
+        }
+
+        if (!this->hz_buffer_ds) {
+            this->hz_buffer_ds = std::make_unique <HZBufferDescriptorSetInfo> (this->context->get_device ()
+                , this->context->get_physical_device ()
+                , this->context->get_transfer_command_pool_reset ()
+                , this->context->get_transfer_queue ()
+                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+                , this->render_target->get_extent ()
+                , this->render_target->get_max_frames_in_flight ());
+        }
+
+        if (!this->indirect_dispatch_ds) {
+            this->indirect_dispatch_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
+                , this->context->get_physical_device ()
+                , VK_SHADER_STAGE_COMPUTE_BIT
+                , sizeof (IndirectDispatch)
+                , 2);
+        }
+
+        if (!this->lod_ds) {
+            this->lod_ds = std::make_unique <LODDescriptorSetInfo> (this->context->get_device ()
+                , this->context->get_copy_helper ()
+                , this->context->get_physical_device ()
+                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+                , 1 // TODO: edit to match max models count in scene
+                , this->render_target->get_max_frames_in_flight ());
+        }
+
+        if (!this->active_leafs_ds) {
+            VkDeviceSize active_leaf_size = (method == DrawMethod::OctreeCompute) ? sizeof (NodeContext) : sizeof (SComTreeBrickPayload);
+
+            this->active_leafs_ds = std::make_unique <ActiveLeafsDescriptorSetInfo> (this->context->get_device ()
+                , this->context->get_physical_device ()
+                , this->context->get_copy_helper ()
+                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+                , this->push_constants.active_leafs_max_count * active_leaf_size
+                , this->render_target->get_max_frames_in_flight ());
+        }
+    }
+
+    if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
+        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
+        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
+        if (!this->draw_indexed_indirect_command_ds) {
+            this->draw_indexed_indirect_command_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
+                , this->context->get_physical_device ()
+                , VK_SHADER_STAGE_COMPUTE_BIT
+                , sizeof (VkDrawIndexedIndirectCommand)
+                , this->render_target->get_max_frames_in_flight ());
+        }
+    }
+}
+
 void Renderer::apply_model_config (std::shared_ptr <Model> model) {
     vkDeviceWaitIdle (this->context->get_device());
 
@@ -2026,85 +2298,7 @@ void Renderer::apply_model_config (std::shared_ptr <Model> model) {
     }
 
     const auto method = model->get_state ().draw_method;
-
-    if (method == DrawMethod::ExplicitDeferred || method == DrawMethod::SComTreeComputeDeferred || method == DrawMethod::SComTreeMeshDeferred) {
-        this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_transfer_command_pool_reset ()
-            , this->context->get_transfer_queue ()
-            , DeferredShadingConfig {
-                .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
-                .filter = VK_FILTER_LINEAR
-            }
-            , this->render_target);
-    }
-
-    if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
-        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
-        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
-        this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_copy_helper ()
-            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-            , this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS
-            , this->push_constants.active_leafs_max_count * MAX_LEAF_PRIMS * 3
-            , this->render_target->get_max_frames_in_flight ());
-    }
-
-    if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
-        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
-        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
-        this->marching_cubes_lookup_table_ds = std::make_unique <MarchingCubesLookupTableDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_copy_helper ()
-            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
-
-        this->hz_buffer_ds = std::make_unique <HZBufferDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_transfer_command_pool_reset ()
-            , this->context->get_transfer_queue ()
-            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-            , this->render_target->get_extent ()
-            , this->render_target->get_max_frames_in_flight ());
-
-        this->indirect_dispatch_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , VK_SHADER_STAGE_COMPUTE_BIT
-            , sizeof (IndirectDispatch)
-            , 2);
-
-        this->lod_ds = std::make_unique <LODDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_copy_helper ()
-            , this->context->get_physical_device ()
-            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-            , 1 // TODO: edit to match max models count in scene
-            , this->render_target->get_max_frames_in_flight ());
-
-        VkDeviceSize active_leaf_size = (method == DrawMethod::OctreeCompute) ? sizeof (NodeContext) : sizeof (SComTreeBrickPayload);
-
-        this->active_leafs_ds = std::make_unique <ActiveLeafsDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_copy_helper ()
-            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-            , this->push_constants.active_leafs_max_count * active_leaf_size
-            , this->render_target->get_max_frames_in_flight ());
-    }
-
-    if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
-        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
-        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
-        this->draw_indexed_indirect_command_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , VK_SHADER_STAGE_COMPUTE_BIT
-            , sizeof (VkDrawIndexedIndirectCommand)
-            , this->render_target->get_max_frames_in_flight ());
-    }
-
-    if (!this->deferred_shading) {
-        this->forward_shading = std::make_unique <ForwardShading> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->render_target);
-    }
+    this->ensure_resources (method);
 
     if (auto octree_model = std::dynamic_pointer_cast <SdfOctreeModel> (model)) {
         this->sdf_octree_ds = std::make_unique <SdfOctreeDescriptorSetInfo> (this->context->get_device ()
@@ -2193,7 +2387,7 @@ void Renderer::apply_model_config (std::shared_ptr <Model> model) {
         return;
     }
 
-    this->create_required_pipelines ();
+    this->create_required_pipelines (method);
 
     auto it = std::find_if (draw_strategies.begin (), draw_strategies.end (), [method] (const MethodTrait& t) { return t.method == method; });
     if (it != draw_strategies.end ()) {

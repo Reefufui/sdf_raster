@@ -18,14 +18,15 @@ struct DeferredShadingConfig {
 class DeferredShading {
 public:
     DeferredShading (VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue queue
-        , const DeferredShadingConfig& config, std::shared_ptr <sdf_raster::RenderTarget> a_render_target);
+        , const DeferredShadingConfig& config, std::shared_ptr <sdf_raster::RenderTarget> a_render_target
+        , const std::unique_ptr <vk_utils::VulkanImageMem>& a_depth_buffer);
     ~DeferredShading ();
 
     DeferredShading (const DeferredShading&) = delete;
     DeferredShading& operator= (const DeferredShading&) = delete;
 
-    DeferredShading (DeferredShading&&) noexcept;
-    DeferredShading& operator= (DeferredShading&&) noexcept;
+    DeferredShading (DeferredShading&&) = delete;
+    DeferredShading& operator= (DeferredShading&&) = delete;
 
     VkRenderPass get_gbuffer_pass () const { return this->gbuffer_pass; }
     VkRenderPass get_lighting_pass () const { return this->lighting_pass; }
@@ -38,8 +39,7 @@ public:
     DeferredLightingPushConstants& push_constants_ref () { return this->push_constants; }
 
     VkImage get_depth_buffer () const {
-        assert (this->g_buffer.back ().aspectMask == VK_IMAGE_ASPECT_DEPTH_BIT && "last image of g_buffer must be depth buffer");
-        return this->g_buffer.back ().image;
+        return this->depth_buffer->image;
     }
 
 private:
@@ -63,5 +63,6 @@ private:
 
     DeferredLightingPushConstants push_constants;
     std::shared_ptr <sdf_raster::RenderTarget> render_target;
+    const std::unique_ptr <vk_utils::VulkanImageMem>& depth_buffer;
 };
 

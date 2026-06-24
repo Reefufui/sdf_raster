@@ -188,9 +188,8 @@ VkRenderPass create_after_render_pass (VkDevice device, VkFormat depth_format, V
 }
 
 std::vector <vk_utils::VulkanImageMem> create_gbuffer_images (VkDevice device, VkPhysicalDevice physical_device
-    , VkExtent2D extent, std::vector <VkFormat> gbuffer_formats, VkFormat depth_format) {
+    , VkExtent2D extent, std::vector <VkFormat> gbuffer_formats) {
     std::vector <vk_utils::VulkanImageMem> color_images;
-    std::vector <vk_utils::VulkanImageMem> depth_images;
 
     for (auto format : gbuffer_formats) {
         color_images.push_back (
@@ -199,24 +198,18 @@ std::vector <vk_utils::VulkanImageMem> create_gbuffer_images (VkDevice device, V
         );
     }
 
-    depth_images.push_back (
-        vk_utils::createImg (device, extent.width, extent.height, depth_format
-            , VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 1)
-    );
-
     vk_utils::allocateImgsBindCreateView (device, physical_device, color_images);
-    vk_utils::allocateImgsBindCreateView (device, physical_device, depth_images);
 
-    color_images.push_back (std::move (depth_images [0]));
     return color_images;
 }
 
 VkFramebuffer create_gbuffer_framebuffer (VkDevice device
-    , VkRenderPass gbuffer_render_pass, VkExtent2D extent, const std::vector <vk_utils::VulkanImageMem>& gbuffer_images) {
+    , VkRenderPass gbuffer_render_pass, VkExtent2D extent, const std::vector <vk_utils::VulkanImageMem>& gbuffer_images, VkImageView depth_view) {
     std::vector <VkImageView> attachments;
     for (const auto& img : gbuffer_images) {
         attachments.push_back (img.view);
     }
+    attachments.push_back (depth_view);
 
     VkFramebufferCreateInfo fb_ci {
         .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -277,21 +270,21 @@ VkSampler create_gbuffer_sampler (VkDevice device, VkFilter filter) {
 }
 
 std::pair <VkDescriptorSet, VkDescriptorSetLayout> init_gbuffer_descriptor_set (VkSampler sampler
-    , const std::vector <vk_utils::VulkanImageMem>& gbuffer_images, std::unique_ptr <vk_utils::DescriptorMaker>& desc_maker) {
+    , const std::vector <vk_utils::VulkanImageMem>& gbuffer_images, VkImageView depth_view, std::unique_ptr <vk_utils::DescriptorMaker>& desc_maker) {
     desc_maker->BindBegin (VK_SHADER_STAGE_FRAGMENT_BIT);
 
     for (size_t loc = 0; loc < gbuffer_images.size (); ++loc) {
-        VkImageLayout layout = (loc == gbuffer_images.size () - 1)
-            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        desc_maker->BindImage (loc, gbuffer_images [loc].view, sampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, layout);
+        desc_maker->BindImage (loc, gbuffer_images [loc].view, sampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
+
+    desc_maker->BindImage (gbuffer_images.size (), depth_view, sampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
     std::pair <VkDescriptorSet, VkDescriptorSetLayout> result;
     desc_maker->BindEnd (&result.first, &result.second);
     return result;
 }
 
-void warmup_gbuffer_images (VkDevice device, VkCommandPool command_pool, VkQueue queue, std::vector <vk_utils::VulkanImageMem>& gbuffer_images) {
+void warmup_gbuffer_images (VkDevice device, VkCommandPool command_pool, VkQueue queue, std::vector <vk_utils::VulkanImageMem>& gbuffer_images, const vk_utils::VulkanImageMem& depth_buffer) {
     VkCommandBuffer cmd = vk_utils::createCommandBuffer (device, command_pool);
 
     VkCommandBufferBeginInfo begin_info {
@@ -300,7 +293,7 @@ void warmup_gbuffer_images (VkDevice device, VkCommandPool command_pool, VkQueue
     };
     vkBeginCommandBuffer (cmd, &begin_info);
 
-    for (auto& img : gbuffer_images) {
+    auto add_barrier = [&] (const vk_utils::VulkanImageMem& img) {
         VkImageLayout target_layout = (img.aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT)
             ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL 
             : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -330,7 +323,12 @@ void warmup_gbuffer_images (VkDevice device, VkCommandPool command_pool, VkQueue
             , 0, nullptr
             , 0, nullptr
             , 1, &barrier);
+    };
+
+    for (auto& img : gbuffer_images) {
+        add_barrier (img);
     }
+    add_barrier (depth_buffer);
 
     vkEndCommandBuffer (cmd);
 
@@ -340,21 +338,20 @@ void warmup_gbuffer_images (VkDevice device, VkCommandPool command_pool, VkQueue
 }
 
 DeferredShading::DeferredShading (VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue queue
-    , const DeferredShadingConfig& config, std::shared_ptr <sdf_raster::RenderTarget> a_render_target) : device (device)
-    , render_target (std::move (a_render_target)) {
+    , const DeferredShadingConfig& config, std::shared_ptr <sdf_raster::RenderTarget> a_render_target
+    , const std::unique_ptr <vk_utils::VulkanImageMem>& a_depth_buffer) : device (device)
+    , render_target (std::move (a_render_target))
+    , depth_buffer (a_depth_buffer) {
     VkExtent2D extent = this->render_target->get_extent ();
-    VkFormat depth_format;
-    if (!vk_utils::getSupportedDepthFormat (physical_device, {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM}, &depth_format)) {
-        throw std::runtime_error ("couldn't find supported depth format");
-    }
+    VkFormat depth_format = this->depth_buffer->format;
 
     this->gbuffer_pass = create_gbuffer_render_pass (device, config.gbuffer_formats, depth_format);
     this->lighting_pass = create_lighting_render_pass (device, this->render_target->get_image_format (), this->render_target->get_output_final_layout ());
     this->after_pass = create_after_render_pass (device, depth_format, this->render_target->get_image_format (), this->render_target->get_output_final_layout ());
 
-    this->g_buffer = create_gbuffer_images (device, physical_device, extent, config.gbuffer_formats, depth_format);
-    this->g_buffer_framebuffer = create_gbuffer_framebuffer (device, this->gbuffer_pass, extent, this->g_buffer);
-    warmup_gbuffer_images (device, command_pool, queue, this->g_buffer);
+    this->g_buffer = create_gbuffer_images (device, physical_device, extent, config.gbuffer_formats);
+    this->g_buffer_framebuffer = create_gbuffer_framebuffer (device, this->gbuffer_pass, extent, this->g_buffer, this->depth_buffer->view);
+    warmup_gbuffer_images (device, command_pool, queue, this->g_buffer, *this->depth_buffer);
 
     uint32_t output_image_count = this->render_target->get_image_count ();
     auto output_views = this->render_target->get_image_views ();
@@ -362,18 +359,17 @@ DeferredShading::DeferredShading (VkDevice device, VkPhysicalDevice physical_dev
     this->lighting_framebuffers.resize (output_image_count);
     this->after_framebuffers.resize (output_image_count);
     for (size_t i = 0; i < output_image_count; ++i) {
-        assert (this->g_buffer.back ().aspectMask == VK_IMAGE_ASPECT_DEPTH_BIT && "last image of g_buffer must be depth buffer");
         this->lighting_framebuffers [i] = create_lighting_framebuffer (device, this->lighting_pass, extent, output_views [i]);
-        this->after_framebuffers [i] = create_after_framebuffer (device, this->after_pass, extent, this->g_buffer.back ().view, output_views [i]);
+        this->after_framebuffers [i] = create_after_framebuffer (device, this->after_pass, extent, this->depth_buffer->view, output_views [i]);
     }
 
     this->sampler = create_gbuffer_sampler (device, config.filter);
 
     vk_utils::DescriptorTypesVec pool_sizes = {
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, config.gbuffer_formats.size () + 1 }
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast <uint32_t> (config.gbuffer_formats.size () + 1) }
     };
     this->desc_maker = std::make_unique <vk_utils::DescriptorMaker> (device, pool_sizes, 1);
-    auto desc_res = init_gbuffer_descriptor_set (this->sampler, this->g_buffer, this->desc_maker);
+    auto desc_res = init_gbuffer_descriptor_set (this->sampler, this->g_buffer, this->depth_buffer->view, this->desc_maker);
     this->descriptor_set = desc_res.first;
     this->descriptor_set_layout = desc_res.second;
 }
@@ -390,12 +386,6 @@ DeferredShading::~DeferredShading () {
     if (!this->g_buffer.empty () && this->g_buffer [0].mem != VK_NULL_HANDLE) {
         // NOTE: this->g_buffer [0] is enough, as we allocated one memory for all colored image.
         vkFreeMemory (device, this->g_buffer [0].mem, nullptr);
-    }
-
-    assert (this->g_buffer.back ().aspectMask == VK_IMAGE_ASPECT_DEPTH_BIT && "last image of g_buffer must be depth buffer");
-    if (!this->g_buffer.empty () && this->g_buffer.back ().mem != VK_NULL_HANDLE) {
-        // NOTE: depth was allocated sepparately
-        vkFreeMemory (device, this->g_buffer.back ().mem, nullptr);
     }
 
     for (auto& img : this->g_buffer) {
@@ -427,37 +417,6 @@ DeferredShading::~DeferredShading () {
     this->lighting_pass = VK_NULL_HANDLE;
     this->after_pass = VK_NULL_HANDLE;
     this->device = VK_NULL_HANDLE;
-}
-
-DeferredShading::DeferredShading (DeferredShading&& other) noexcept {
-    *this = std::move (other);
-}
-
-DeferredShading& DeferredShading::operator= (DeferredShading&& other) noexcept {
-    if (this != &other) {
-        this->~DeferredShading ();
-
-        this->device = other.device;
-        this->gbuffer_pass = other.gbuffer_pass;
-        this->lighting_pass = other.lighting_pass;
-        this->after_pass = other.after_pass;
-        this->sampler = other.sampler;
-        this->descriptor_set = other.descriptor_set;
-        this->descriptor_set_layout = other.descriptor_set_layout;
-
-        this->g_buffer = std::move (other.g_buffer);
-        this->lighting_framebuffers = std::move (other.lighting_framebuffers);
-        this->after_framebuffers = std::move (other.after_framebuffers);
-        this->desc_maker = std::move (other.desc_maker);
-
-        other.device = VK_NULL_HANDLE;
-        other.gbuffer_pass = VK_NULL_HANDLE;
-        other.lighting_pass = VK_NULL_HANDLE;
-        other.after_pass = VK_NULL_HANDLE;
-        other.sampler = VK_NULL_HANDLE;
-        other.descriptor_set_layout = VK_NULL_HANDLE;
-    }
-    return *this;
 }
 
 

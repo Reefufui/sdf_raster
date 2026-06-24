@@ -49,6 +49,7 @@ public:
     void cleanup_pipelines ();
 
     void setup_common_resources ();
+    void init_depth_buffer ();
 
     void resize ();
 
@@ -59,7 +60,7 @@ private:
     void init_push_constants ();
     void release_render_resources ();
     void destroy_pipelines ();
-    void create_required_pipelines ();
+    void create_required_pipelines (DrawMethod method);
 
     void init_compute_hz_buffer_pipeline ();
     void init_traverse_octree_pipeline ();
@@ -82,16 +83,16 @@ private:
 
     void clear_geometry (VkCommandBuffer cmd_buff);
     void copy_forward_rendered_depth (VkCommandBuffer cmd_buff);
-    void copy_subtrees (VkCommandBuffer cmd_buff);
+    void copy_subtrees (VkCommandBuffer cmd_buff, VkDeviceSize subtrees_size, VkBuffer staging_buffer, VkBuffer buffer);
     void compute_hz_buffer (VkCommandBuffer cmd_buff);
     void reset_active_leafs_counter (VkCommandBuffer cmd_buff);
     void prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_size);
     void prepare_hzbuffer_after_forward_rendering (VkCommandBuffer cmd_buff);
     void marching_cubes_octree (VkCommandBuffer cmd_buff);
-    void marching_cubes_scomtree (VkCommandBuffer cmd_buff);
+    void marching_cubes_scomtree (VkCommandBuffer cmd_buff, VkDescriptorSet scomtree_ds);
     void geometry_barrier (VkCommandBuffer cmd_buff);
     void traverse_octree (VkCommandBuffer cmd_buff);
-    void traverse_scomtree (VkCommandBuffer cmd_buff);
+    void traverse_scomtree (VkCommandBuffer cmd_buff, uint32_t subtree_root_count, VkDescriptorSet scomtree_ds);
 
     struct LayoutStageAccess {
         VkImageLayout layout;
@@ -103,6 +104,44 @@ private:
 
     const std::unique_ptr <ModelResource>& get_model_resource (const std::string& mesh_id, const std::shared_ptr <Model>& model);
 
+    class RenderMethod {
+    public:
+        explicit RenderMethod (Renderer& renderer) : r (renderer) {}
+        virtual ~RenderMethod () = default;
+    
+        virtual void begin (VkCommandBuffer cmd_buff) = 0;
+        virtual void draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) = 0;
+        virtual void end (VkCommandBuffer cmd_buff) = 0;
+    protected:
+        Renderer& r;
+    };
+
+    class RasterSComTreeViaComputeShadingForward : public RenderMethod {
+    public:
+        using RenderMethod::RenderMethod;
+        void begin (VkCommandBuffer cmd_buff) override;
+        void draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) override;
+        void end (VkCommandBuffer cmd_buff) override;
+    };
+
+    class RasterSComTreeViaComputeShadingDeferred : public RenderMethod {
+    public:
+        using RenderMethod::RenderMethod;
+        void begin (VkCommandBuffer cmd_buff) override;
+        void draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) override;
+        void end (VkCommandBuffer cmd_buff) override;
+    };
+
+    class RasterMeshForward : public RenderMethod {
+    public:
+        using RenderMethod::RenderMethod;
+        void begin (VkCommandBuffer cmd_buff) override;
+        void draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) override;
+        void end (VkCommandBuffer cmd_buff) override;
+    };
+
+    const std::unique_ptr <RenderMethod>& get_render_method (DrawMethod draw_method);
+
 public:
     std::shared_ptr <VulkanContext> context;
     std::shared_ptr <RenderTarget> render_target;
@@ -111,6 +150,7 @@ public:
     std::unique_ptr <HZBufferDescriptorSetInfo> hz_buffer_ds;
 
     std::unordered_map <std::string, std::unique_ptr <ModelResource>> model_ds_map {};
+    std::unordered_map <DrawMethod, std::unique_ptr <RenderMethod>> render_method_map {};
 
     std::unique_ptr <SdfOctreeDescriptorSetInfo> sdf_octree_ds {};
     std::unique_ptr <SComTreeTreeDescriptorSetInfo> sdf_scomtree_ds {};
@@ -122,13 +162,16 @@ public:
     std::unique_ptr <IndirectDescriptorSetInfo> indirect_dispatch_ds {};
     std::unique_ptr <LODDescriptorSetInfo> lod_ds {};
     std::unique_ptr <ActiveLeafsDescriptorSetInfo> active_leafs_ds {};
+    void ensure_resources (DrawMethod method);
 
     std::shared_ptr <Model> current_model {};
 
     std::unique_ptr <DeferredShading> deferred_shading {};
     std::unique_ptr <ForwardShading> forward_shading {};
+    std::unique_ptr <vk_utils::VulkanImageMem> depth_buffer {};
 
     void forward_rendering (VkCommandBuffer cmd_buff);
+    void prepare_deferred (VkCommandBuffer cmd_buff);
     void deferred_rendering (VkCommandBuffer cmd_buff);
     void calculate_lighting (VkCommandBuffer cmd_buff);
     void raster_octree_via_compute_shading (VkCommandBuffer cmd_buff);

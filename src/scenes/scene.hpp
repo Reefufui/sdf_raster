@@ -31,8 +31,10 @@ public:
     bool load (const std::filesystem::path& path, ModelManager& model_manager);
 
     const std::vector <RenderGroup>& get_groups () const { return groups; }
+    const Camera& get_camera () const { return camera; };
 
 private:
+    Camera camera;
     std::vector <RenderGroup> groups;
 };
 

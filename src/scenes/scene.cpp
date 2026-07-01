@@ -11,6 +11,7 @@
 namespace sdf_raster {
 
 bool Scene::load (const std::filesystem::path& path, ModelManager& model_manager) {
+    this->name = path.stem ().string ();
     std::ifstream file (path);
     if (!file.is_open ()) {
         LOG_ERROR ("Failed to open scene file: {}", path.string ());

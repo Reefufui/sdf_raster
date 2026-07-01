@@ -37,7 +37,7 @@ public:
     }
 
     void init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <ModelManager> model_manager, const InitInfo& info, Settings& settings);
-    void update (Settings& settings, const Stats& stats);
+    void update (Scene& scene, Settings& settings, const Stats& stats);
     void draw (uint32_t image_index, VkCommandBuffer cmd_buff);
     void cleanup (Settings& settings);
 
@@ -70,13 +70,12 @@ private:
 private:
     void init_style ();
 
-    void key_input (Settings& settings, ModelState& model_state);
+    void key_input (Settings& settings, Scene& scene);
     void handle_global_shortcuts (Settings& settings);
     void menu_bar (Settings& settings);
     void file_dialog ();
-    void renderer_window (Settings& settings, const Stats& stats, ModelState& model_state);
-    void status_bar (Settings& settings, const Stats& stats, ModelState& model_state);
-    void scene_inspector_window (Settings& settings);
+    void renderer_window (Settings& settings, const Stats& stats, Scene& scene);
+    void status_bar (Settings& settings, const Stats& stats, Scene& scene);
 
 private:
     ImGui::FileBrowser file_browser;
@@ -303,19 +302,23 @@ void camera_input (Camera& camera) {
 
 }
 
-void UI::key_input (Settings& settings, ModelState& model_state) {
+void UI::key_input (Settings& settings, Scene& scene) {
     ImGuiIO& io = ImGui::GetIO ();
 
     if (io.WantCaptureKeyboard) {
         return;
     }
 
+    Camera& camera = scene.get_camera_ref ();
+
     if (settings.disabled_cursor) {
-        camera_input (model_state.camera);
+        camera_input (camera);
+        camera.set_aspect_ratio (static_cast <float> (this->surface_extent.width) / static_cast <float> (this->surface_extent.height));
     }
+    camera.update ();
 
     if (ImGui::IsKeyPressed (ImGuiKey_R, false)) {
-        model_state.camera.reset ();
+        camera.reset ();
     }
 
     if (ImGui::IsKeyPressed (ImGuiKey_V, false)) {
@@ -477,147 +480,96 @@ void UI::file_dialog () {
     }
 }
 
-void UI::renderer_window (Settings& settings, const Stats& stats, ModelState& model_state) {
+void UI::renderer_window (Settings& settings, const Stats& stats, Scene& scene) {
     ImGui::Begin ("Rendering");
 
     ImGui::Text ("Screen size: %dx%d pixels", this->surface_extent.width, this->surface_extent.height);
 
     ImGui::SeparatorText ("Render Method");
 
-    auto scene = this->model_manager->get_model ();
-    if (scene) {
-        auto available_methods = scene->get_available_draw_methods ();
-        int current_method = 0;
-        for (int i = 0; i < static_cast<int>(available_methods.size ()); i++) {
-            if (model_state.draw_method == available_methods [i]) {
-                current_method = i;
-                break;
-            }
-        }
-        assert (std::find (available_methods.begin (), available_methods.end (), model_state.draw_method) != available_methods.end ());
+    ImGui::SeparatorText ("Level of Detail");
+    ImGui::Text ("distance: %.3f", stats.distance);
+    ImGui::Text ("calculated LOD level: %d", stats.lod);
 
-        std::vector <const char*> method_name_ptrs;
-        method_name_ptrs.reserve (available_methods.size ());
-        for (auto method : available_methods) {
-            method_name_ptrs.push_back (draw_method_name (method).data ());
+    /*
+    if (ImGui::BeginTabBar ("##LODTabBar", ImGuiTabBarFlags_None)) {
+        if (this->last_model_path != model_state.path) {
+            this->needs_lod_sync = true;
+            this->last_model_path = model_state.path;
         }
 
-        ImGui::BeginDisabled (model_state.draw_method == DrawMethod::None);
-        if (ImGui::Combo ("##draw_method", &current_method, method_name_ptrs.data (), method_name_ptrs.size ())) {
-            model_state.draw_method = available_methods [current_method];
-            this->pending_config_notify = true;
+        auto begin_lod_tab = [&](const char* label, LODMode mode) {
+            ImGuiTabItemFlags flags = ImGuiTabItemFlags_None;
+            if (this->needs_lod_sync && model_state.lod_mode == mode) {
+                flags |= ImGuiTabItemFlags_SetSelected;
+            }
+            return ImGui::BeginTabItem(label, nullptr, flags);
+        };
+
+        if (begin_lod_tab ("Fixed", LODMode::Fixed)) {
+            if (ImGui::IsItemVisible()) model_state.lod_mode = LODMode::Fixed;
+            ImGui::SliderInt ("Fixed LOD", &model_state.fixed_lod, 0, 16);
+            ImGui::EndTabItem ();
         }
-        ImGui::EndDisabled ();
-    } else {
-        ImGui::Text ("No scene loaded");
-    }
+        if (begin_lod_tab ("Global", LODMode::Global)) {
+            if (ImGui::IsItemVisible ()) model_state.lod_mode = LODMode::Global;
+            ImGui::InputInt ("max lod", &model_state.max_lod);
+            ImGui::InputInt ("min lod", &model_state.min_lod);
 
-    const auto& method = model_state.draw_method;
-
-    bool needs_octree_lod = method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh
-        || method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
-        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred;
-
-    if (needs_octree_lod) {
-        ImGui::SeparatorText ("Level of Detail");
-        ImGui::Text ("distance: %.3f", stats.distance);
-        ImGui::Text ("calculated LOD level: %d", stats.lod);
-
-        if (ImGui::BeginTabBar ("##LODTabBar", ImGuiTabBarFlags_None)) {
-            if (this->last_model_path != model_state.path) {
-                this->needs_lod_sync = true;
-                this->last_model_path = model_state.path;
+            model_state.min_lod = LiteMath::clamp (model_state.min_lod, model_state.cpu_traversed, model_state.max_lod);
+            if (model_state.octree_depth) {
+                model_state.max_lod = LiteMath::clamp (model_state.max_lod, model_state.min_lod, model_state.octree_depth);
+            } else {
+                model_state.max_lod = LiteMath::max (model_state.max_lod, model_state.min_lod);
             }
 
-            auto begin_lod_tab = [&](const char* label, LODMode mode) {
-                ImGuiTabItemFlags flags = ImGuiTabItemFlags_None;
-                if (this->needs_lod_sync && model_state.lod_mode == mode) {
-                    flags |= ImGuiTabItemFlags_SetSelected;
-                }
-                return ImGui::BeginTabItem(label, nullptr, flags);
-            };
-
-            if (begin_lod_tab ("Fixed", LODMode::Fixed)) {
-                if (ImGui::IsItemVisible()) model_state.lod_mode = LODMode::Fixed;
-                ImGui::SliderInt ("Fixed LOD", &model_state.fixed_lod, 0, 16);
-                ImGui::EndTabItem ();
+            ImGui::Text ("LOD threshold:");
+            if (ImGui::IsItemHovered ()) {
+                ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
             }
-            if (begin_lod_tab ("Global", LODMode::Global)) {
-                if (ImGui::IsItemVisible ()) model_state.lod_mode = LODMode::Global;
-                ImGui::InputInt ("max lod", &model_state.max_lod);
-                ImGui::InputInt ("min lod", &model_state.min_lod);
+            ImGui::DragFloat ("##LODThreshold", &model_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
 
-                model_state.min_lod = LiteMath::clamp (model_state.min_lod, model_state.cpu_traversed, model_state.max_lod);
-                if (model_state.octree_depth) {
-                    model_state.max_lod = LiteMath::clamp (model_state.max_lod, model_state.min_lod, model_state.octree_depth);
-                } else {
-                    model_state.max_lod = LiteMath::max (model_state.max_lod, model_state.min_lod);
-                }
-
-                ImGui::Text ("LOD threshold:");
-                if (ImGui::IsItemHovered ()) {
-                    ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
-                }
-                ImGui::DragFloat ("##LODThreshold", &model_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
-
-                ImGui::Text ("LOD aggressivity:");
-                if (ImGui::IsItemHovered ()) {
-                    ImGui::SetTooltip ("Logarithmic scaling factor. Larger = more aggressive LOD simplification with distance.");
-                }
-                ImGui::DragFloat ("##LODAggressivity", &model_state.lod_aggressivity, 0.05f, 0.1f, 10.0f, "%.2f");
-
-                ImGui::EndTabItem ();
+            ImGui::Text ("LOD aggressivity:");
+            if (ImGui::IsItemHovered ()) {
+                ImGui::SetTooltip ("Logarithmic scaling factor. Larger = more aggressive LOD simplification with distance.");
             }
-            if (begin_lod_tab ("Per-Node", LODMode::PerNode)) {
-                if (ImGui::IsItemVisible ()) model_state.lod_mode = LODMode::PerNode;
-                ImGui::InputInt ("max lod", &model_state.max_lod);
-                ImGui::InputInt ("min lod", &model_state.min_lod);
+            ImGui::DragFloat ("##LODAggressivity", &model_state.lod_aggressivity, 0.05f, 0.1f, 10.0f, "%.2f");
 
-                model_state.min_lod = LiteMath::clamp (model_state.min_lod, model_state.cpu_traversed, model_state.max_lod);
-                if (model_state.octree_depth) {
-                    model_state.max_lod = LiteMath::clamp (model_state.max_lod, model_state.min_lod, model_state.octree_depth);
-                } else {
-                    model_state.max_lod = LiteMath::max (model_state.max_lod, model_state.min_lod);
-                }
-
-                ImGui::Text ("LOD threshold:");
-                if (ImGui::IsItemHovered ()) {
-                    ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
-                }
-                ImGui::DragFloat ("##LODThreshold", &model_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
-
-                ImGui::Text ("LOD aggressivity:");
-                if (ImGui::IsItemHovered ()) {
-                    ImGui::SetTooltip ("Logarithmic scaling factor. Larger = more aggressive LOD simplification with distance.");
-                }
-                ImGui::DragFloat ("##LODAggressivity", &model_state.lod_aggressivity, 0.05f, 0.1f, 10.0f, "%.2f");
-
-                ImGui::EndTabItem ();
-            }
-
-            this->needs_lod_sync = false;
-            ImGui::EndTabBar ();
+            ImGui::EndTabItem ();
         }
-    }
+        if (begin_lod_tab ("Per-Node", LODMode::PerNode)) {
+            if (ImGui::IsItemVisible ()) model_state.lod_mode = LODMode::PerNode;
+            ImGui::InputInt ("max lod", &model_state.max_lod);
+            ImGui::InputInt ("min lod", &model_state.min_lod);
 
-    ImGui::SeparatorText ("Octree");
-    ImGui::Text ("octree depth: %d/%d", model_state.max_lod, model_state.octree_depth);
+            model_state.min_lod = LiteMath::clamp (model_state.min_lod, model_state.cpu_traversed, model_state.max_lod);
+            if (model_state.octree_depth) {
+                model_state.max_lod = LiteMath::clamp (model_state.max_lod, model_state.min_lod, model_state.octree_depth);
+            } else {
+                model_state.max_lod = LiteMath::max (model_state.max_lod, model_state.min_lod);
+            }
 
-    ImGui::Text ("gpu traversed: %d", model_state.max_lod - model_state.cpu_traversed);
-    ImGui::Text ("cpu traversed:");
-    if (ImGui::IsItemHovered ()) {
-        ImGui::SetTooltip ("Levels to descend on cpu prior GPU.");
-    }
-    for (int i = 0; i <= 5; i++) {
-        ImGui::SameLine ();
-        if (ImGui::RadioButton (std::to_string (i).c_str (), &model_state.cpu_traversed, i)) {
-            this->pending_config_notify = true;
+            ImGui::Text ("LOD threshold:");
+            if (ImGui::IsItemHovered ()) {
+                ImGui::SetTooltip ("Screen-space threshold in pixels. Smaller = more detail, larger = better performance.");
+            }
+            ImGui::DragFloat ("##LODThreshold", &model_state.lod_threshold_pixels, 0.25f, 1.0f, 16.0f, "%.2f px");
+
+            ImGui::Text ("LOD aggressivity:");
+            if (ImGui::IsItemHovered ()) {
+                ImGui::SetTooltip ("Logarithmic scaling factor. Larger = more aggressive LOD simplification with distance.");
+            }
+            ImGui::DragFloat ("##LODAggressivity", &model_state.lod_aggressivity, 0.05f, 0.1f, 10.0f, "%.2f");
+
+            ImGui::EndTabItem ();
         }
+
+        this->needs_lod_sync = false;
+        ImGui::EndTabBar ();
     }
 
     ImGui::SeparatorText ("Culling");
 
-    ImGui::Checkbox ("Animate rotation", &settings.animate_rotation);
     ImGui::DragFloat3 ("Position", &model_state.position.x, 0.1f);
     ImGui::DragFloat3 ("Rotation", &model_state.rotation.x, 1.0f);
     ImGui::DragFloat3 ("Scale", &model_state.scale.x, 0.1f);
@@ -659,6 +611,7 @@ void UI::renderer_window (Settings& settings, const Stats& stats, ModelState& mo
     if (this->lock_occlusion_culling) {
         ImGui::EndDisabled ();
     }
+    */
 
     ImGui::SeparatorText ("Lighting");
     const char* color_modes [] = { "White", "Unique Data", "LOD" };
@@ -746,79 +699,7 @@ void UI::renderer_window (Settings& settings, const Stats& stats, ModelState& mo
     ImGui::End ();
 }
 
-void UI::scene_inspector_window (Settings& settings) {
-    ImGui::Begin ("Scene Inspector", &settings.show_scene_inspector);
-
-    if (ImGui::Button ("Open Scene JSON...")) {
-        this->scene_file_browser.Open ();
-    }
-
-    this->scene_file_browser.Display ();
-    if (this->scene_file_browser.HasSelected ()) {
-        this->view_only_scene.load (this->scene_file_browser.GetSelected (), *this->model_manager);
-        this->scene_file_browser.ClearSelected ();
-    }
-
-    const auto& groups = this->view_only_scene.get_groups ();
-    if (!groups.empty ()) {
-        if (ImGui::CollapsingHeader ("Mesh Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
-            if (ImGui::BeginTable ("MeshStatsTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-                ImGui::TableSetupColumn ("Mesh ID");
-                ImGui::TableSetupColumn ("Method");
-                ImGui::TableSetupColumn ("Instances");
-                ImGui::TableHeadersRow ();
-
-                for (const auto& group : groups) {
-                    for (const auto& batch : group.batches) {
-                        ImGui::TableNextRow ();
-                        ImGui::TableNextColumn ();
-                        ImGui::Text ("%s", batch.mesh_id.c_str ());
-                        ImGui::TableNextColumn ();
-                        ImGui::Text ("%s", std::string (draw_method_name (group.draw_method)).c_str ());
-                        ImGui::TableNextColumn ();
-                        ImGui::Text ("%zu", batch.items.size ());
-                    }
-                }
-                ImGui::EndTable ();
-            }
-        }
-
-        if (ImGui::CollapsingHeader ("Instances", ImGuiTreeNodeFlags_DefaultOpen)) {
-            for (const auto& group : groups) {
-                if (ImGui::TreeNode (std::string (draw_method_name (group.draw_method)).c_str ())) {
-                    for (const auto& batch : group.batches) {
-                        if (ImGui::TreeNode (batch.mesh_id.c_str ())) {
-                            for (size_t i = 0; i < batch.items.size (); ++i) {
-                                std::string label = std::format ("Instance [{}]", i);
-                                if (ImGui::TreeNode (label.c_str ())) {
-                                    if (ImGui::BeginTable ("##TransformTable", 4, ImGuiTableFlags_Borders)) {
-                                        for (int row = 0; row < 4; ++row) {
-                                            ImGui::TableNextRow ();
-                                            for (int col = 0; col < 4; ++col) {
-                                                ImGui::TableNextColumn ();
-                                                ImGui::Text ("%.3f", batch.items [i].transform (row, col));
-                                            }
-                                        }
-                                        ImGui::EndTable ();
-                                    }
-                                    ImGui::TreePop ();
-                                }
-                            }
-                            ImGui::TreePop ();
-                        }
-                    }
-                    ImGui::TreePop ();
-                }
-            }
-        }
-    } else {
-        ImGui::Text ("No scene file loaded for inspection.");
-    }
-
-    ImGui::End ();
-}
-
-void UI::status_bar (Settings& settings, const Stats& stats, ModelState& model_state) {
+void UI::status_bar (Settings& settings, const Stats& stats, Scene& scene) {
     ImGuiIO& io = ImGui::GetIO ();
 
     struct StatusBarElement {
@@ -827,10 +708,7 @@ void UI::status_bar (Settings& settings, const Stats& stats, ModelState& model_s
 
     std::vector <StatusBarElement> elements;
     elements.push_back (StatusBarElement {
-        .text = std::format ("Scene:{}", model_state.name)
-    });
-    elements.push_back (StatusBarElement {
-        .text = std::format ("Method:{}", model_state.draw_method)
+        .text = std::format ("Scene:{}", scene.get_name ())
     });
     elements.push_back (StatusBarElement {
         .text = std::format ("Mode:{}", (settings.frustum_view) ? "frustum" : "camera")
@@ -838,18 +716,6 @@ void UI::status_bar (Settings& settings, const Stats& stats, ModelState& model_s
     elements.push_back (StatusBarElement {
         .text = std::format ("Cursor:{}", (settings.disabled_cursor) ? "disabled" : "normal")
     });
-
-    const auto& method = model_state.draw_method;
-    if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
-        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
-        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
-        elements.push_back (StatusBarElement {
-            .text = std::format ("Roots:{:06}", stats.active_roots_count)
-        });
-        elements.push_back (StatusBarElement {
-            .text = std::format ("Leafs:{:07}", stats.active_leafs_count)
-        });
-    }
 
     elements.push_back (StatusBarElement {
         .text = std::format ("FPS:{:.1f}", io.Framerate)
@@ -893,7 +759,7 @@ void UI::status_bar (Settings& settings, const Stats& stats, ModelState& model_s
     ImGui::PopStyleVar ();
 }
 
-void UI::update (Settings& settings, const Stats& stats) {
+void UI::update (Scene& scene, Settings& settings, const Stats& stats) {
     ImGuiIO& io = ImGui::GetIO ();
     if (settings.disabled_cursor) {
         ImGui::SetWindowFocus (NULL);
@@ -909,57 +775,22 @@ void UI::update (Settings& settings, const Stats& stats) {
 
     ImGui::NewFrame ();
 
-    if (this->model_manager->is_loading_scene ()) {
+    this->key_input (settings, scene);
+
+    this->show_ui = settings.show_ui;
+
+    if (this->show_ui) {
+        this->handle_global_shortcuts (settings);
         this->menu_bar (settings);
         this->file_dialog ();
 
-        ImGui::SetNextWindowPos (ImGui::GetMainViewport ()->GetCenter (), ImGuiCond_Always, ImVec2 (0.5f, 0.5f));
-        if (ImGui::Begin ("Loading...", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text ("Loading scene");
-            ImGui::End ();
+        if (settings.show_camera_window) {
+            camera_window (scene.get_camera_ref ());
         }
-        return;
-    }
-
-    auto current_model = this->model_manager->get_model ();
-
-    if (current_model) {
-        ModelState& model_state = current_model->get_state ();
-
-        this->key_input (settings, model_state);
-        this->show_ui = settings.show_ui;
-
-        if (this->show_ui) {
-            this->handle_global_shortcuts (settings);
-            this->menu_bar (settings);
-            this->file_dialog ();
-
-            if (settings.show_camera_window) {
-                camera_window (model_state.camera);
-            }
-            if (settings.show_renderer_window) {
-                this->renderer_window (settings, stats, model_state);
-            }
-            if (settings.show_scene_inspector) {
-                this->scene_inspector_window (settings);
-            }
-            this->status_bar (settings, stats, model_state);
+        if (settings.show_renderer_window) {
+            this->renderer_window (settings, stats, scene);
         }
-    } else {
-        if (settings.show_ui) {
-            this->handle_global_shortcuts (settings);
-            this->menu_bar (settings);
-            this->file_dialog ();
-
-            ImGui::SetNextWindowPos (ImGui::GetMainViewport ()->GetCenter (), ImGuiCond_Always, ImVec2 (0.5f, 0.5f));
-            if (ImGui::Begin ("Welcome", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize)) {
-                ImGui::Text ("No scene loaded. Press Ctrl+O to open a scene.");
-                if (ImGui::Button ("Open Scene...")) {
-                    this->file_browser.Open ();
-                }
-                ImGui::End ();
-            }
-        }
+        this->status_bar (settings, stats, scene);
     }
 
     if (this->pending_config_notify) {
@@ -1135,8 +966,8 @@ void init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <Mode
     UI::get_instance ().init (vulkan_context, model_manager, info, settings);
 }
 
-void update (Settings& settings, const Stats& stats) {
-    UI::get_instance ().update (settings, stats);
+void update (Scene& scene, Settings& settings, const Stats& stats) {
+    UI::get_instance ().update (scene, settings, stats);
 }
 
 void draw (uint32_t image_index, VkCommandBuffer cmd_buff) {

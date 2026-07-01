@@ -28,12 +28,12 @@ struct adl_serializer <LiteMath::float4x4> {
 
     static void from_json (const json& j, LiteMath::float4x4& mat) {
         for (int i = 0; i < 4; i++) {
-            LiteMath::float4 c;
-            c.x = j.at(i * 4 + 0).get<float>();
-            c.y = j.at(i * 4 + 1).get<float>();
-            c.z = j.at(i * 4 + 2).get<float>();
-            c.w = j.at(i * 4 + 3).get<float>();
-            mat.set_col(i, c);
+            LiteMath::float4 r;
+            r.x = j.at(i * 4 + 0).get<float>();
+            r.y = j.at(i * 4 + 1).get<float>();
+            r.z = j.at(i * 4 + 2).get<float>();
+            r.w = j.at(i * 4 + 3).get<float>();
+            mat.set_row(i, r);
         }
     }
 };

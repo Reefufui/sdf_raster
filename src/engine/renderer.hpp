@@ -109,7 +109,7 @@ private:
         explicit RenderMethod (Renderer& renderer) : r (renderer) {}
         virtual ~RenderMethod () = default;
     
-        virtual void begin (VkCommandBuffer cmd_buff) = 0;
+        virtual void begin (VkCommandBuffer cmd_buff, bool& dirty_surface) = 0;
         virtual void draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) = 0;
         virtual void end (VkCommandBuffer cmd_buff) = 0;
     protected:
@@ -119,23 +119,29 @@ private:
     class RasterSComTreeViaComputeShadingForward : public RenderMethod {
     public:
         using RenderMethod::RenderMethod;
-        void begin (VkCommandBuffer cmd_buff) override;
+        void begin (VkCommandBuffer cmd_buff, bool& dirty_surface) override;
         void draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) override;
         void end (VkCommandBuffer cmd_buff) override;
     };
 
     class RasterSComTreeViaComputeShadingDeferred : public RenderMethod {
     public:
-        using RenderMethod::RenderMethod;
-        void begin (VkCommandBuffer cmd_buff) override;
+        RasterSComTreeViaComputeShadingDeferred (Renderer& renderer);
+        ~RasterSComTreeViaComputeShadingDeferred ();
+
+        void begin (VkCommandBuffer cmd_buff, bool& dirty_surface) override;
         void draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) override;
         void end (VkCommandBuffer cmd_buff) override;
+    private:
+        VkRenderPassBeginInfo render_pass_info {};
     };
 
     class RasterMeshForward : public RenderMethod {
     public:
-        using RenderMethod::RenderMethod;
-        void begin (VkCommandBuffer cmd_buff) override;
+        RasterMeshForward (Renderer& renderer);
+        ~RasterMeshForward ();
+
+        void begin (VkCommandBuffer cmd_buff, bool& dirty_surface) override;
         void draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) override;
         void end (VkCommandBuffer cmd_buff) override;
     };

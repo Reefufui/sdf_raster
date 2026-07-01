@@ -68,6 +68,8 @@ public:
         return (fif_index + 1 > this->indices_buffers.size ()) ? this->indices_buffers [0] : this->indices_buffers [fif_index];
     }
 
+    size_t get_indices_count () { return indices_count; }
+
     LiteMath::uint fetch_insufficent_mem_flag ();
     Mesh fetch_mesh_from_device (size_t fif_index);
 

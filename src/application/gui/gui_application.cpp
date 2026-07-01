@@ -55,7 +55,8 @@ void GUIApplication::run () {
     }
 
     Scene scene;
-    scene.load ("/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/scenes/teapots.json", *this->model_manager);
+    // scene.load ("/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/scenes/teapots.json", *this->model_manager);
+    scene.load ("/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/scenes/sphere.json", *this->model_manager);
 
     try {
         const uint32_t frames_in_flight = this->presentation_render_target->get_max_frames_in_flight ();
@@ -73,7 +74,7 @@ void GUIApplication::run () {
                 continue;
             }
 
-            gui::update (this->session.settings, this->renderer->get_stats ());
+            gui::update (scene, this->session.settings, this->renderer->get_stats ());
 
             double current_time = glfwGetTime ();
             float delta_time = static_cast <float> (current_time - this->last_time);
@@ -82,8 +83,8 @@ void GUIApplication::run () {
             this->renderer->process_commands (this->render_commands, this->render_command_mutex);
             this->renderer->update (i, this->session.settings, delta_time);
 
-            this->renderer->render (cmd_buff);
-            // this->renderer->render_scene (cmd_buff, scene);
+            // this->renderer->render (cmd_buff);
+            this->renderer->render_scene (cmd_buff, scene);
             gui::draw (this->presentation_render_target->get_swapchain_image_index (), cmd_buff);
 
             this->presentation_render_target->end_frame (cmd_buff, i);

@@ -53,7 +53,7 @@ private:
 
     std::vector <SComTreeStackElement> cached_all_subtrees;
     static inline constexpr std::array <DrawMethod, 4> available_methods = {{
-        DrawMethod::SComTreeCompute, DrawMethod::SComTreeComputeDeferred,
+        DrawMethod::SComTreeComputeDeferred, DrawMethod::SComTreeCompute,
         DrawMethod::SComTreeMesh, DrawMethod::SComTreeMeshDeferred
     }};
 };

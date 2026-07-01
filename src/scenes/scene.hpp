@@ -32,10 +32,14 @@ public:
 
     const std::vector <RenderGroup>& get_groups () const { return groups; }
     const Camera& get_camera () const { return camera; };
+    Camera& get_camera_ref () { return camera; };
+
+    const std::string& get_name () const { return this->name; }
 
 private:
     Camera camera;
     std::vector <RenderGroup> groups;
+    std::string name;
 };
 
 } // namespace sdf_raster

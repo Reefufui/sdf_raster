@@ -15,6 +15,7 @@ namespace sdf_raster {
 
 struct Settings;
 class ModelManager;
+class Scene;
 
 namespace gui {
 
@@ -32,7 +33,7 @@ struct InitInfo {
 
 void init (std::shared_ptr <VulkanContext> vulkan_context, std::shared_ptr <ModelManager> model_manager, const InitInfo& info, Settings& settings);
 
-void update (Settings& settings, const Stats& stats);
+void update (Scene& scene, Settings& settings, const Stats& stats);
 
 void draw (uint32_t image_index, VkCommandBuffer cmd_buff);
 

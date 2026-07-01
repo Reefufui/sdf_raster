@@ -19,61 +19,189 @@
 
 namespace sdf_raster {
 
-void Renderer::RasterSComTreeViaComputeShadingForward::begin (VkCommandBuffer /*cmd_buff*/) {
+void Renderer::RasterSComTreeViaComputeShadingForward::begin (VkCommandBuffer cmd_buff, bool& /*dirty_surface*/) {
+    assert (cmd_buff != VK_NULL_HANDLE && "command buffer must be valid");
+    assert (r.context && "renderer context must be initialized");
+    assert (r.render_target && "render target must be initialized");
 }
 
 void Renderer::RasterSComTreeViaComputeShadingForward::draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) {
-    const auto scomtree_model = dynamic_cast <SComTreeTreeDescriptorSetInfo*> (model.get ());
-    assert (scomtree_model && "reqired for RasterSComTreeViaComputeShadingForward::draw");
+    assert (cmd_buff != VK_NULL_HANDLE && "command buffer must be valid");
+    assert (r.context && "renderer context must be initialized");
+    assert (r.render_target && "render target must be initialized");
+    assert (model != nullptr && "model must not be null");
 
-    auto subtree_count = scomtree_model->get_subtree_count ();
+    const auto scomtree_model = dynamic_cast <SComTreeTreeDescriptorSetInfo*> (model.get ());
+    assert (scomtree_model && "required for RasterSComTreeViaComputeShadingForward::draw");
+
+    auto subtree_count = scomtree_model->get_scene ("tmp").resources.subtree_count;
     if (!subtree_count) {
         return;
     }
 
-    r.copy_subtrees (cmd_buff, scomtree_model->get_subtree_count () * sizeof (SComTreeStackElement)
-        , scomtree_model->get_subtree_root_staging_buffer (r.frame_index)
-        , scomtree_model->get_subtree_root_buffer (r.frame_index));
+    r.copy_subtrees (cmd_buff, scomtree_model->get_scene ("tmp").resources.subtree_count * sizeof (SComTreeStackElement)
+        , scomtree_model->get_scene ("tmp").resources.subtree_roots_staging_buffer
+        , scomtree_model->get_scene ("tmp").resources.subtree_root_buffer);
     r.reset_active_leafs_counter (cmd_buff);
-    r.traverse_scomtree (cmd_buff, static_cast <uint32_t> (subtree_count), scomtree_model->get_descriptor_set (r.frame_index));
+    r.traverse_scomtree (cmd_buff, static_cast <uint32_t> (subtree_count), scomtree_model->get_scene ("tmp").resources.descriptor_set);
     r.clear_geometry (cmd_buff);
     r.prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
-    r.marching_cubes_scomtree (cmd_buff, scomtree_model->get_descriptor_set (r.frame_index));
+    r.marching_cubes_scomtree (cmd_buff, scomtree_model->get_scene ("tmp").resources.descriptor_set);
     r.geometry_barrier (cmd_buff);
     r.forward_rendering (cmd_buff);
 }
 
 void Renderer::RasterSComTreeViaComputeShadingForward::end (VkCommandBuffer cmd_buff) {
+    assert (cmd_buff != VK_NULL_HANDLE && "command buffer must be valid");
+    assert (r.context && "renderer context must be initialized");
+    assert (r.render_target && "render target must be initialized");
+
     r.prepare_hzbuffer_after_forward_rendering (cmd_buff);
 }
 
-void Renderer::RasterSComTreeViaComputeShadingDeferred::begin (VkCommandBuffer cmd_buff) {
-    r.prepare_deferred (cmd_buff);
+Renderer::RasterSComTreeViaComputeShadingDeferred::RasterSComTreeViaComputeShadingDeferred (Renderer& renderer) : RenderMethod (renderer) {
+    LOG_INFO ("Creating resources for RasterSComTreeViaComputeShadingDeferred RenderMethod");
+    if (!r.deferred_shading) {
+        r.deferred_shading = std::make_unique <DeferredShading> (r.context->get_device ()
+            , r.context->get_physical_device ()
+            , r.context->get_transfer_command_pool_reset ()
+            , r.context->get_transfer_queue ()
+            , DeferredShadingConfig {
+                .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
+                .filter = VK_FILTER_LINEAR
+            }
+            , r.render_target
+            , r.depth_buffer);
+    }
+
+    if (!r.sdf_scomtree_ds) {
+        r.sdf_scomtree_ds = std::make_unique <SComTreeTreeDescriptorSetInfo> (r.context->get_device ()
+            , r.context->get_physical_device ()
+            , r.context->get_copy_helper ()
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+        );
+    }
+
+    if (!r.marching_cubes_lookup_table_ds) {
+        r.marching_cubes_lookup_table_ds = std::make_unique <MarchingCubesLookupTableDescriptorSetInfo> (r.context->get_device ()
+            , r.context->get_physical_device ()
+            , r.context->get_copy_helper ()
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
+    }
+
+    if (!r.hz_buffer_ds) {
+        r.hz_buffer_ds = std::make_unique <HZBufferDescriptorSetInfo> (r.context->get_device ()
+            , r.context->get_physical_device ()
+            , r.context->get_transfer_command_pool_reset ()
+            , r.context->get_transfer_queue ()
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+            , r.render_target->get_extent ()
+            , r.render_target->get_max_frames_in_flight ());
+    }
+
+    if (!r.indirect_dispatch_ds) {
+        r.indirect_dispatch_ds = std::make_unique <IndirectDescriptorSetInfo> (r.context->get_device ()
+            , r.context->get_physical_device ()
+            , VK_SHADER_STAGE_COMPUTE_BIT
+            , sizeof (IndirectDispatch)
+            , 2);
+    }
+
+    if (!r.active_leafs_ds) {
+        r.active_leafs_ds = std::make_unique <ActiveLeafsDescriptorSetInfo> (r.context->get_device ()
+            , r.context->get_physical_device ()
+            , r.context->get_copy_helper ()
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+            , r.push_constants.active_leafs_max_count * sizeof (SComTreeBrickPayload)
+            , r.render_target->get_max_frames_in_flight ());
+    }
+
+    if (r.graphics_gbuffer_pipeline == VK_NULL_HANDLE) {
+        r.init_graphics_gbuffer_pipeline ("shaders/view_proj.vert.slang.spv", "shaders/gbuffer.frag.slang.spv");
+    }
+
+    if (r.graphics_lighting_pipeline == VK_NULL_HANDLE) {
+        r.init_graphics_lighting_pipeline ();
+    }
+
+    if (r.traverse_scomtree_pipeline == VK_NULL_HANDLE) {
+        r.init_traverse_scomtree_pipeline ();
+    }
+
+    this->render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    this->render_pass_info.renderArea.offset = {0, 0};
+    this->render_pass_info.renderArea.extent = r.render_target->get_extent ();
+}
+
+void Renderer::RasterSComTreeViaComputeShadingDeferred::begin (VkCommandBuffer cmd_buff, bool& dirty_surface) {
+    assert (cmd_buff != VK_NULL_HANDLE && "command buffer must be valid");
+    assert (r.context && "renderer context must be initialized");
+    assert (r.deferred_shading && "required for 'Renderer::RasterSComTreeViaComputeShadingDeferred::begin");
+    assert (r.render_target && "required for 'Renderer::RasterSComTreeViaComputeShadingDeferred::begin");
+
+    std::vector <VkClearValue> clear_values {};
+
+    if (dirty_surface) {
+        clear_values.resize (4);
+        clear_values [0].color = {{0.f, 0.f, 0.f, 0.f}}; // Position
+        clear_values [1].color = {{0.f, 0.f, 0.f, 0.f}}; // Normal
+        clear_values [2].color = {{r.clear_color.x, r.clear_color.y, r.clear_color.z, 1.f}}; // Albedo
+        clear_values [3].depthStencil = {1.0f, 0}; // Depth
+
+        dirty_surface = false;
+
+        this->render_pass_info.renderPass = r.deferred_shading->get_gbuffer_pass ();
+        this->render_pass_info.framebuffer = r.deferred_shading->get_gbuffer_fb ();
+    } else {
+        assert (false && "after render pass & frame buffer (the one that doesn't clear surface) not yet implemented");
+        // TODO: after
+        // render_pass_info.renderPass = r.deferred_shading->get_gbuffer_pass_after ();
+        // render_pass_info.framebuffer = r.deferred_shading->get_gbuffer_fb_after ();
+    }
+
+    this->render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
+    this->render_pass_info.pClearValues = clear_values.data ();
 }
 
 void Renderer::RasterSComTreeViaComputeShadingDeferred::draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) {
-    const auto scomtree_model = dynamic_cast <SComTreeTreeDescriptorSetInfo*> (model.get ());
-    assert (scomtree_model && "reqired for RasterSComTreeViaComputeShadingDeferred::draw");
+    assert (cmd_buff != VK_NULL_HANDLE && "required for RasterSComTreeViaComputeShadingDeferred::draw");
+    assert (model && "required for RasterSComTreeViaComputeShadingDeferred::draw");
 
-    auto subtree_count = scomtree_model->get_subtree_count ();
+    const auto scomtree_model = dynamic_cast <SComTreeTreeDescriptorSetInfo*> (model.get ());
+    assert (scomtree_model && "required for RasterSComTreeViaComputeShadingDeferred::draw");
+    assert (r.context && "required for RasterSComTreeViaComputeShadingDeferred::draw");
+    assert (r.render_target && "required for RasterSComTreeViaComputeShadingDeferred::draw");
+
+    scomtree_model->update_subtree_root_buffer ("tmp", r.frustum);
+    auto subtree_count = scomtree_model->get_scene ("tmp").resources.subtree_count;
     if (!subtree_count) {
         return;
     }
 
     r.copy_subtrees (cmd_buff, subtree_count * sizeof (SComTreeStackElement)
-        , scomtree_model->get_subtree_root_staging_buffer (r.frame_index)
-        , scomtree_model->get_subtree_root_buffer (r.frame_index));
+        , scomtree_model->get_scene ("tmp").resources.subtree_roots_staging_buffer
+        , scomtree_model->get_scene ("tmp").resources.subtree_root_buffer);
+
     r.reset_active_leafs_counter (cmd_buff);
-    r.traverse_scomtree (cmd_buff, static_cast <uint32_t> (subtree_count), scomtree_model->get_descriptor_set (r.frame_index));
+
+    assert (scomtree_model->get_scene ("tmp").resources.descriptor_set != VK_NULL_HANDLE);
+    r.traverse_scomtree (cmd_buff, static_cast <uint32_t> (subtree_count), scomtree_model->get_scene ("tmp").resources.descriptor_set);
     r.clear_geometry (cmd_buff);
     r.prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
-    r.marching_cubes_scomtree (cmd_buff, scomtree_model->get_descriptor_set (r.frame_index));
+    r.marching_cubes_scomtree (cmd_buff, scomtree_model->get_scene ("tmp").resources.descriptor_set);
     r.geometry_barrier (cmd_buff);
+
+    vkCmdBeginRenderPass (cmd_buff, &this->render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    r.set_default_viewport_and_scissor (cmd_buff);
     r.deferred_rendering (cmd_buff);
+    vkCmdEndRenderPass (cmd_buff);
 }
 
 void Renderer::RasterSComTreeViaComputeShadingDeferred::end (VkCommandBuffer cmd_buff) {
-    vkCmdEndRenderPass (cmd_buff);
+    assert (cmd_buff != VK_NULL_HANDLE && "command buffer must be valid");
+    assert (r.context && "renderer context must be initialized");
+    assert (r.render_target && "render target must be initialized");
+    assert (r.hz_buffer_ds && "hz_buffer_ds must be initialized");
 
     r.hz_buffer_barrier (cmd_buff
         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
@@ -101,15 +229,51 @@ void Renderer::RasterSComTreeViaComputeShadingDeferred::end (VkCommandBuffer cmd
     }
 }
 
-void Renderer::RasterMeshForward::begin (VkCommandBuffer cmd_buff) {
+Renderer::RasterSComTreeViaComputeShadingDeferred::~RasterSComTreeViaComputeShadingDeferred () {
+    if (!r.deferred_shading) {
+        r.deferred_shading.reset ();
+    }
+}
+
+Renderer::RasterMeshForward::RasterMeshForward (Renderer& renderer) : RenderMethod (renderer) {
+    LOG_INFO ("Creating resources for RasterMeshForward RenderMethod");
+    if (!r.forward_rendering_pipeline) {
+        r.init_forward_rendering_pipeline ("shaders/view_proj.vert.slang.spv", "shaders/blinn_phong.frag.slang.spv", VK_FRONT_FACE_COUNTER_CLOCKWISE);
+    }
+}
+
+void Renderer::RasterMeshForward::begin (VkCommandBuffer cmd_buff, bool& dirty_surface) {
+    assert (cmd_buff != VK_NULL_HANDLE && "command buffer must be valid");
+    assert (r.context && "renderer context must be initialized");
+    assert (r.render_target && "render target must be initialized");
+
+    assert (r.forward_rendering_pipeline && "required for RasterMeshForward::begin");
+    assert (r.forward_shading && "required for RasterMeshForward::begin");
+    assert (r.render_target && "required for RasterMeshForward::begin");
+
+    std::vector <VkClearValue> clear_values {};
     VkRenderPassBeginInfo render_pass_info {};
+
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = r.forward_shading->get_render_pass ();
-    render_pass_info.framebuffer = r.forward_shading->get_framebuffer (r.render_target->get_current_image_index ());
     render_pass_info.renderArea.offset = {0, 0};
     render_pass_info.renderArea.extent = r.render_target->get_extent ();
-    render_pass_info.clearValueCount = 0;
-    render_pass_info.pClearValues = nullptr;
+
+    if (dirty_surface) {
+        clear_values.resize (2);
+        clear_values [0].color = {{r.clear_color.x, r.clear_color.y, r.clear_color.z, 1.f}};
+        clear_values [1].depthStencil = {1.0f, 0};
+
+        dirty_surface = false;
+
+        render_pass_info.renderPass = r.forward_shading->get_render_pass ();
+        render_pass_info.framebuffer = r.forward_shading->get_framebuffer (r.render_target->get_current_image_index ());
+    } else {
+        render_pass_info.renderPass = r.forward_shading->get_render_pass_after ();
+        render_pass_info.framebuffer = r.forward_shading->get_framebuffer_after (r.render_target->get_current_image_index ());
+    }
+
+    render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
+    render_pass_info.pClearValues = clear_values.data ();
 
     vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -119,27 +283,36 @@ void Renderer::RasterMeshForward::begin (VkCommandBuffer cmd_buff) {
 }
 
 void Renderer::RasterMeshForward::draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) {
+    assert (cmd_buff != VK_NULL_HANDLE && "command buffer must be valid");
+    assert (r.context && "renderer context must be initialized");
+    assert (r.render_target && "render target must be initialized");
+    assert (model != nullptr && "model must not be null");
+
     const auto mesh_model = dynamic_cast <MeshDescriptorSetInfo*> (model.get ());
-    assert (mesh_model && "reqired for RasterSComTreeViaComputeShadingDeferred::draw");
-
+    assert (mesh_model && "required for RasterMeshForward::draw");
     assert (r.context && "required for 'forward_rendering'");
-    assert (r.forward_shading && "required for 'forward_rendering'");
-
-    assert (!(r.mesh_ds && !r.draw_indexed_indirect_command_ds) && "either both set (render) or not set (just clear) for 'forward_rendering'");
-    assert (!(!r.mesh_ds && r.draw_indexed_indirect_command_ds) && "either both set (render) or not set (just clear) for 'forward_rendering'");
+    assert (r.forward_rendering_pipeline_layout && "required for RasterMeshForward::draw");
 
     vkCmdPushConstants (cmd_buff, r.forward_rendering_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &r.push_constants);
 
-    VkBuffer vertex_buffers [] = {mesh_model->get_vertex_buffer (r.frame_index)};
+    VkBuffer vertex_buffers [] = {mesh_model->get_vertex_buffer (0)};
     VkDeviceSize offsets [] = {0};
     vkCmdBindVertexBuffers (cmd_buff, 0, 1, vertex_buffers, offsets);
-    vkCmdBindIndexBuffer (cmd_buff, mesh_model->get_index_buffer (r.frame_index), 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer (cmd_buff, mesh_model->get_index_buffer (0), 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdDrawIndexedIndirect (cmd_buff, r.draw_indexed_indirect_command_ds->get_indirect_buffer (r.frame_index), 0, 1, 0);
+    vkCmdDrawIndexed (cmd_buff, mesh_model->get_indices_count (), 1, 0, 0, 0);
 }
 
 void Renderer::RasterMeshForward::end (VkCommandBuffer cmd_buff) {
+    assert (cmd_buff != VK_NULL_HANDLE && "command buffer must be valid");
+    assert (r.context && "renderer context must be initialized");
+    assert (r.render_target && "render target must be initialized");
+
     vkCmdEndRenderPass (cmd_buff);
+}
+
+Renderer::RasterMeshForward::~RasterMeshForward () {
+    vk_utils::destroyPipelineIfExists (r.context->get_device (), r.forward_rendering_pipeline, r.forward_rendering_pipeline_layout);
 }
 
 #define RENDERER_NAME "Renderer"
@@ -755,7 +928,7 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     if (this->sdf_octree_ds) {
         this->stats.active_roots_count = this->sdf_octree_ds->get_subtree_count ();
     } else if (this->sdf_scomtree_ds) {
-    this->stats.active_roots_count = this->sdf_scomtree_ds->get_subtree_count ();
+    this->stats.active_roots_count = this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count;
     } else {
         this->stats.active_roots_count = 0;
     }
@@ -843,7 +1016,7 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
         if (this->sdf_octree_ds) {
             this->sdf_octree_ds->update_subtree_root_buffer (this->frustum, this->frame_index);
         } else if (this->sdf_scomtree_ds) {
-            this->sdf_scomtree_ds->update_subtree_root_buffer (this->frustum, this->frame_index);
+            this->sdf_scomtree_ds->update_subtree_root_buffer ("tmp", this->frustum);
         }
     }
 }
@@ -874,6 +1047,8 @@ void Renderer::update_frustum_buffer (const Camera& camera, const LiteMath::floa
 }
 
 void Renderer::clear_geometry (VkCommandBuffer cmd_buff) {
+    assert (this->mesh_ds && "mesh_ds must be valid");
+
     vkCmdFillBuffer (cmd_buff, this->mesh_ds->get_vertex_buffer (this->frame_index), 0, VK_WHOLE_SIZE, 0x00000000);
     vkCmdFillBuffer (cmd_buff, this->mesh_ds->get_index_buffer (this->frame_index), 0, VK_WHOLE_SIZE, 0x00000000);
 
@@ -1008,6 +1183,10 @@ void Renderer::copy_forward_rendered_depth (VkCommandBuffer cmd_buff) {
 }
 
 void Renderer::copy_subtrees (VkCommandBuffer cmd_buff, VkDeviceSize subtrees_size, VkBuffer staging_buffer, VkBuffer buffer) {
+    assert (cmd_buff != VK_NULL_HANDLE);
+    assert (staging_buffer != VK_NULL_HANDLE);
+    assert (buffer != VK_NULL_HANDLE);
+
     if (!subtrees_size) {
         return;
     }
@@ -1091,6 +1270,8 @@ void Renderer::compute_hz_buffer (VkCommandBuffer cmd_buff) {
 }
 
 void Renderer::reset_active_leafs_counter (VkCommandBuffer cmd_buff) {
+    assert (this->active_leafs_ds && "active_leafs_ds must be valid");
+
     vkCmdFillBuffer (cmd_buff, this->active_leafs_ds->get_active_leaf_counter_buffer (this->frame_index), 0, VK_WHOLE_SIZE, 0x00000000);
 
     VkBufferMemoryBarrier buffer_barrier = {};
@@ -1143,6 +1324,8 @@ void Renderer::hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess sr
 }
 
 void Renderer::hz_buffer_barrier (VkCommandBuffer cmd_buff, LayoutStageAccess src_base, LayoutStageAccess dst_base, LayoutStageAccess src_levels, LayoutStageAccess dst_levels) {
+    assert (this->hz_buffer_ds && "required by 'Renderer::hz_buffer_barrier");
+
     HZBufferDescriptorSetInfo::FrameResources& f = this->hz_buffer_ds->frame_resources_ref (this->frame_index);
 
     VkImageSubresourceRange base_level_range {
@@ -1220,6 +1403,12 @@ void Renderer::traverse_octree (VkCommandBuffer cmd_buff) {
 }
 
 void Renderer::traverse_scomtree (VkCommandBuffer cmd_buff, uint32_t subtree_root_count, VkDescriptorSet scomtree_ds) {
+    assert (this->traverse_scomtree_pipeline != VK_NULL_HANDLE);
+    assert (this->active_leafs_ds && "active_leafs_ds must be valid");
+    assert (this->frustum_ds && "frustum_ds must be valid");
+    assert (this->hz_buffer_ds && "hz_buffer_ds must be valid");
+    assert (this->lod_ds && "lod_ds must be valid");
+
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->traverse_scomtree_pipeline);
 
     std::vector <VkDescriptorSet> ds (5);
@@ -1241,6 +1430,7 @@ void Renderer::prepare_indirect (VkCommandBuffer cmd_buff, uint32_t workgroup_si
     assert (this->context && "required for 'prepare_indirect'");
     assert (this->active_leafs_ds && "required for 'prepare_indirect'");
     assert (this->indirect_dispatch_ds && "required for 'prepare_indirect'");
+    assert (this->compute_prepare_indirect_pipeline != VK_NULL_HANDLE);
 
     VkMemoryBarrier barrier1 = {};
     barrier1.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -1345,6 +1535,7 @@ void Renderer::marching_cubes_scomtree (VkCommandBuffer cmd_buff, VkDescriptorSe
     assert (this->active_leafs_ds && "required for 'marching_cubes_scomtree'");
     assert (this->draw_indexed_indirect_command_ds && "required for 'marching_cubes_scomtree'");
     assert (this->lod_ds && "required for 'marching_cubes_scomtree'");
+    assert (this->marching_cubes_scomtree_pipeline != VK_NULL_HANDLE);
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->marching_cubes_scomtree_pipeline);
 
@@ -1557,6 +1748,12 @@ void Renderer::deferred_rendering (VkCommandBuffer cmd_buff) {
 }
 
 void Renderer::calculate_lighting (VkCommandBuffer cmd_buff) {
+    assert (this->render_target && "required for 'Renderer::calculate_lighting'");
+    assert (this->deferred_shading && "required for 'Renderer::calculate_lighting'");
+    assert (this->graphics_lighting_pipeline != VK_NULL_HANDLE && "required for 'Renderer::calculate_lighting'");
+    assert (this->graphics_lighting_pipeline_layout != VK_NULL_HANDLE && "required for 'Renderer::calculate_lighting'");
+    assert ((this->dummy_ds || this->hz_buffer_ds) && "required for 'Renderer::calculate_lighting'");
+
     const auto extent = this->render_target->get_extent ();
     const uint32_t swap_idx = this->render_target->get_current_image_index ();
     const uint32_t fif_idx = this->frame_index;
@@ -1705,14 +1902,14 @@ void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
         this->push_constants.camera_pos = local_cam_pos;
     }
 
-    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
-        , this->sdf_scomtree_ds->get_subtree_root_staging_buffer (this->frame_index)
-        , this->sdf_scomtree_ds->get_subtree_root_buffer (this->frame_index));
+    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count * sizeof (SComTreeStackElement)
+        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_roots_staging_buffer
+        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_root_buffer);
     this->reset_active_leafs_counter (cmd_buff);
 
     this->traverse_scomtree (cmd_buff
-        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_subtree_count ())
-        , this->sdf_scomtree_ds->get_descriptor_set (this->frame_index));
+        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count)
+        , this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
 
     this->prepare_indirect (cmd_buff, uint32_t {1}); // NOTE: brick == meshlet
 
@@ -1739,7 +1936,7 @@ void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_scomtree_pipeline);
 
     std::array <VkDescriptorSet, 4> ds = {
-        this->sdf_scomtree_ds->get_descriptor_set (this->frame_index)
+        this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set
         , this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index)
         , this->active_leafs_ds->get_descriptor_set (this->frame_index)
         , this->lod_ds->get_descriptor_set (this->frame_index)
@@ -1772,13 +1969,13 @@ void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_bu
     assert (this->graphics_lighting_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading_deferred'");
     assert (this->sdf_scomtree_ds && "required for 'raster_scomtree_via_mesh_shading_deferred'");
 
-    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
-        , this->sdf_scomtree_ds->get_subtree_root_staging_buffer (this->frame_index)
-        , this->sdf_scomtree_ds->get_subtree_root_buffer (this->frame_index));
+    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count * sizeof (SComTreeStackElement)
+        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_roots_staging_buffer
+        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_root_buffer);
     this->reset_active_leafs_counter (cmd_buff);
     this->traverse_scomtree (cmd_buff
-        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_subtree_count ())
-        , this->sdf_scomtree_ds->get_descriptor_set (this->frame_index));
+        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count)
+        , this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
     this->prepare_indirect (cmd_buff, uint32_t {1}); // NOTE: brick == meshlet
 
         if (!this->frustum_draw_buffer) {
@@ -1817,7 +2014,7 @@ void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_bu
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_gbuffer_pipeline);
 
     std::array <VkDescriptorSet, 4> mesh_ds = {
-        this->sdf_scomtree_ds->get_descriptor_set (this->frame_index)
+        this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set
         , this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index)
         , this->active_leafs_ds->get_descriptor_set (this->frame_index)
         , this->lod_ds->get_descriptor_set (this->frame_index)
@@ -1931,16 +2128,16 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
     }
 
     /* draw */
-    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
-        , this->sdf_scomtree_ds->get_subtree_root_staging_buffer (this->frame_index)
-        , this->sdf_scomtree_ds->get_subtree_root_buffer (this->frame_index));
+    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count * sizeof (SComTreeStackElement)
+        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_roots_staging_buffer
+        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_root_buffer);
     this->reset_active_leafs_counter (cmd_buff);
     this->traverse_scomtree (cmd_buff
-        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_subtree_count ())
-        , this->sdf_scomtree_ds->get_descriptor_set (this->frame_index));
+        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count)
+        , this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
     this->clear_geometry (cmd_buff);
     this->prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
-    this->marching_cubes_scomtree (cmd_buff, this->sdf_scomtree_ds->get_descriptor_set (this->frame_index));
+    this->marching_cubes_scomtree (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
     this->geometry_barrier (cmd_buff);
 
     if (this->deferred_shading) {
@@ -2025,12 +2222,12 @@ const std::unique_ptr <ModelResource>& Renderer::get_model_resource (const std::
             const auto& model_data = obj_model->get_model_data ();
             const auto& model_state = obj_model->get_state ();
 
-            if (model_data.vertices.empty ()) {
-                LOG_ERROR ("[{}] ObjModel '{}' has no vertices!", RENDERER_NAME, model_state.name);
+            if (model_data.vertices.empty () || model_data.vertices.empty ()) {
+                LOG_ERROR ("[{}] ObjModel '{}' has no vertices/indices!", RENDERER_NAME, model_state.name);
                 return it->second;
             }
 
-            it->second = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
+            auto ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
                 , this->context->get_physical_device ()
                 , this->context->get_copy_helper ()
                 , 0x0 // NOTE: we don't need descriptors at all as we have no plan on using vertex/index buffers as shader input.
@@ -2039,46 +2236,23 @@ const std::unique_ptr <ModelResource>& Renderer::get_model_resource (const std::
                 , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
 
             this->context->get_copy_helper ()->UpdateBuffer (
-                this->mesh_ds->get_vertex_buffer (0), 0
+                ds->get_vertex_buffer (0), 0
                 , model_data.vertices.data (), model_data.vertices.size () * sizeof (Vertex)
             );
 
             this->context->get_copy_helper ()->UpdateBuffer (
-                this->mesh_ds->get_index_buffer (0), 0
+                ds->get_index_buffer (0), 0
                 , model_data.indices.data (), model_data.indices.size () * sizeof (uint32_t)
             );
 
-            VkDrawIndexedIndirectCommand cmd {
-                .indexCount    = static_cast <uint32_t> (model_data.indices.size ()),
-                .instanceCount = 1,
-                .firstIndex    = 0,
-                .vertexOffset  = 0,
-                .firstInstance = 0
-            };
-
-            this->draw_indexed_indirect_command_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
-                , this->context->get_physical_device ()
-                , VK_SHADER_STAGE_COMPUTE_BIT
-                , sizeof (cmd)
-                , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
-
-            this->context->get_copy_helper ()->UpdateBuffer (
-                this->draw_indexed_indirect_command_ds->get_indirect_buffer (0), 0
-                , &cmd, sizeof (cmd)
-            );
+            it->second = std::move (ds);
 
             LOG_INFO ("[{}] Created GPU resources for mesh scene '{}'. Vertices: {}, Indices: {}"
                       , RENDERER_NAME, model_state.name, model_data.vertices.size (), model_data.indices.size ());
         } else if (auto scomtree_model = std::dynamic_pointer_cast <SComTreeModel> (model)) {
             const auto& model_state = scomtree_model->get_state ();
 
-            it->second = std::make_unique <SComTreeTreeDescriptorSetInfo> (this->context->get_device ()
-                , this->context->get_physical_device ()
-                , this->context->get_copy_helper ()
-                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-                , scomtree_model
-                , this->render_target->get_max_frames_in_flight ()
-                );
+            this->sdf_scomtree_ds->add_scene ("tmp", scomtree_model);
 
             LOG_INFO ("[{}] Created gpu resources for sdf-scomtree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
                 , model_state.name
@@ -2094,17 +2268,18 @@ const std::unique_ptr <ModelResource>& Renderer::get_model_resource (const std::
 }
 
 void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
-    // TODO:clean surface here
     const auto& groups = scene.get_groups ();
+    bool dirty_surface = true;
+
+    const auto& camera = scene.get_camera ();
 
     for (const auto& [draw_method, batches] : groups) {
         const auto& method = this->get_render_method (draw_method);
         if (!method) {
             continue;
         }
-        this->ensure_resources (draw_method);
 
-        // method->begin (cmd_buff);
+        method->begin (cmd_buff, dirty_surface);
 
         for (const auto& [mesh_id, model, items] : batches) {
             const auto& model_ds = this->get_model_resource (mesh_id, model);
@@ -2114,16 +2289,16 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
 
             for (const auto& item : items) {
                 LiteMath::float4x4 inv_model = LiteMath::inverse4x4 (item.transform);
-                LiteMath::float4 world_camera_pos = (this->frustum_draw_buffer) ? this->frozen_camera_pos : LiteMath::to_float4 (scene.get_camera ().get_position (), 1.0f);
+                LiteMath::float4 world_camera_pos = (this->frustum_draw_buffer) ? this->frozen_camera_pos : LiteMath::to_float4 (camera.get_position (), 1.0f);
 
-                this->push_constants.view_proj = scene.get_camera ().get_view_projection_matrix () * item.transform;
+                this->push_constants.view_proj = camera.get_view_projection_matrix () * item.transform;
                 this->push_constants.camera_pos = inv_model * world_camera_pos;
 
-                // method->draw (cmd_buff, model_ds);
+                method->draw (cmd_buff, model_ds);
             }
         }
 
-        // method->end (cmd_buff);
+        method->end (cmd_buff);
     }
 
     if (this->frustum_draw_buffer) {
@@ -2373,9 +2548,8 @@ void Renderer::apply_model_config (std::shared_ptr <Model> model) {
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()
             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-            , scomtree_model
-            , this->render_target->get_max_frames_in_flight ()
         );
+        this->sdf_scomtree_ds->add_scene ("tmp", scomtree_model);
 
         LOG_INFO ("[{}] Created gpu resources for sdf-scomtree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
              , model_state.name

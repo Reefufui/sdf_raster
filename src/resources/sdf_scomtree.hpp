@@ -9,55 +9,63 @@
 
 #include <LiteMath.h>
 #include <vk_copy.h>
-#include <vk_descriptor_sets.h>
 #include <vk_utils.h>
 
 #include <filesystem>
-#include <memory>
 #include <string>
-#include <vector>
+#include <unordered_map>
 
 namespace sdf_raster {
 
 class SComTreeTreeDescriptorSetInfo : public ModelResource {
 public:
+    struct SceneResources {
+        VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
+        VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
+
+        VkBuffer header_buffer = VK_NULL_HANDLE;
+        VkBuffer nodes_buffer = VK_NULL_HANDLE;
+        VkBuffer bricks_buffer = VK_NULL_HANDLE;
+        VkBuffer subtree_root_buffer = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+        size_t subtree_count {};
+
+        VkBuffer subtree_roots_staging_buffer = VK_NULL_HANDLE;
+        VkDeviceMemory staging_buffer_memory = VK_NULL_HANDLE;
+        void* subtrees_memory_mapped = nullptr;
+    };
+
+    struct SceneEntry {
+        std::shared_ptr <SComTreeModel> scene {};
+        SceneResources resources {};
+    };
+
     SComTreeTreeDescriptorSetInfo (VkDevice device
         , VkPhysicalDevice physical_device
         , std::shared_ptr <vk_utils::ICopyEngine> copy_helper
-        , VkShaderStageFlags shader_stage_flags
-        , std::shared_ptr <SComTreeModel> scene
-        , size_t max_frames_in_flight);
+        , VkShaderStageFlags shader_stage_flags);
     ~SComTreeTreeDescriptorSetInfo ();
 
-    VkDescriptorSet get_descriptor_set (uint32_t fif_index) const { return this->descriptor_sets [fif_index]; }
+    void add_scene (const std::string& id, std::shared_ptr <SComTreeModel> scene);
+
+    const SceneEntry& get_scene (const std::string& id) const { return this->scenes.at (id); }
+
     VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
 
-    void update_subtree_root_buffer (const FrustumGeometry& frustum, uint32_t fif_index);
-    VkBuffer get_subtree_root_buffer (uint32_t fif_index) const { return this->subtree_root_buffers [fif_index]; }
-    VkBuffer get_subtree_root_staging_buffer (uint32_t fif_index) const { return this->subtree_roots_staging_buffers [fif_index]; }
-    size_t get_subtree_count () const { return this->subtree_count; }
+    void update_subtree_root_buffer (const std::string& id, const FrustumGeometry& frustum);
 
 private:
     VkDevice device = VK_NULL_HANDLE;
-
-    std::unique_ptr <vk_utils::DescriptorMaker> desc_maker;
-    std::vector <VkDescriptorSet> descriptor_sets;
+    VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+    std::shared_ptr <vk_utils::ICopyEngine> copy_helper {};
+    VkShaderStageFlags shader_stage_flags = 0;
     VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 
-    std::shared_ptr <SComTreeModel> scene {};
-    std::vector <VkBuffer> subtree_roots_staging_buffers {};
-    std::vector <VkDeviceMemory> staging_buffer_memories {};
-    std::vector <void*> subtrees_memory_mapped {};
-    size_t subtree_count {};
+    std::unordered_map <std::string, SceneEntry> scenes {};
 
-    VkBuffer header_buffer = VK_NULL_HANDLE;
-    VkBuffer nodes_buffer = VK_NULL_HANDLE;
-    VkBuffer bricks_buffer = VK_NULL_HANDLE;
     VkBuffer rotation_modifiers_buffer = VK_NULL_HANDLE;
     VkBuffer rotation_add_buffer = VK_NULL_HANDLE;
-    std::vector <VkBuffer> subtree_root_buffers;
-
-    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkDeviceMemory rotation_memory = VK_NULL_HANDLE;
 };
 
 } // sdf_raster

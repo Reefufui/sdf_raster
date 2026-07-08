@@ -11,7 +11,6 @@
 #include "resources/frustum.hpp"
 #include "resources/hz_buffer.hpp"
 #include "resources/indirect_dispatch.hpp"
-#include "resources/lod.hpp"
 #include "resources/marching_cubes_lookup_table.hpp"
 #include "resources/model_resource.hpp"
 #include "resources/sdf_octree.hpp"
@@ -166,7 +165,6 @@ public:
     std::unique_ptr <FrustumDescriptorSetInfo> frustum_ds {};
     std::unique_ptr <DummyDescriptorSetInfo> dummy_ds {};
     std::unique_ptr <IndirectDescriptorSetInfo> indirect_dispatch_ds {};
-    std::unique_ptr <LODDescriptorSetInfo> lod_ds {};
     std::unique_ptr <ActiveLeafsDescriptorSetInfo> active_leafs_ds {};
     void ensure_resources (DrawMethod method);
 

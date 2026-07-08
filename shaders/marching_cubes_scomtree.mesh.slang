@@ -24,8 +24,6 @@
 [[vk::binding (0, 2)]] RWStructuredBuffer <uint> g_active_leaf_counter;
 [[vk::binding (1, 2)]] RWStructuredBuffer <SComTreeBrickPayload> g_active_leafs;
 
-[[vk::binding (0, 3)]] RWStructuredBuffer <LevelOfDetail> g_lod;
-
 struct MeshOutput {
     float4 clip_position  : SV_Position;
     float4 position       : TEXCOORD0;

@@ -549,7 +549,6 @@ void Renderer::init_traverse_octree_pipeline () {
     assert (this->active_leafs_ds && "required for 'traverse_octree_pipeline'");
     assert (this->frustum_ds && "required for 'traverse_octree_pipeline'");
     assert (this->hz_buffer_ds && "required for 'traverse_octree_pipeline'");
-    assert (this->lod_ds && "required for 'traverse_octree_pipeline'");
 
     vk_utils::ComputePipelineMaker maker;
     maker.LoadShader (this->context->get_device (), "shaders/octree_traversal.comp.slang.spv");
@@ -557,8 +556,7 @@ void Renderer::init_traverse_octree_pipeline () {
         this->sdf_octree_ds->get_layout ()
         , this->active_leafs_ds->get_layout ()
         , this->frustum_ds->get_layout ()
-        , this->hz_buffer_ds->get_layout ()
-        , this->lod_ds->get_layout ()}, sizeof (PushConstantsData));
+        , this->hz_buffer_ds->get_layout ()}, sizeof (PushConstantsData));
     this->traverse_octree_pipeline = maker.MakePipeline (this->context->get_device ());
 }
 
@@ -568,7 +566,6 @@ void Renderer::init_traverse_scomtree_pipeline () {
     assert (this->active_leafs_ds && "required for 'traverse_scomtree_pipeline'");
     assert (this->frustum_ds && "required for 'traverse_scomtree_pipeline'");
     assert (this->hz_buffer_ds && "required for 'traverse_scomtree_pipeline'");
-    assert (this->lod_ds && "required for 'traverse_scomtree_pipeline'");
 
     vk_utils::ComputePipelineMaker maker;
     maker.LoadShader (this->context->get_device (), "shaders/scomtree_traversal.comp.slang.spv");
@@ -576,8 +573,7 @@ void Renderer::init_traverse_scomtree_pipeline () {
         this->sdf_scomtree_ds->get_layout ()
         , this->active_leafs_ds->get_layout ()
         , this->frustum_ds->get_layout ()
-        , this->hz_buffer_ds->get_layout ()
-        , this->lod_ds->get_layout ()}, sizeof (PushConstantsData));
+        , this->hz_buffer_ds->get_layout ()}, sizeof (PushConstantsData));
     this->traverse_scomtree_pipeline = maker.MakePipeline (this->context->get_device ());
 }
 
@@ -622,7 +618,6 @@ void Renderer::init_marching_cubes_scomtree_pipeline () {
     assert (this->marching_cubes_lookup_table_ds && "required for 'marching_cubes_scomtree_pipeline'");
     assert (this->active_leafs_ds && "required for 'marching_cubes_scomtree_pipeline'");
     assert (this->draw_indexed_indirect_command_ds && "required for 'marching_cubes_scomtree_pipeline'");
-    assert (this->lod_ds && "required for 'marching_cubes_scomtree_pipeline'");
 
     vk_utils::ComputePipelineMaker maker;
     maker.LoadShader (this->context->get_device (), "shaders/marching_cubes_scomtree.comp.slang.spv");
@@ -633,7 +628,6 @@ void Renderer::init_marching_cubes_scomtree_pipeline () {
             , this->marching_cubes_lookup_table_ds->get_layout ()
             , this->active_leafs_ds->get_layout ()
             , this->draw_indexed_indirect_command_ds->get_layout ()
-            , this->lod_ds->get_layout ()
           }
         , sizeof (PushConstantsData));
     this->marching_cubes_scomtree_pipeline = maker.MakePipeline (this->context->get_device ());
@@ -736,8 +730,7 @@ void Renderer::init_mesh_gbuffer_pipeline (const std::string& vert_shader_path, 
     this->mesh_gbuffer_pipeline_layout = maker.MakeLayout (this->context->get_device (), {
         this->sdf_scomtree_ds->get_layout (),
         this->marching_cubes_lookup_table_ds->get_layout (),
-        this->active_leafs_ds->get_layout (),
-        this->lod_ds->get_layout ()
+        this->active_leafs_ds->get_layout ()
     }, sizeof (PushConstantsData));
 
     this->mesh_gbuffer_pipeline = maker.MakePipeline (this->context->get_device (), this->deferred_shading->get_gbuffer_pass (), {
@@ -800,8 +793,7 @@ void Renderer::init_mesh_shading_octree_pipeline () {
     this->mesh_shading_octree_pipeline_layout = maker.MakeLayout (this->context->get_device (), {
         this->sdf_octree_ds->get_layout (),
         this->marching_cubes_lookup_table_ds->get_layout (),
-        this->active_leafs_ds->get_layout (),
-        this->lod_ds->get_layout ()
+        this->active_leafs_ds->get_layout ()
     }, sizeof (PushConstantsData));
 
     this->mesh_shading_octree_pipeline = maker.MakePipeline (this->context->get_device (), this->forward_shading->get_render_pass (), {
@@ -830,8 +822,7 @@ void Renderer::init_mesh_shading_scomtree_pipeline () {
     this->mesh_shading_scomtree_pipeline_layout = maker.MakeLayout (this->context->get_device (), {
         this->sdf_scomtree_ds->get_layout (),
         this->marching_cubes_lookup_table_ds->get_layout (),
-        this->active_leafs_ds->get_layout (),
-        this->lod_ds->get_layout ()
+        this->active_leafs_ds->get_layout ()
     }, sizeof (PushConstantsData));
 
     this->mesh_shading_scomtree_pipeline = maker.MakePipeline (this->context->get_device (), this->forward_shading->get_render_pass (), {
@@ -893,132 +884,126 @@ void Renderer::set_default_viewport_and_scissor (VkCommandBuffer cmd_buff) {
 }
 
 void Renderer::update (uint32_t frame_index, Settings& settings, float delta_time) {
-    assert (frame_index < this->render_target->get_max_frames_in_flight () && "frame_index must be less than max_frames_in_flight");
-
-    this->frame_index = frame_index;
-
-    if (!this->current_model) {
-        return;
-    }
-
-    auto& model_state = current_model->get_state ();
-    model_state.camera.update (delta_time);
-
-    if (settings.animate_rotation) {
-        model_state.rotation.y += 45.0f * delta_time;
-        if (model_state.rotation.y > 360.0f) model_state.rotation.y -= 360.0f;
-    }
-
-    if (!settings.frustum_view && this->frustum_draw_buffer) {
-        this->clear_color = this->clear_color * 2.f;
-        model_state.camera = this->frustum_draw_buffer->get_camera ();
-        this->frustum_draw_buffer.reset ();
-        LOG_INFO ("[{}] Frustum view mode: OFF.", RENDERER_NAME);
-    } else if (settings.frustum_view && !this->frustum_draw_buffer) {
-        this->clear_color = this->clear_color * 0.5f;
-        this->frozen_camera_pos = LiteMath::to_float4 (model_state.camera.get_position (), 1.0f);
-        this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_copy_helper ()
-            , model_state.camera);
-        LOG_INFO ("[{}] Frustum view mode: ON.", RENDERER_NAME);
-    }
-
-    this->stats.active_leafs_count = (this->active_leafs_ds) ? this->active_leafs_ds->fetch_active_leaf_counter (this->frame_index) : 0;
-    if (this->sdf_octree_ds) {
-        this->stats.active_roots_count = this->sdf_octree_ds->get_subtree_count ();
-    } else if (this->sdf_scomtree_ds) {
-    this->stats.active_roots_count = this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count;
-    } else {
-        this->stats.active_roots_count = 0;
-    }
-
-    if (this->lod_ds) {
-        const auto lod = this->lod_ds->fetch_lod (this->frame_index, 0);
-        this->stats.lod = lod.lod;
-        this->stats.distance = lod.distance;
-    } else {
-        this->stats.lod = 0;
-        this->stats.distance = 0;
-    }
-
-    if (this->hz_buffer_ds) {
-        this->push_constants.prev_mvp = this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp;
-    }
-
-    this->push_constants.view_proj = model_state.camera.get_view_projection_matrix ();
-    if (settings.frustum_view && this->frustum_draw_buffer) {
-        this->push_constants.camera_pos = this->frozen_camera_pos;
-    } else {
-        this->push_constants.camera_pos = LiteMath::to_float4 (model_state.camera.get_position (), 1.0f);
-    }
-
-    // common
-    this->push_constants.far_plane = model_state.camera.get_far_plane ();
-    this->push_constants.near_plane = model_state.camera.get_near_plane ();
-    this->push_constants.max_lod = static_cast <uint> (model_state.max_lod);
-    this->push_constants.min_lod = static_cast <uint> (model_state.min_lod);
-    this->push_constants.subtree_root_level = static_cast <uint> (model_state.cpu_traversed);
-    this->push_constants.occlusion_culling_level = static_cast <uint> (model_state.occlusion_culling_level);
-    this->push_constants.frustum_culling_level = static_cast <uint> (model_state.frustum_culling_level);
-    this->push_constants.color_leafs = settings.color_leafs;
-    this->push_constants.lod_mode = static_cast <uint> (model_state.lod_mode);
-    this->push_constants.fixed_lod = static_cast <uint> (model_state.fixed_lod);
-    this->push_constants.lod_threshold_pixels = model_state.lod_threshold_pixels;
-    this->push_constants.lod_aggressivity = model_state.lod_aggressivity;
-    this->push_constants.fov_y = model_state.camera.get_fov_y () * (3.14159265359f / 180.0f);
-    auto extent = this->render_target->get_extent ();
-    this->push_constants.screen_width = extent.width;
-    this->push_constants.screen_height = extent.height;
-    this->push_constants.max_voxel_size = 2.0f / std::pow (2.0f, model_state.cpu_traversed);
-    this->clear_color = settings.lighting.clear_color;
-
-    // model
-    this->push_constants.root_center = model_state.octree_root_center;
-    this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, model_state.octree_depth);
-
-    if (this->deferred_shading) {
-        auto& lighting_pc = this->deferred_shading->push_constants_ref ();
-        const auto& lighting = settings.lighting;
-
-        LiteMath::float4x4 inv_model;
-        if (this->current_model) {
-            inv_model = LiteMath::inverse4x4 (this->current_model->get_model_matrix ());
-        }
-
-        lighting_pc.camera_pos        = inv_model * LiteMath::to_float4 (model_state.camera.get_position (), 1.0f);
-        lighting_pc.light_pos         = inv_model * LiteMath::to_float4 (lighting.light_pos, 1.0f);
-        lighting_pc.light_color       = LiteMath::to_float4 (lighting.light_color, 1.0f);
-        lighting_pc.fog_color         = LiteMath::to_float4 (lighting.fog_color, 1.0f);
-
-        lighting_pc.ambient_strength  = lighting.ambient_strength;
-        lighting_pc.specular_strength = lighting.specular_strength;
-        lighting_pc.shininess         = lighting.shininess;
-        lighting_pc.depth_threshold   = lighting.depth_threshold;
-
-        lighting_pc.fog_start         = lighting.fog_start;
-        lighting_pc.fog_end           = lighting.fog_end;
-
-        lighting_pc.enable_hz_write   = !!this->hz_buffer_ds && !this->frustum_draw_buffer;
-    }
-
-    if (!settings.frustum_view && this->frustum_ds) {
-        FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds->get_frustum_geometry_memory_ptr (this->frame_index));
-        
-        LiteMath::float4x4 inv_model;
-        if (this->current_model) {
-            inv_model = LiteMath::inverse4x4 (this->current_model->get_model_matrix ());
-        }
-
-        this->update_frustum_buffer (model_state.camera, inv_model);
-        *ptr = this->frustum;
-
-        if (this->sdf_octree_ds) {
-            this->sdf_octree_ds->update_subtree_root_buffer (this->frustum, this->frame_index);
-        } else if (this->sdf_scomtree_ds) {
-            this->sdf_scomtree_ds->update_subtree_root_buffer ("tmp", this->frustum);
-        }
-    }
+    // assert (frame_index < this->render_target->get_max_frames_in_flight () && "frame_index must be less than max_frames_in_flight");
+    //
+    // this->frame_index = frame_index;
+    //
+    // if (!this->current_model) {
+    //     return;
+    // }
+    //
+    // auto& model_state = current_model->get_state ();
+    // model_state.camera.update (delta_time);
+    //
+    // if (settings.animate_rotation) {
+    //     model_state.rotation.y += 45.0f * delta_time;
+    //     if (model_state.rotation.y > 360.0f) model_state.rotation.y -= 360.0f;
+    // }
+    //
+    // if (!settings.frustum_view && this->frustum_draw_buffer) {
+    //     this->clear_color = this->clear_color * 2.f;
+    //     model_state.camera = this->frustum_draw_buffer->get_camera ();
+    //     this->frustum_draw_buffer.reset ();
+    //     LOG_INFO ("[{}] Frustum view mode: OFF.", RENDERER_NAME);
+    // } else if (settings.frustum_view && !this->frustum_draw_buffer) {
+    //     this->clear_color = this->clear_color * 0.5f;
+    //     this->frozen_camera_pos = LiteMath::to_float4 (model_state.camera.get_position (), 1.0f);
+    //     this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
+    //         , this->context->get_physical_device ()
+    //         , this->context->get_copy_helper ()
+    //         , model_state.camera);
+    //     LOG_INFO ("[{}] Frustum view mode: ON.", RENDERER_NAME);
+    // }
+    //
+    // this->stats.active_leafs_count = (this->active_leafs_ds) ? this->active_leafs_ds->fetch_active_leaf_counter (this->frame_index) : 0;
+    // if (this->sdf_octree_ds) {
+    //     this->stats.active_roots_count = this->sdf_octree_ds->get_subtree_count ();
+    // } else if (this->sdf_scomtree_ds) {
+    // this->stats.active_roots_count = this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count;
+    // } else {
+    //     this->stats.active_roots_count = 0;
+    // }
+    //
+    // this->stats.lod = 0;
+    // this->stats.distance = 0;
+    //
+    // if (this->hz_buffer_ds) {
+    //     this->push_constants.prev_mvp = this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp;
+    // }
+    //
+    // this->push_constants.view_proj = model_state.camera.get_view_projection_matrix ();
+    // if (settings.frustum_view && this->frustum_draw_buffer) {
+    //     this->push_constants.camera_pos = this->frozen_camera_pos;
+    // } else {
+    //     this->push_constants.camera_pos = LiteMath::to_float4 (model_state.camera.get_position (), 1.0f);
+    // }
+    //
+    // // common
+    // this->push_constants.far_plane = model_state.camera.get_far_plane ();
+    // this->push_constants.near_plane = model_state.camera.get_near_plane ();
+    // this->push_constants.max_lod = static_cast <uint> (model_state.max_lod);
+    // this->push_constants.min_lod = static_cast <uint> (model_state.min_lod);
+    // this->push_constants.subtree_root_level = static_cast <uint> (model_state.cpu_traversed);
+    // this->push_constants.occlusion_culling_level = static_cast <uint> (model_state.occlusion_culling_level);
+    // this->push_constants.frustum_culling_level = static_cast <uint> (model_state.frustum_culling_level);
+    // this->push_constants.color_leafs = settings.color_leafs;
+    // this->push_constants.lod_mode = static_cast <uint> (model_state.lod_mode);
+    // this->push_constants.fixed_lod = static_cast <uint> (model_state.fixed_lod);
+    // this->push_constants.lod_threshold_pixels = model_state.lod_threshold_pixels;
+    // this->push_constants.lod_aggressivity = model_state.lod_aggressivity;
+    // this->push_constants.fov_y = model_state.camera.get_fov_y () * (3.14159265359f / 180.0f);
+    // auto extent = this->render_target->get_extent ();
+    // this->push_constants.screen_width = extent.width;
+    // this->push_constants.screen_height = extent.height;
+    // this->push_constants.max_voxel_size = 2.0f / std::pow (2.0f, model_state.cpu_traversed);
+    // this->clear_color = settings.lighting.clear_color;
+    //
+    // // model
+    // this->push_constants.root_center = model_state.octree_root_center;
+    // this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, model_state.octree_depth);
+    //
+    // if (this->deferred_shading) {
+    //     auto& lighting_pc = this->deferred_shading->push_constants_ref ();
+    //     const auto& lighting = settings.lighting;
+    //
+    //     LiteMath::float4x4 inv_model;
+    //     if (this->current_model) {
+    //         inv_model = LiteMath::inverse4x4 (this->current_model->get_model_matrix ());
+    //     }
+    //
+    //     lighting_pc.camera_pos        = inv_model * LiteMath::to_float4 (model_state.camera.get_position (), 1.0f);
+    //     lighting_pc.light_pos         = inv_model * LiteMath::to_float4 (lighting.light_pos, 1.0f);
+    //     lighting_pc.light_color       = LiteMath::to_float4 (lighting.light_color, 1.0f);
+    //     lighting_pc.fog_color         = LiteMath::to_float4 (lighting.fog_color, 1.0f);
+    //
+    //     lighting_pc.ambient_strength  = lighting.ambient_strength;
+    //     lighting_pc.specular_strength = lighting.specular_strength;
+    //     lighting_pc.shininess         = lighting.shininess;
+    //     lighting_pc.depth_threshold   = lighting.depth_threshold;
+    //
+    //     lighting_pc.fog_start         = lighting.fog_start;
+    //     lighting_pc.fog_end           = lighting.fog_end;
+    //
+    //     lighting_pc.enable_hz_write   = !!this->hz_buffer_ds && !this->frustum_draw_buffer;
+    // }
+    //
+    // if (!settings.frustum_view && this->frustum_ds) {
+    //     FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds->get_frustum_geometry_memory_ptr (this->frame_index));
+    //
+    //     LiteMath::float4x4 inv_model;
+    //     if (this->current_model) {
+    //         inv_model = LiteMath::inverse4x4 (this->current_model->get_model_matrix ());
+    //     }
+    //
+    //     this->update_frustum_buffer (model_state.camera, inv_model);
+    //     *ptr = this->frustum;
+    //
+    //     if (this->sdf_octree_ds) {
+    //         this->sdf_octree_ds->update_subtree_root_buffer (this->frustum, this->frame_index);
+    //     } else if (this->sdf_scomtree_ds) {
+    //         this->sdf_scomtree_ds->update_subtree_root_buffer ("tmp", this->frustum);
+    //     }
+    // }
 }
 
 namespace {
@@ -1387,12 +1372,11 @@ void Renderer::traverse_octree (VkCommandBuffer cmd_buff) {
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->traverse_octree_pipeline);
 
-    std::array <VkDescriptorSet, 5> ds {};
+    std::array <VkDescriptorSet, 4> ds {};
     ds [0] = this->sdf_octree_ds->get_descriptor_set (this->frame_index);
     ds [1] = this->active_leafs_ds->get_descriptor_set (this->frame_index);
     ds [2] = this->frustum_ds->get_descriptor_set (this->frame_index);
     ds [3] = this->hz_buffer_ds->frame_resources_ref (this->frame_index).descriptor_set;
-    ds [4] = this->lod_ds->get_descriptor_set (this->frame_index);
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->traverse_octree_pipeline_layout,
         0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
@@ -1407,16 +1391,14 @@ void Renderer::traverse_scomtree (VkCommandBuffer cmd_buff, uint32_t subtree_roo
     assert (this->active_leafs_ds && "active_leafs_ds must be valid");
     assert (this->frustum_ds && "frustum_ds must be valid");
     assert (this->hz_buffer_ds && "hz_buffer_ds must be valid");
-    assert (this->lod_ds && "lod_ds must be valid");
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->traverse_scomtree_pipeline);
 
-    std::vector <VkDescriptorSet> ds (5);
+    std::vector <VkDescriptorSet> ds (4);
     ds [0] = scomtree_ds;
     ds [1] = this->active_leafs_ds->get_descriptor_set (this->frame_index);
     ds [2] = this->frustum_ds->get_descriptor_set (this->frame_index);
     ds [3] = this->hz_buffer_ds->frame_resources_ref (this->frame_index).descriptor_set;
-    ds [4] = this->lod_ds->get_descriptor_set (this->frame_index);
 
     vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->traverse_scomtree_pipeline_layout
         , 0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
@@ -1534,18 +1516,16 @@ void Renderer::marching_cubes_scomtree (VkCommandBuffer cmd_buff, VkDescriptorSe
     assert (this->marching_cubes_lookup_table_ds && "required for 'marching_cubes_scomtree'");
     assert (this->active_leafs_ds && "required for 'marching_cubes_scomtree'");
     assert (this->draw_indexed_indirect_command_ds && "required for 'marching_cubes_scomtree'");
-    assert (this->lod_ds && "required for 'marching_cubes_scomtree'");
     assert (this->marching_cubes_scomtree_pipeline != VK_NULL_HANDLE);
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_COMPUTE, this->marching_cubes_scomtree_pipeline);
 
-    std::array <VkDescriptorSet, 6> ds = {
+    std::array <VkDescriptorSet, 5> ds = {
         scomtree_ds,
         this->mesh_ds->get_descriptor_set (this->frame_index),
         this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index),
         this->active_leafs_ds->get_descriptor_set (this->frame_index),
-        this->draw_indexed_indirect_command_ds->get_descriptor_set (this->frame_index),
-        this->lod_ds->get_descriptor_set (this->frame_index)
+        this->draw_indexed_indirect_command_ds->get_descriptor_set (this->frame_index)
     };
 
     assert (this->marching_cubes_scomtree_pipeline_layout != VK_NULL_HANDLE);
@@ -1796,386 +1776,381 @@ void Renderer::calculate_lighting (VkCommandBuffer cmd_buff) {
 }
 
 void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
-    assert (this->sdf_octree_ds && "required for 'raster_octree_via_mesh_shading'");
-    assert (this->marching_cubes_lookup_table_ds && "required for 'raster_octree_via_mesh_shading'");
-    assert (this->active_leafs_ds && "required for 'raster_octree_via_mesh_shading'");
-    assert (this->lod_ds && "required for 'raster_octree_via_mesh_shading'");
-    assert (this->indirect_dispatch_ds && "required for 'raster_octree_via_mesh_shading'");
-    assert (this->forward_shading && "required for 'raster_octree_via_mesh_shading'"); // TODO: add deferred_shading variant
-    assert (this->mesh_shading_octree_pipeline != VK_NULL_HANDLE && "required for 'raster_octree_via_mesh_shading'");
-    assert (this->mesh_shading_octree_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_octree_via_mesh_shading'");
-
-    auto original_push_constants = this->push_constants;
-
-    if (this->current_model) {
-        using namespace LiteMath;
-        float4x4 model = this->current_model->get_model_matrix();
-        float4x4 inv_model = LiteMath::inverse4x4(model);
-
-        this->push_constants.view_proj = original_push_constants.view_proj * model;
-
-        float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
-        this->push_constants.camera_pos = local_cam_pos;
-    }
-
-    this->copy_subtrees (cmd_buff, this->sdf_octree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
-        , this->sdf_octree_ds->get_subtree_root_staging_buffer (this->frame_index)
-        , this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index));
-    this->reset_active_leafs_counter (cmd_buff);
-
-    this->traverse_octree (cmd_buff);
-
-    this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_MESH_WORKGROUP});
-
-    if (this->mesh_shading_octree_pipeline == VK_NULL_HANDLE) {
-        if (this->context->get_use_mesh_shading ()) {
-            throw std::logic_error ("Mesh shader pipeline is NULL_HANDLE despite mesh shading being supported.");
-        }
-        this->push_constants = original_push_constants;
-        return;
-    }
-
-    const auto extent = this->render_target->get_extent ();
-    const uint32_t image_index = this->render_target->get_current_image_index ();
-
-    std::array <VkClearValue, 2> clear_values {};
-    clear_values [0].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.0f}};
-    clear_values [1].depthStencil = {1.0f, 0};
-
-    VkRenderPassBeginInfo render_pass_info {};
-    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = this->forward_shading->get_render_pass ();
-    render_pass_info.framebuffer = this->forward_shading->get_framebuffer (image_index);
-    render_pass_info.renderArea.offset = {0, 0};
-    render_pass_info.renderArea.extent = extent;
-    render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
-    render_pass_info.pClearValues = clear_values.data ();
-
-    vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-
-    this->set_default_viewport_and_scissor (cmd_buff);
-
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_octree_pipeline);
-
-    std::array <VkDescriptorSet, 4> ds = {
-        this->sdf_octree_ds->get_descriptor_set (this->frame_index)
-        , this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index)
-        , this->active_leafs_ds->get_descriptor_set (this->frame_index)
-        , this->lod_ds->get_descriptor_set (this->frame_index)
-    };
-
-    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_octree_pipeline_layout
-        , 0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
-
-    vkCmdPushConstants (cmd_buff, this->mesh_shading_octree_pipeline_layout, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
-
-    assert (sizeof (IndirectDispatch) == sizeof (VkDrawMeshTasksIndirectCommandEXT));
-    vkCmdDrawMeshTasksIndirectEXT (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0, 1, sizeof (VkDrawMeshTasksIndirectCommandEXT));
-
-    vkCmdEndRenderPass (cmd_buff);
-
-    if (!this->frustum_draw_buffer) {
-        this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
-    }
+    // assert (this->sdf_octree_ds && "required for 'raster_octree_via_mesh_shading'");
+    // assert (this->marching_cubes_lookup_table_ds && "required for 'raster_octree_via_mesh_shading'");
+    // assert (this->active_leafs_ds && "required for 'raster_octree_via_mesh_shading'");
+    // assert (this->indirect_dispatch_ds && "required for 'raster_octree_via_mesh_shading'");
+    // assert (this->forward_shading && "required for 'raster_octree_via_mesh_shading'"); // TODO: add deferred_shading variant
+    // assert (this->mesh_shading_octree_pipeline != VK_NULL_HANDLE && "required for 'raster_octree_via_mesh_shading'");
+    // assert (this->mesh_shading_octree_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_octree_via_mesh_shading'");
+    //
+    // auto original_push_constants = this->push_constants;
+    //
+    // if (this->current_model) {
+    //     using namespace LiteMath;
+    //     float4x4 model = this->current_model->get_model_matrix();
+    //     float4x4 inv_model = LiteMath::inverse4x4(model);
+    //
+    //     this->push_constants.view_proj = original_push_constants.view_proj * model;
+    //
+    //     float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
+    //     this->push_constants.camera_pos = local_cam_pos;
+    // }
+    //
+    // this->copy_subtrees (cmd_buff, this->sdf_octree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
+    //     , this->sdf_octree_ds->get_subtree_root_staging_buffer (this->frame_index)
+    //     , this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index));
+    // this->reset_active_leafs_counter (cmd_buff);
+    //
+    // this->traverse_octree (cmd_buff);
+    //
+    // this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_MESH_WORKGROUP});
+    //
+    // if (this->mesh_shading_octree_pipeline == VK_NULL_HANDLE) {
+    //     if (this->context->get_use_mesh_shading ()) {
+    //         throw std::logic_error ("Mesh shader pipeline is NULL_HANDLE despite mesh shading being supported.");
+    //     }
+    //     this->push_constants = original_push_constants;
+    //     return;
+    // }
+    //
+    // const auto extent = this->render_target->get_extent ();
+    // const uint32_t image_index = this->render_target->get_current_image_index ();
+    //
+    // std::array <VkClearValue, 2> clear_values {};
+    // clear_values [0].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.0f}};
+    // clear_values [1].depthStencil = {1.0f, 0};
+    //
+    // VkRenderPassBeginInfo render_pass_info {};
+    // render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    // render_pass_info.renderPass = this->forward_shading->get_render_pass ();
+    // render_pass_info.framebuffer = this->forward_shading->get_framebuffer (image_index);
+    // render_pass_info.renderArea.offset = {0, 0};
+    // render_pass_info.renderArea.extent = extent;
+    // render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
+    // render_pass_info.pClearValues = clear_values.data ();
+    //
+    // vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    //
+    // this->set_default_viewport_and_scissor (cmd_buff);
+    //
+    // vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_octree_pipeline);
+    //
+    // std::array <VkDescriptorSet, 3> ds = {
+    //     this->sdf_octree_ds->get_descriptor_set (this->frame_index)
+    //     , this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index)
+    //     , this->active_leafs_ds->get_descriptor_set (this->frame_index)
+    // };
+    //
+    // vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_octree_pipeline_layout
+    //     , 0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
+    //
+    // vkCmdPushConstants (cmd_buff, this->mesh_shading_octree_pipeline_layout, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+    //
+    // assert (sizeof (IndirectDispatch) == sizeof (VkDrawMeshTasksIndirectCommandEXT));
+    // vkCmdDrawMeshTasksIndirectEXT (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0, 1, sizeof (VkDrawMeshTasksIndirectCommandEXT));
+    //
+    // vkCmdEndRenderPass (cmd_buff);
+    //
+    // if (!this->frustum_draw_buffer) {
+    //     this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
+    // }
 }
 
 void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
-    assert (this->sdf_scomtree_ds && "required for 'raster_scomtree_via_mesh_shading'");
-    assert (this->marching_cubes_lookup_table_ds && "required for 'raster_scomtree_via_mesh_shading'");
-    assert (this->active_leafs_ds && "required for 'raster_scomtree_via_mesh_shading'");
-    assert (this->lod_ds && "required for 'raster_scomtree_via_mesh_shading'");
-    assert (this->indirect_dispatch_ds && "required for 'raster_scomtree_via_mesh_shading'");
-    assert (this->forward_shading && "required for 'raster_scomtree_via_mesh_shading'"); // TODO: add deferred_shading variant
-    assert (this->mesh_shading_scomtree_pipeline != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading'"); // TODO: add deferred_shading variant
-    assert (this->mesh_shading_scomtree_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading'"); // TODO: add deferred_shading variant
-
-    auto original_push_constants = this->push_constants;
-
-    if (this->current_model) {
-        using namespace LiteMath;
-        float4x4 model = this->current_model->get_model_matrix();
-        float4x4 inv_model = LiteMath::inverse4x4(model);
-
-        this->push_constants.view_proj = original_push_constants.view_proj * model;
-
-        float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
-        this->push_constants.camera_pos = local_cam_pos;
-    }
-
-    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count * sizeof (SComTreeStackElement)
-        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_roots_staging_buffer
-        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_root_buffer);
-    this->reset_active_leafs_counter (cmd_buff);
-
-    this->traverse_scomtree (cmd_buff
-        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count)
-        , this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
-
-    this->prepare_indirect (cmd_buff, uint32_t {1}); // NOTE: brick == meshlet
-
-    const auto extent = this->render_target->get_extent ();
-    const uint32_t image_index = this->render_target->get_current_image_index ();
-
-    std::array <VkClearValue, 2> clear_values {};
-    clear_values [0].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.0f}};
-    clear_values [1].depthStencil = {1.0f, 0};
-
-    VkRenderPassBeginInfo render_pass_info {};
-    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = this->forward_shading->get_render_pass ();
-    render_pass_info.framebuffer = this->forward_shading->get_framebuffer (image_index);
-    render_pass_info.renderArea.offset = {0, 0};
-    render_pass_info.renderArea.extent = extent;
-    render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
-    render_pass_info.pClearValues = clear_values.data ();
-
-    vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-
-    this->set_default_viewport_and_scissor (cmd_buff);
-
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_scomtree_pipeline);
-
-    std::array <VkDescriptorSet, 4> ds = {
-        this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set
-        , this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index)
-        , this->active_leafs_ds->get_descriptor_set (this->frame_index)
-        , this->lod_ds->get_descriptor_set (this->frame_index)
-    };
-
-    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_scomtree_pipeline_layout
-        , 0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
-
-    vkCmdPushConstants (cmd_buff, this->mesh_shading_scomtree_pipeline_layout, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
-
-    assert (sizeof (IndirectDispatch) == sizeof (VkDrawMeshTasksIndirectCommandEXT));
-    vkCmdDrawMeshTasksIndirectEXT (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0, 1, sizeof (VkDrawMeshTasksIndirectCommandEXT));
-
-    vkCmdEndRenderPass (cmd_buff);
-
-    if (!this->frustum_draw_buffer) {
-        this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
-    }
-
-    this->push_constants = original_push_constants;
+    // assert (this->sdf_scomtree_ds && "required for 'raster_scomtree_via_mesh_shading'");
+    // assert (this->marching_cubes_lookup_table_ds && "required for 'raster_scomtree_via_mesh_shading'");
+    // assert (this->active_leafs_ds && "required for 'raster_scomtree_via_mesh_shading'");
+    // assert (this->indirect_dispatch_ds && "required for 'raster_scomtree_via_mesh_shading'");
+    // assert (this->forward_shading && "required for 'raster_scomtree_via_mesh_shading'"); // TODO: add deferred_shading variant
+    // assert (this->mesh_shading_scomtree_pipeline != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading'"); // TODO: add deferred_shading variant
+    // assert (this->mesh_shading_scomtree_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading'"); // TODO: add deferred_shading variant
+    //
+    // auto original_push_constants = this->push_constants;
+    //
+    // if (this->current_model) {
+    //     using namespace LiteMath;
+    //     float4x4 model = this->current_model->get_model_matrix();
+    //     float4x4 inv_model = LiteMath::inverse4x4(model);
+    //
+    //     this->push_constants.view_proj = original_push_constants.view_proj * model;
+    //
+    //     float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
+    //     this->push_constants.camera_pos = local_cam_pos;
+    // }
+    //
+    // this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count * sizeof (SComTreeStackElement)
+    //     , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_roots_staging_buffer
+    //     , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_root_buffer);
+    // this->reset_active_leafs_counter (cmd_buff);
+    //
+    // this->traverse_scomtree (cmd_buff
+    //     , static_cast <uint32_t> (this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count)
+    //     , this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
+    //
+    // this->prepare_indirect (cmd_buff, uint32_t {1}); // NOTE: brick == meshlet
+    //
+    // const auto extent = this->render_target->get_extent ();
+    // const uint32_t image_index = this->render_target->get_current_image_index ();
+    //
+    // std::array <VkClearValue, 2> clear_values {};
+    // clear_values [0].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.0f}};
+    // clear_values [1].depthStencil = {1.0f, 0};
+    //
+    // VkRenderPassBeginInfo render_pass_info {};
+    // render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    // render_pass_info.renderPass = this->forward_shading->get_render_pass ();
+    // render_pass_info.framebuffer = this->forward_shading->get_framebuffer (image_index);
+    // render_pass_info.renderArea.offset = {0, 0};
+    // render_pass_info.renderArea.extent = extent;
+    // render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
+    // render_pass_info.pClearValues = clear_values.data ();
+    //
+    // vkCmdBeginRenderPass (cmd_buff, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    //
+    // this->set_default_viewport_and_scissor (cmd_buff);
+    //
+    // vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_scomtree_pipeline);
+    //
+    // std::array <VkDescriptorSet, 3> ds = {
+    //     this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set
+    //     , this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index)
+    //     , this->active_leafs_ds->get_descriptor_set (this->frame_index)
+    // };
+    //
+    // vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_shading_scomtree_pipeline_layout
+    //     , 0, static_cast <uint32_t> (ds.size ()), ds.data (), 0, nullptr);
+    //
+    // vkCmdPushConstants (cmd_buff, this->mesh_shading_scomtree_pipeline_layout, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+    //
+    // assert (sizeof (IndirectDispatch) == sizeof (VkDrawMeshTasksIndirectCommandEXT));
+    // vkCmdDrawMeshTasksIndirectEXT (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0, 1, sizeof (VkDrawMeshTasksIndirectCommandEXT));
+    //
+    // vkCmdEndRenderPass (cmd_buff);
+    //
+    // if (!this->frustum_draw_buffer) {
+    //     this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
+    // }
+    //
+    // this->push_constants = original_push_constants;
 }
 
 void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_buff) {
-    assert (this->context && "required for 'raster_scomtree_via_mesh_shading_deferred'");
-    assert (this->deferred_shading && "required for 'raster_scomtree_via_mesh_shading_deferred'");
-    assert (this->draw_indexed_indirect_command_ds && "required for 'raster_scomtree_via_mesh_shading_deferred'");
-    assert (this->mesh_gbuffer_pipeline != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading_deferred'");
-    assert (this->mesh_gbuffer_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading_deferred'");
-    assert (this->graphics_lighting_pipeline != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading_deferred'");
-    assert (this->graphics_lighting_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading_deferred'");
-    assert (this->sdf_scomtree_ds && "required for 'raster_scomtree_via_mesh_shading_deferred'");
-
-    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count * sizeof (SComTreeStackElement)
-        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_roots_staging_buffer
-        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_root_buffer);
-    this->reset_active_leafs_counter (cmd_buff);
-    this->traverse_scomtree (cmd_buff
-        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count)
-        , this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
-    this->prepare_indirect (cmd_buff, uint32_t {1}); // NOTE: brick == meshlet
-
-        if (!this->frustum_draw_buffer) {
-            this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
-        }
-
-    this->hz_buffer_barrier (cmd_buff
-        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
-        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
-        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
-        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
-
-    const auto extent = this->render_target->get_extent ();
-    const uint32_t fif_idx = this->frame_index;
-    const uint32_t swap_idx = this->render_target->get_current_image_index ();
-
-    std::array <VkClearValue, 4> gbuffer_clears {};
-    gbuffer_clears [0].color = {{0.f, 0.f, 0.f, 0.f}}; // Position
-    gbuffer_clears [1].color = {{0.f, 0.f, 0.f, 0.f}}; // Normal
-    gbuffer_clears [2].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.f}}; // Albedo
-    gbuffer_clears [3].depthStencil = {1.0f, 0}; // Depth
-
-    VkRenderPassBeginInfo gbuffer_pass_info {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = this->deferred_shading->get_gbuffer_pass (),
-        .framebuffer = this->deferred_shading->get_gbuffer_fb (),
-        .renderArea = {{0, 0}, extent},
-        .clearValueCount = static_cast <uint32_t> (gbuffer_clears.size ()),
-        .pClearValues = gbuffer_clears.data ()
-    };
-
-    vkCmdBeginRenderPass (cmd_buff, &gbuffer_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-
-    this->set_default_viewport_and_scissor (cmd_buff);
-
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_gbuffer_pipeline);
-
-    std::array <VkDescriptorSet, 4> mesh_ds = {
-        this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set
-        , this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index)
-        , this->active_leafs_ds->get_descriptor_set (this->frame_index)
-        , this->lod_ds->get_descriptor_set (this->frame_index)
-    };
-
-    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_gbuffer_pipeline_layout
-        , 0, static_cast <uint32_t> (mesh_ds.size ()), mesh_ds.data (), 0, nullptr);
-
-    vkCmdPushConstants (cmd_buff, this->mesh_gbuffer_pipeline_layout, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
-
-    assert (sizeof (IndirectDispatch) == sizeof (VkDrawMeshTasksIndirectCommandEXT));
-    vkCmdDrawMeshTasksIndirectEXT (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0, 1, sizeof (VkDrawMeshTasksIndirectCommandEXT));
-
-    vkCmdEndRenderPass (cmd_buff);
-
-    VkClearValue swap_clear {};
-    swap_clear.color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.f}};
-
-    VkRenderPassBeginInfo lighting_pass_info {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = this->deferred_shading->get_lighting_pass (),
-        .framebuffer = this->deferred_shading->get_lighting_fb (swap_idx),
-        .renderArea = {{0, 0}, extent},
-        .clearValueCount = 1,
-        .pClearValues = &swap_clear
-    };
-
-    vkCmdBeginRenderPass (cmd_buff, &lighting_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-
-    this->set_default_viewport_and_scissor (cmd_buff);
-
-    vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_lighting_pipeline);
-
-    std::vector <VkDescriptorSet> gbuffer_ds {};
-    gbuffer_ds.push_back (this->deferred_shading->get_descriptor_set ());
-    gbuffer_ds.push_back (this->hz_buffer_ds->frame_resources_ref (fif_idx).base_level_descriptor_set);
-
-    vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS
-        , this->graphics_lighting_pipeline_layout, 0, gbuffer_ds.size (), gbuffer_ds.data (), 0, nullptr);
-
-    vkCmdPushConstants (cmd_buff, this->graphics_lighting_pipeline_layout
-        , VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (DeferredLightingPushConstants), &this->deferred_shading->push_constants_ref ());
-
-    vkCmdDraw (cmd_buff, 3, 1, 0, 0); // NOTE: Fullscreen Triangle
-
-    vkCmdEndRenderPass (cmd_buff);
-
-    this->hz_buffer_barrier (cmd_buff
-        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
-        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
-
-    if (!this->frustum_draw_buffer) {
-        this->compute_hz_buffer (cmd_buff);
-    }
-
-    this->hz_buffer_barrier (cmd_buff
-        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
-        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
-        , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
-        , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
+    // assert (this->context && "required for 'raster_scomtree_via_mesh_shading_deferred'");
+    // assert (this->deferred_shading && "required for 'raster_scomtree_via_mesh_shading_deferred'");
+    // assert (this->draw_indexed_indirect_command_ds && "required for 'raster_scomtree_via_mesh_shading_deferred'");
+    // assert (this->mesh_gbuffer_pipeline != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading_deferred'");
+    // assert (this->mesh_gbuffer_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading_deferred'");
+    // assert (this->graphics_lighting_pipeline != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading_deferred'");
+    // assert (this->graphics_lighting_pipeline_layout != VK_NULL_HANDLE && "required for 'raster_scomtree_via_mesh_shading_deferred'");
+    // assert (this->sdf_scomtree_ds && "required for 'raster_scomtree_via_mesh_shading_deferred'");
+    //
+    // this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count * sizeof (SComTreeStackElement)
+    //     , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_roots_staging_buffer
+    //     , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_root_buffer);
+    // this->reset_active_leafs_counter (cmd_buff);
+    // this->traverse_scomtree (cmd_buff
+    //     , static_cast <uint32_t> (this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count)
+    //     , this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
+    // this->prepare_indirect (cmd_buff, uint32_t {1}); // NOTE: brick == meshlet
+    //
+    //     if (!this->frustum_draw_buffer) {
+    //         this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
+    //     }
+    //
+    // this->hz_buffer_barrier (cmd_buff
+    //     , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+    //     , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+    //     , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+    //     , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
+    //
+    // const auto extent = this->render_target->get_extent ();
+    // const uint32_t fif_idx = this->frame_index;
+    // const uint32_t swap_idx = this->render_target->get_current_image_index ();
+    //
+    // std::array <VkClearValue, 4> gbuffer_clears {};
+    // gbuffer_clears [0].color = {{0.f, 0.f, 0.f, 0.f}}; // Position
+    // gbuffer_clears [1].color = {{0.f, 0.f, 0.f, 0.f}}; // Normal
+    // gbuffer_clears [2].color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.f}}; // Albedo
+    // gbuffer_clears [3].depthStencil = {1.0f, 0}; // Depth
+    //
+    // VkRenderPassBeginInfo gbuffer_pass_info {
+    //     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+    //     .renderPass = this->deferred_shading->get_gbuffer_pass (),
+    //     .framebuffer = this->deferred_shading->get_gbuffer_fb (),
+    //     .renderArea = {{0, 0}, extent},
+    //     .clearValueCount = static_cast <uint32_t> (gbuffer_clears.size ()),
+    //     .pClearValues = gbuffer_clears.data ()
+    // };
+    //
+    // vkCmdBeginRenderPass (cmd_buff, &gbuffer_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    //
+    // this->set_default_viewport_and_scissor (cmd_buff);
+    //
+    // vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_gbuffer_pipeline);
+    //
+    // std::array <VkDescriptorSet, 3> mesh_ds = {
+    //     this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set
+    //     , this->marching_cubes_lookup_table_ds->get_descriptor_set (this->frame_index)
+    //     , this->active_leafs_ds->get_descriptor_set (this->frame_index)
+    // };
+    //
+    // vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->mesh_gbuffer_pipeline_layout
+    //     , 0, static_cast <uint32_t> (mesh_ds.size ()), mesh_ds.data (), 0, nullptr);
+    //
+    // vkCmdPushConstants (cmd_buff, this->mesh_gbuffer_pipeline_layout, VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &this->push_constants);
+    //
+    // assert (sizeof (IndirectDispatch) == sizeof (VkDrawMeshTasksIndirectCommandEXT));
+    // vkCmdDrawMeshTasksIndirectEXT (cmd_buff, this->indirect_dispatch_ds->get_indirect_buffer (this->frame_index), 0, 1, sizeof (VkDrawMeshTasksIndirectCommandEXT));
+    //
+    // vkCmdEndRenderPass (cmd_buff);
+    //
+    // VkClearValue swap_clear {};
+    // swap_clear.color = {{this->clear_color.x, this->clear_color.y, this->clear_color.z, 1.f}};
+    //
+    // VkRenderPassBeginInfo lighting_pass_info {
+    //     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+    //     .renderPass = this->deferred_shading->get_lighting_pass (),
+    //     .framebuffer = this->deferred_shading->get_lighting_fb (swap_idx),
+    //     .renderArea = {{0, 0}, extent},
+    //     .clearValueCount = 1,
+    //     .pClearValues = &swap_clear
+    // };
+    //
+    // vkCmdBeginRenderPass (cmd_buff, &lighting_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    //
+    // this->set_default_viewport_and_scissor (cmd_buff);
+    //
+    // vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphics_lighting_pipeline);
+    //
+    // std::vector <VkDescriptorSet> gbuffer_ds {};
+    // gbuffer_ds.push_back (this->deferred_shading->get_descriptor_set ());
+    // gbuffer_ds.push_back (this->hz_buffer_ds->frame_resources_ref (fif_idx).base_level_descriptor_set);
+    //
+    // vkCmdBindDescriptorSets (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS
+    //     , this->graphics_lighting_pipeline_layout, 0, gbuffer_ds.size (), gbuffer_ds.data (), 0, nullptr);
+    //
+    // vkCmdPushConstants (cmd_buff, this->graphics_lighting_pipeline_layout
+    //     , VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (DeferredLightingPushConstants), &this->deferred_shading->push_constants_ref ());
+    //
+    // vkCmdDraw (cmd_buff, 3, 1, 0, 0); // NOTE: Fullscreen Triangle
+    //
+    // vkCmdEndRenderPass (cmd_buff);
+    //
+    // this->hz_buffer_barrier (cmd_buff
+    //     , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+    //     , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
+    //
+    // if (!this->frustum_draw_buffer) {
+    //     this->compute_hz_buffer (cmd_buff);
+    // }
+    //
+    // this->hz_buffer_barrier (cmd_buff
+    //     , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+    //     , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+    //     , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+    //     , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
 }
 
 void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
-    auto original_push_constants = this->push_constants;
-
-    if (this->current_model) {
-        using namespace LiteMath;
-        float4x4 model = this->current_model->get_model_matrix();
-        float4x4 inv_model = LiteMath::inverse4x4(model);
-
-        this->push_constants.view_proj = original_push_constants.view_proj * model;
-
-        float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
-        this->push_constants.camera_pos = local_cam_pos;
-    }
-
-    this->copy_subtrees (cmd_buff, this->sdf_octree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
-        , this->sdf_octree_ds->get_subtree_root_staging_buffer (this->frame_index)
-        , this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index));
-    this->reset_active_leafs_counter (cmd_buff);
-
-    this->traverse_octree (cmd_buff);
-
-    this->clear_geometry (cmd_buff);
-    this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_COMPUTE_WORKGROUP});
-    this->marching_cubes_octree (cmd_buff);
-    this->geometry_barrier (cmd_buff);
-    this->forward_rendering (cmd_buff);
-
-    if (!this->frustum_draw_buffer) {
-        this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
-    }
-
-    this->push_constants = original_push_constants;
+    // auto original_push_constants = this->push_constants;
+    //
+    // if (this->current_model) {
+    //     using namespace LiteMath;
+    //     float4x4 model = this->current_model->get_model_matrix();
+    //     float4x4 inv_model = LiteMath::inverse4x4(model);
+    //
+    //     this->push_constants.view_proj = original_push_constants.view_proj * model;
+    //
+    //     float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
+    //     this->push_constants.camera_pos = local_cam_pos;
+    // }
+    //
+    // this->copy_subtrees (cmd_buff, this->sdf_octree_ds->get_subtree_count () * sizeof (SComTreeStackElement)
+    //     , this->sdf_octree_ds->get_subtree_root_staging_buffer (this->frame_index)
+    //     , this->sdf_octree_ds->get_subtree_root_buffer (this->frame_index));
+    // this->reset_active_leafs_counter (cmd_buff);
+    //
+    // this->traverse_octree (cmd_buff);
+    //
+    // this->clear_geometry (cmd_buff);
+    // this->prepare_indirect (cmd_buff, uint32_t {VOXELS_PER_COMPUTE_WORKGROUP});
+    // this->marching_cubes_octree (cmd_buff);
+    // this->geometry_barrier (cmd_buff);
+    // this->forward_rendering (cmd_buff);
+    //
+    // if (!this->frustum_draw_buffer) {
+    //     this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
+    // }
+    //
+    // this->push_constants = original_push_constants;
 }
 
 void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
-    /* update push constants */
-    if (this->current_model) {
-        LiteMath::float4x4 model = this->current_model->get_model_matrix ();
-        this->push_constants.view_proj = this->current_model->get_state ().camera.get_view_projection_matrix () * model;
-        
-        LiteMath::float4x4 inv_model = LiteMath::inverse4x4 (model);
-        LiteMath::float4 camera_pos;
-        if (this->frustum_draw_buffer) {
-            camera_pos = this->frozen_camera_pos;
-        } else {
-            camera_pos = LiteMath::to_float4 (this->current_model->get_state ().camera.get_position (), 1.0f);
-        }
-        this->push_constants.camera_pos = inv_model * camera_pos;
-    }
-
-    /* draw */
-    this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count * sizeof (SComTreeStackElement)
-        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_roots_staging_buffer
-        , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_root_buffer);
-    this->reset_active_leafs_counter (cmd_buff);
-    this->traverse_scomtree (cmd_buff
-        , static_cast <uint32_t> (this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count)
-        , this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
-    this->clear_geometry (cmd_buff);
-    this->prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
-    this->marching_cubes_scomtree (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
-    this->geometry_barrier (cmd_buff);
-
-    if (this->deferred_shading) {
-        this->prepare_deferred (cmd_buff);
-        this->deferred_rendering (cmd_buff);
-    } else {
-        this->forward_rendering (cmd_buff);
-    }
-
-    /* end */
-    if (this->deferred_shading) {
-        this->hz_buffer_barrier (cmd_buff
-            , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
-            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
-            , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
-            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
-        this->calculate_lighting (cmd_buff);
-
-        this->hz_buffer_barrier (cmd_buff
-            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
-            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
-
-        if (!this->frustum_draw_buffer) {
-            this->compute_hz_buffer (cmd_buff);
-        }
-
-        this->hz_buffer_barrier (cmd_buff
-            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
-            , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
-            , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
-            , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
-
-        if (!this->frustum_draw_buffer) {
-            this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
-        }
-    } else {
-        this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
-    }
+    // /* update push constants */
+    // if (this->current_model) {
+    //     LiteMath::float4x4 model = this->current_model->get_model_matrix ();
+    //     this->push_constants.view_proj = this->current_model->get_state ().camera.get_view_projection_matrix () * model;
+    //
+    //     LiteMath::float4x4 inv_model = LiteMath::inverse4x4 (model);
+    //     LiteMath::float4 camera_pos;
+    //     if (this->frustum_draw_buffer) {
+    //         camera_pos = this->frozen_camera_pos;
+    //     } else {
+    //         camera_pos = LiteMath::to_float4 (this->current_model->get_state ().camera.get_position (), 1.0f);
+    //     }
+    //     this->push_constants.camera_pos = inv_model * camera_pos;
+    // }
+    //
+    // /* draw */
+    // this->copy_subtrees (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count * sizeof (SComTreeStackElement)
+    //     , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_roots_staging_buffer
+    //     , this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_root_buffer);
+    // this->reset_active_leafs_counter (cmd_buff);
+    // this->traverse_scomtree (cmd_buff
+    //     , static_cast <uint32_t> (this->sdf_scomtree_ds->get_scene ("tmp").resources.subtree_count)
+    //     , this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
+    // this->clear_geometry (cmd_buff);
+    // this->prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
+    // this->marching_cubes_scomtree (cmd_buff, this->sdf_scomtree_ds->get_scene ("tmp").resources.descriptor_set);
+    // this->geometry_barrier (cmd_buff);
+    //
+    // if (this->deferred_shading) {
+    //     this->prepare_deferred (cmd_buff);
+    //     this->deferred_rendering (cmd_buff);
+    // } else {
+    //     this->forward_rendering (cmd_buff);
+    // }
+    //
+    // /* end */
+    // if (this->deferred_shading) {
+    //     this->hz_buffer_barrier (cmd_buff
+    //         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+    //         , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+    //         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+    //         , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
+    //     this->calculate_lighting (cmd_buff);
+    //
+    //     this->hz_buffer_barrier (cmd_buff
+    //         , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+    //         , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT});
+    //
+    //     if (!this->frustum_draw_buffer) {
+    //         this->compute_hz_buffer (cmd_buff);
+    //     }
+    //
+    //     this->hz_buffer_barrier (cmd_buff
+    //         , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+    //         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
+    //         , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
+    //         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
+    //
+    //     if (!this->frustum_draw_buffer) {
+    //         this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
+    //     }
+    // } else {
+    //     this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
+    // }
 }
 
 const std::unique_ptr <Renderer::RenderMethod>& Renderer::get_render_method (DrawMethod draw_method) {
@@ -2351,7 +2326,6 @@ void Renderer::release_render_resources () {
     this->draw_indexed_indirect_command_ds.reset ();
     this->hz_buffer_ds.reset ();
     this->indirect_dispatch_ds.reset ();
-    this->lod_ds.reset ();
     this->marching_cubes_lookup_table_ds.reset ();
     this->mesh_ds.reset ();
     this->sdf_octree_ds.reset ();
@@ -2364,214 +2338,205 @@ void Renderer::release_render_resources () {
 }
 
 void Renderer::ensure_resources (DrawMethod method) {
-    if (!this->forward_shading) {
-        this->forward_shading = std::make_unique <ForwardShading> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->render_target
-            , this->depth_buffer);
-    }
-
-    if (!this->deferred_shading && (method == DrawMethod::ExplicitDeferred || method == DrawMethod::SComTreeComputeDeferred || method == DrawMethod::SComTreeMeshDeferred)) {
-        this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_transfer_command_pool_reset ()
-            , this->context->get_transfer_queue ()
-            , DeferredShadingConfig {
-                .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
-                .filter = VK_FILTER_LINEAR
-            }
-            , this->render_target
-            , this->depth_buffer);
-    }
-
-    if (!this->mesh_ds && (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
-        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
-        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh)) {
-        this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_copy_helper ()
-            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-            , this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS
-            , this->push_constants.active_leafs_max_count * MAX_LEAF_PRIMS * 3
-            , this->render_target->get_max_frames_in_flight ());
-    }
-
-    if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
-        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
-        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
-        if (!this->marching_cubes_lookup_table_ds) {
-            this->marching_cubes_lookup_table_ds = std::make_unique <MarchingCubesLookupTableDescriptorSetInfo> (this->context->get_device ()
-                , this->context->get_physical_device ()
-                , this->context->get_copy_helper ()
-                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
-        }
-
-        if (!this->hz_buffer_ds) {
-            this->hz_buffer_ds = std::make_unique <HZBufferDescriptorSetInfo> (this->context->get_device ()
-                , this->context->get_physical_device ()
-                , this->context->get_transfer_command_pool_reset ()
-                , this->context->get_transfer_queue ()
-                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-                , this->render_target->get_extent ()
-                , this->render_target->get_max_frames_in_flight ());
-        }
-
-        if (!this->indirect_dispatch_ds) {
-            this->indirect_dispatch_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
-                , this->context->get_physical_device ()
-                , VK_SHADER_STAGE_COMPUTE_BIT
-                , sizeof (IndirectDispatch)
-                , 2);
-        }
-
-        if (!this->lod_ds) {
-            this->lod_ds = std::make_unique <LODDescriptorSetInfo> (this->context->get_device ()
-                , this->context->get_copy_helper ()
-                , this->context->get_physical_device ()
-                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-                , 1 // TODO: edit to match max models count in scene
-                , this->render_target->get_max_frames_in_flight ());
-        }
-
-        if (!this->active_leafs_ds) {
-            VkDeviceSize active_leaf_size = (method == DrawMethod::OctreeCompute) ? sizeof (NodeContext) : sizeof (SComTreeBrickPayload);
-
-            this->active_leafs_ds = std::make_unique <ActiveLeafsDescriptorSetInfo> (this->context->get_device ()
-                , this->context->get_physical_device ()
-                , this->context->get_copy_helper ()
-                , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-                , this->push_constants.active_leafs_max_count * active_leaf_size
-                , this->render_target->get_max_frames_in_flight ());
-        }
-    }
-
-    if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
-        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
-        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
-        if (!this->draw_indexed_indirect_command_ds) {
-            this->draw_indexed_indirect_command_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
-                , this->context->get_physical_device ()
-                , VK_SHADER_STAGE_COMPUTE_BIT
-                , sizeof (VkDrawIndexedIndirectCommand)
-                , this->render_target->get_max_frames_in_flight ());
-        }
-    }
+    // if (!this->forward_shading) {
+    //     this->forward_shading = std::make_unique <ForwardShading> (this->context->get_device ()
+    //         , this->context->get_physical_device ()
+    //         , this->render_target
+    //         , this->depth_buffer);
+    // }
+    //
+    // if (!this->deferred_shading && (method == DrawMethod::ExplicitDeferred || method == DrawMethod::SComTreeComputeDeferred || method == DrawMethod::SComTreeMeshDeferred)) {
+    //     this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
+    //         , this->context->get_physical_device ()
+    //         , this->context->get_transfer_command_pool_reset ()
+    //         , this->context->get_transfer_queue ()
+    //         , DeferredShadingConfig {
+    //             .gbuffer_formats = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM },
+    //             .filter = VK_FILTER_LINEAR
+    //         }
+    //         , this->render_target
+    //         , this->depth_buffer);
+    // }
+    //
+    // if (!this->mesh_ds && (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
+    //     || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
+    //     || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh)) {
+    //     this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
+    //         , this->context->get_physical_device ()
+    //         , this->context->get_copy_helper ()
+    //         , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+    //         , this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS
+    //         , this->push_constants.active_leafs_max_count * MAX_LEAF_PRIMS * 3
+    //         , this->render_target->get_max_frames_in_flight ());
+    // }
+    //
+    // if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
+    //     || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
+    //     || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
+    //     if (!this->marching_cubes_lookup_table_ds) {
+    //         this->marching_cubes_lookup_table_ds = std::make_unique <MarchingCubesLookupTableDescriptorSetInfo> (this->context->get_device ()
+    //             , this->context->get_physical_device ()
+    //             , this->context->get_copy_helper ()
+    //             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT);
+    //     }
+    //
+    //     if (!this->hz_buffer_ds) {
+    //         this->hz_buffer_ds = std::make_unique <HZBufferDescriptorSetInfo> (this->context->get_device ()
+    //             , this->context->get_physical_device ()
+    //             , this->context->get_transfer_command_pool_reset ()
+    //             , this->context->get_transfer_queue ()
+    //             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+    //             , this->render_target->get_extent ()
+    //             , this->render_target->get_max_frames_in_flight ());
+    //     }
+    //
+    //     if (!this->indirect_dispatch_ds) {
+    //         this->indirect_dispatch_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
+    //             , this->context->get_physical_device ()
+    //             , VK_SHADER_STAGE_COMPUTE_BIT
+    //             , sizeof (IndirectDispatch)
+    //             , 2);
+    //     }
+    //
+    //     if (!this->active_leafs_ds) {
+    //         VkDeviceSize active_leaf_size = (method == DrawMethod::OctreeCompute) ? sizeof (NodeContext) : sizeof (SComTreeBrickPayload);
+    //
+    //         this->active_leafs_ds = std::make_unique <ActiveLeafsDescriptorSetInfo> (this->context->get_device ()
+    //             , this->context->get_physical_device ()
+    //             , this->context->get_copy_helper ()
+    //             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+    //             , this->push_constants.active_leafs_max_count * active_leaf_size
+    //             , this->render_target->get_max_frames_in_flight ());
+    //     }
+    // }
+    //
+    // if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
+    //     || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
+    //     || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
+    //     if (!this->draw_indexed_indirect_command_ds) {
+    //         this->draw_indexed_indirect_command_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
+    //             , this->context->get_physical_device ()
+    //             , VK_SHADER_STAGE_COMPUTE_BIT
+    //             , sizeof (VkDrawIndexedIndirectCommand)
+    //             , this->render_target->get_max_frames_in_flight ());
+    //     }
+    // }
 }
 
 void Renderer::apply_model_config (std::shared_ptr <Model> model) {
-    vkDeviceWaitIdle (this->context->get_device());
-
-    if (model) {
-        model->invalidate_cache ();
-    }
-    this->release_render_resources ();
-    this->current_model = model;
-
-    if (!this->current_model) {
-        LOG_WARN ("[{}] 'apply_model_config' called with a null scene. Resources cleared.", RENDERER_NAME);
-        return;
-    }
-
-    const auto method = model->get_state ().draw_method;
-    this->ensure_resources (method);
-
-    if (auto octree_model = std::dynamic_pointer_cast <SdfOctreeModel> (model)) {
-        this->sdf_octree_ds = std::make_unique <SdfOctreeDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_copy_helper ()
-            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-            , octree_model
-            , this->render_target->get_max_frames_in_flight ()
-        );
-
-        const ModelState& model_state = octree_model->get_state ();
-
-        LOG_INFO ("[{}] Created gpu resources for sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
-             , model_state.name
-             , model_state.octree_depth
-             , model_state.cpu_traversed
-             , model_state.octree_depth - model_state.cpu_traversed);
-    } else if (auto obj_model = std::dynamic_pointer_cast <ObjModel> (model)) {
-        LOG_INFO ("[{}] Received a scene that of type ObjModel.", RENDERER_NAME);
-
-        const auto& model_data = obj_model->get_model_data ();
-        const auto& model_state = obj_model->get_state ();
-
-        if (model_data.vertices.empty ()) {
-            LOG_ERROR ("[{}] ObjModel '{}' has no vertices!", RENDERER_NAME, model_state.name);
-            return;
-        }
-
-        this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_copy_helper ()
-            , 0x0 // NOTE: we don't need descriptors at all as we have no plan on using vertex/index buffers as shader input.
-            , model_data.vertices.size ()
-            , model_data.indices.size ()
-            , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
-
-        this->context->get_copy_helper ()->UpdateBuffer (
-            this->mesh_ds->get_vertex_buffer (0), 0
-            , model_data.vertices.data (), model_data.vertices.size () * sizeof (Vertex)
-        );
-
-        this->context->get_copy_helper ()->UpdateBuffer (
-            this->mesh_ds->get_index_buffer (0), 0
-            , model_data.indices.data (), model_data.indices.size () * sizeof (uint32_t)
-        );
-
-        VkDrawIndexedIndirectCommand cmd {
-            .indexCount    = static_cast <uint32_t> (model_data.indices.size ()),
-            .instanceCount = 1,
-            .firstIndex    = 0,
-            .vertexOffset  = 0,
-            .firstInstance = 0
-        };
-
-        this->draw_indexed_indirect_command_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , VK_SHADER_STAGE_COMPUTE_BIT
-            , sizeof (cmd)
-            , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
-
-        this->context->get_copy_helper ()->UpdateBuffer (
-            this->draw_indexed_indirect_command_ds->get_indirect_buffer (0), 0
-            , &cmd, sizeof (cmd)
-        );
-
-        LOG_INFO ("[{}] Created GPU resources for mesh scene '{}'. Vertices: {}, Indices: {}"
-            , RENDERER_NAME, model_state.name, model_data.vertices.size (), model_data.indices.size ());
-    } else if (auto scomtree_model = std::dynamic_pointer_cast <SComTreeModel> (model)) {
-        const auto& model_state = scomtree_model->get_state ();
-
-        this->sdf_scomtree_ds = std::make_unique <SComTreeTreeDescriptorSetInfo> (this->context->get_device ()
-            , this->context->get_physical_device ()
-            , this->context->get_copy_helper ()
-            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
-        );
-        this->sdf_scomtree_ds->add_scene ("tmp", scomtree_model);
-
-        LOG_INFO ("[{}] Created gpu resources for sdf-scomtree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
-             , model_state.name
-             , model_state.octree_depth
-             , model_state.cpu_traversed
-             , model_state.octree_depth - model_state.cpu_traversed);
-    } else {
-        LOG_ERROR ("[{}] Received a scene that is not of any renderable type. Cannot render.", RENDERER_NAME);
-        return;
-    }
-
-    this->create_required_pipelines (method);
-
-    auto it = std::find_if (draw_strategies.begin (), draw_strategies.end (), [method] (const MethodTrait& t) { return t.method == method; });
-    if (it != draw_strategies.end ()) {
-        if (it->needs_mesh_shading && !this->context->get_use_mesh_shading ()) {
-            LOG_WARN ("[{}] Mesh shading is not supported", RENDERER_NAME);
-            this->draw = nullptr;
-        } else {
-            this->draw = it->ptr;
-        }
-    }
+    // vkDeviceWaitIdle (this->context->get_device());
+    //
+    // if (model) {
+    //     model->invalidate_cache ();
+    // }
+    // this->release_render_resources ();
+    // this->current_model = model;
+    //
+    // if (!this->current_model) {
+    //     LOG_WARN ("[{}] 'apply_model_config' called with a null scene. Resources cleared.", RENDERER_NAME);
+    //     return;
+    // }
+    //
+    // const auto method = model->get_state ().draw_method;
+    // this->ensure_resources (method);
+    //
+    // if (auto octree_model = std::dynamic_pointer_cast <SdfOctreeModel> (model)) {
+    //     this->sdf_octree_ds = std::make_unique <SdfOctreeDescriptorSetInfo> (this->context->get_device ()
+    //         , this->context->get_physical_device ()
+    //         , this->context->get_copy_helper ()
+    //         , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+    //         , octree_model
+    //         , this->render_target->get_max_frames_in_flight ()
+    //     );
+    //
+    //     const ModelState& model_state = octree_model->get_state ();
+    //
+    //     LOG_INFO ("[{}] Created gpu resources for sdf-octree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
+    //          , model_state.name
+    //          , model_state.octree_depth
+    //          , model_state.cpu_traversed
+    //          , model_state.octree_depth - model_state.cpu_traversed);
+    // } else if (auto obj_model = std::dynamic_pointer_cast <ObjModel> (model)) {
+    //     LOG_INFO ("[{}] Received a scene that of type ObjModel.", RENDERER_NAME);
+    //
+    //     const auto& model_data = obj_model->get_model_data ();
+    //     const auto& model_state = obj_model->get_state ();
+    //
+    //     if (model_data.vertices.empty ()) {
+    //         LOG_ERROR ("[{}] ObjModel '{}' has no vertices!", RENDERER_NAME, model_state.name);
+    //         return;
+    //     }
+    //
+    //     this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
+    //         , this->context->get_physical_device ()
+    //         , this->context->get_copy_helper ()
+    //         , 0x0 // NOTE: we don't need descriptors at all as we have no plan on using vertex/index buffers as shader input.
+    //         , model_data.vertices.size ()
+    //         , model_data.indices.size ()
+    //         , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
+    //
+    //     this->context->get_copy_helper ()->UpdateBuffer (
+    //         this->mesh_ds->get_vertex_buffer (0), 0
+    //         , model_data.vertices.data (), model_data.vertices.size () * sizeof (Vertex)
+    //     );
+    //
+    //     this->context->get_copy_helper ()->UpdateBuffer (
+    //         this->mesh_ds->get_index_buffer (0), 0
+    //         , model_data.indices.data (), model_data.indices.size () * sizeof (uint32_t)
+    //     );
+    //
+    //     VkDrawIndexedIndirectCommand cmd {
+    //         .indexCount    = static_cast <uint32_t> (model_data.indices.size ()),
+    //         .instanceCount = 1,
+    //         .firstIndex    = 0,
+    //         .vertexOffset  = 0,
+    //         .firstInstance = 0
+    //     };
+    //
+    //     this->draw_indexed_indirect_command_ds = std::make_unique <IndirectDescriptorSetInfo> (this->context->get_device ()
+    //         , this->context->get_physical_device ()
+    //         , VK_SHADER_STAGE_COMPUTE_BIT
+    //         , sizeof (cmd)
+    //         , 1); // NOTE: we don't modify contents of vertex/index buffers each frame, so one set of those buffers is enough.
+    //
+    //     this->context->get_copy_helper ()->UpdateBuffer (
+    //         this->draw_indexed_indirect_command_ds->get_indirect_buffer (0), 0
+    //         , &cmd, sizeof (cmd)
+    //     );
+    //
+    //     LOG_INFO ("[{}] Created GPU resources for mesh scene '{}'. Vertices: {}, Indices: {}"
+    //         , RENDERER_NAME, model_state.name, model_data.vertices.size (), model_data.indices.size ());
+    // } else if (auto scomtree_model = std::dynamic_pointer_cast <SComTreeModel> (model)) {
+    //     const auto& model_state = scomtree_model->get_state ();
+    //
+    //     this->sdf_scomtree_ds = std::make_unique <SComTreeTreeDescriptorSetInfo> (this->context->get_device ()
+    //         , this->context->get_physical_device ()
+    //         , this->context->get_copy_helper ()
+    //         , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+    //     );
+    //     this->sdf_scomtree_ds->add_scene ("tmp", scomtree_model);
+    //
+    //     LOG_INFO ("[{}] Created gpu resources for sdf-scomtree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
+    //          , model_state.name
+    //          , model_state.octree_depth
+    //          , model_state.cpu_traversed
+    //          , model_state.octree_depth - model_state.cpu_traversed);
+    // } else {
+    //     LOG_ERROR ("[{}] Received a scene that is not of any renderable type. Cannot render.", RENDERER_NAME);
+    //     return;
+    // }
+    //
+    // this->create_required_pipelines (method);
+    //
+    // auto it = std::find_if (draw_strategies.begin (), draw_strategies.end (), [method] (const MethodTrait& t) { return t.method == method; });
+    // if (it != draw_strategies.end ()) {
+    //     if (it->needs_mesh_shading && !this->context->get_use_mesh_shading ()) {
+    //         LOG_WARN ("[{}] Mesh shading is not supported", RENDERER_NAME);
+    //         this->draw = nullptr;
+    //     } else {
+    //         this->draw = it->ptr;
+    //     }
+    // }
 
     // LOG_INFO ("[{}] Rendering pipeline set to: {}", RENDERER_NAME, this->current_model->get_state ().draw_method);
 }

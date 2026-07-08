@@ -31,8 +31,6 @@
 
 [[vk::binding (0, 4)]] RWStructuredBuffer <VkDrawIndexedIndirectCommand> g_draw_indexed_indirect_command;
 
-[[vk::binding (0, 5)]] RWStructuredBuffer <LevelOfDetail> g_lod;
-
 float3 interpolate_vertex (float isolevel, float3 p1, float3 p2, float valp1, float valp2) {
     if (abs (isolevel - valp1) < 0.00001)
         return (p1);

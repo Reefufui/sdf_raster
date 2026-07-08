@@ -18,8 +18,6 @@
 
 [[vk::binding (0, 3)]] Sampler2D <float> g_depth_sampler;
 
-[[vk::binding (0, 4)]] RWStructuredBuffer <LevelOfDetail> g_lod;
-
 void process_voxel (NodeContext context, SdfOctreeNode leaf_node) {
     context.cube_index = 0;
 

@@ -132,7 +132,11 @@ private:
         void draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) override;
         void end (VkCommandBuffer cmd_buff) override;
     private:
-        VkRenderPassBeginInfo render_pass_info {};
+        std::array <VkClearValue, 4> clear_values {};
+
+        VkRenderPassBeginInfo clear_render_pass_info {};
+        VkRenderPassBeginInfo load_render_pass_info {};
+        VkRenderPassBeginInfo& current_render_pass_info {this->clear_render_pass_info};
     };
 
     class RasterMeshForward : public RenderMethod {
@@ -158,7 +162,7 @@ public:
     std::unordered_map <DrawMethod, std::unique_ptr <RenderMethod>> render_method_map {};
 
     std::unique_ptr <SdfOctreeDescriptorSetInfo> sdf_octree_ds {};
-    std::unique_ptr <SComTreeTreeDescriptorSetInfo> sdf_scomtree_ds {};
+    std::unique_ptr <SComTreeTreeDescriptorSetInfoFabric> sdf_scomtree_ds {};
     std::unique_ptr <MeshDescriptorSetInfo> mesh_ds {};
     std::unique_ptr <MarchingCubesLookupTableDescriptorSetInfo> marching_cubes_lookup_table_ds {};
     std::unique_ptr <IndirectDescriptorSetInfo> draw_indexed_indirect_command_ds {};

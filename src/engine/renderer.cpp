@@ -34,19 +34,19 @@ void Renderer::RasterSComTreeViaComputeShadingForward::draw (VkCommandBuffer cmd
     const auto scomtree_model = dynamic_cast <SComTreeTreeDescriptorSetInfo*> (model.get ());
     assert (scomtree_model && "required for RasterSComTreeViaComputeShadingForward::draw");
 
-    auto subtree_count = scomtree_model->get_scene ("tmp").resources.subtree_count;
+    auto subtree_count = scomtree_model->get_subtree_count ();
     if (!subtree_count) {
         return;
     }
 
-    r.copy_subtrees (cmd_buff, scomtree_model->get_scene ("tmp").resources.subtree_count * sizeof (SComTreeStackElement)
-        , scomtree_model->get_scene ("tmp").resources.subtree_roots_staging_buffer
-        , scomtree_model->get_scene ("tmp").resources.subtree_root_buffer);
+    r.copy_subtrees (cmd_buff, scomtree_model->get_subtree_count () * sizeof (SComTreeStackElement)
+        , scomtree_model->get_staging_buffer ()
+        , scomtree_model->get_subtree_root_buffer ());
     r.reset_active_leafs_counter (cmd_buff);
-    r.traverse_scomtree (cmd_buff, static_cast <uint32_t> (subtree_count), scomtree_model->get_scene ("tmp").resources.descriptor_set);
+    r.traverse_scomtree (cmd_buff, static_cast <uint32_t> (subtree_count), scomtree_model->get_descriptor_set ());
     r.clear_geometry (cmd_buff);
     r.prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
-    r.marching_cubes_scomtree (cmd_buff, scomtree_model->get_scene ("tmp").resources.descriptor_set);
+    r.marching_cubes_scomtree (cmd_buff, scomtree_model->get_descriptor_set ());
     r.geometry_barrier (cmd_buff);
     r.forward_rendering (cmd_buff);
 }
@@ -75,12 +75,20 @@ Renderer::RasterSComTreeViaComputeShadingDeferred::RasterSComTreeViaComputeShadi
     }
 
     if (!r.sdf_scomtree_ds) {
-        r.sdf_scomtree_ds = std::make_unique <SComTreeTreeDescriptorSetInfo> (r.context->get_device ()
+        r.sdf_scomtree_ds = std::make_unique <SComTreeTreeDescriptorSetInfoFabric> (r.context->get_device ()
             , r.context->get_physical_device ()
             , r.context->get_copy_helper ()
             , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
         );
     }
+
+    r.mesh_ds = std::make_unique <MeshDescriptorSetInfo> (r.context->get_device ()
+        , r.context->get_physical_device ()
+        , r.context->get_copy_helper ()
+        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+        , r.push_constants.active_leafs_max_count * MAX_LEAF_VERTS
+        , r.push_constants.active_leafs_max_count * MAX_LEAF_PRIMS * 3
+        , r.render_target->get_max_frames_in_flight ());
 
     if (!r.marching_cubes_lookup_table_ds) {
         r.marching_cubes_lookup_table_ds = std::make_unique <MarchingCubesLookupTableDescriptorSetInfo> (r.context->get_device ()
@@ -116,6 +124,14 @@ Renderer::RasterSComTreeViaComputeShadingDeferred::RasterSComTreeViaComputeShadi
             , r.render_target->get_max_frames_in_flight ());
     }
 
+    if (!r.draw_indexed_indirect_command_ds) {
+        r.draw_indexed_indirect_command_ds = std::make_unique <IndirectDescriptorSetInfo> (r.context->get_device ()
+            , r.context->get_physical_device ()
+            , VK_SHADER_STAGE_COMPUTE_BIT
+            , sizeof (VkDrawIndexedIndirectCommand)
+            , r.render_target->get_max_frames_in_flight ());
+    }
+
     if (r.graphics_gbuffer_pipeline == VK_NULL_HANDLE) {
         r.init_graphics_gbuffer_pipeline ("shaders/view_proj.vert.slang.spv", "shaders/gbuffer.frag.slang.spv");
     }
@@ -128,9 +144,33 @@ Renderer::RasterSComTreeViaComputeShadingDeferred::RasterSComTreeViaComputeShadi
         r.init_traverse_scomtree_pipeline ();
     }
 
-    this->render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    this->render_pass_info.renderArea.offset = {0, 0};
-    this->render_pass_info.renderArea.extent = r.render_target->get_extent ();
+    if (r.marching_cubes_octree_pipeline == VK_NULL_HANDLE) {
+        r.init_marching_cubes_scomtree_pipeline ();
+    }
+
+    if (r.compute_prepare_indirect_pipeline == VK_NULL_HANDLE) {
+        r.init_compute_prepare_indirect_pipeline ();
+    }
+
+    this->clear_values [0].color = {{0.f, 0.f, 0.f, 0.f}}; // Position
+    this->clear_values [1].color = {{0.f, 0.f, 0.f, 0.f}}; // Normal
+    this->clear_values [2].color = {{r.clear_color.x, r.clear_color.y, r.clear_color.z, 1.f}}; // Albedo
+    this->clear_values [3].depthStencil = {1.0f, 0}; // Depth
+
+    this->clear_render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    this->clear_render_pass_info.renderArea.offset = {0, 0};
+    this->clear_render_pass_info.renderArea.extent = r.render_target->get_extent ();
+    this->load_render_pass_info = this->clear_render_pass_info;
+
+    this->clear_render_pass_info.clearValueCount = static_cast <uint32_t> (this->clear_values.size ());
+    this->clear_render_pass_info.pClearValues = this->clear_values.data ();
+    this->clear_render_pass_info.renderPass = r.deferred_shading->get_gbuffer_pass ();
+    this->clear_render_pass_info.framebuffer = r.deferred_shading->get_gbuffer_fb ();
+
+    this->load_render_pass_info.clearValueCount = 0;
+    this->load_render_pass_info.pClearValues = nullptr;
+    // this->load_render_pass_info.renderPass = r.deferred_shading->get_gbuffer_pass_after ();
+    // this->load_render_pass_info.framebuffer = r.deferred_shading->get_gbuffer_fb_after ();
 }
 
 void Renderer::RasterSComTreeViaComputeShadingDeferred::begin (VkCommandBuffer cmd_buff, bool& dirty_surface) {
@@ -139,28 +179,12 @@ void Renderer::RasterSComTreeViaComputeShadingDeferred::begin (VkCommandBuffer c
     assert (r.deferred_shading && "required for 'Renderer::RasterSComTreeViaComputeShadingDeferred::begin");
     assert (r.render_target && "required for 'Renderer::RasterSComTreeViaComputeShadingDeferred::begin");
 
-    std::vector <VkClearValue> clear_values {};
-
     if (dirty_surface) {
-        clear_values.resize (4);
-        clear_values [0].color = {{0.f, 0.f, 0.f, 0.f}}; // Position
-        clear_values [1].color = {{0.f, 0.f, 0.f, 0.f}}; // Normal
-        clear_values [2].color = {{r.clear_color.x, r.clear_color.y, r.clear_color.z, 1.f}}; // Albedo
-        clear_values [3].depthStencil = {1.0f, 0}; // Depth
-
-        dirty_surface = false;
-
-        this->render_pass_info.renderPass = r.deferred_shading->get_gbuffer_pass ();
-        this->render_pass_info.framebuffer = r.deferred_shading->get_gbuffer_fb ();
+        this->current_render_pass_info = this->clear_render_pass_info;
     } else {
         assert (false && "after render pass & frame buffer (the one that doesn't clear surface) not yet implemented");
-        // TODO: after
-        // render_pass_info.renderPass = r.deferred_shading->get_gbuffer_pass_after ();
-        // render_pass_info.framebuffer = r.deferred_shading->get_gbuffer_fb_after ();
+        this->current_render_pass_info = this->load_render_pass_info;
     }
-
-    this->render_pass_info.clearValueCount = static_cast <uint32_t> (clear_values.size ());
-    this->render_pass_info.pClearValues = clear_values.data ();
 }
 
 void Renderer::RasterSComTreeViaComputeShadingDeferred::draw (VkCommandBuffer cmd_buff, const std::unique_ptr <ModelResource>& model) {
@@ -172,26 +196,26 @@ void Renderer::RasterSComTreeViaComputeShadingDeferred::draw (VkCommandBuffer cm
     assert (r.context && "required for RasterSComTreeViaComputeShadingDeferred::draw");
     assert (r.render_target && "required for RasterSComTreeViaComputeShadingDeferred::draw");
 
-    scomtree_model->update_subtree_root_buffer ("tmp", r.frustum);
-    auto subtree_count = scomtree_model->get_scene ("tmp").resources.subtree_count;
+    scomtree_model->update_subtree_root_buffer (r.frustum);
+    auto subtree_count = scomtree_model->get_subtree_count ();
     if (!subtree_count) {
         return;
     }
 
     r.copy_subtrees (cmd_buff, subtree_count * sizeof (SComTreeStackElement)
-        , scomtree_model->get_scene ("tmp").resources.subtree_roots_staging_buffer
-        , scomtree_model->get_scene ("tmp").resources.subtree_root_buffer);
+        , scomtree_model->get_staging_buffer ()
+        , scomtree_model->get_subtree_root_buffer ());
 
     r.reset_active_leafs_counter (cmd_buff);
 
-    assert (scomtree_model->get_scene ("tmp").resources.descriptor_set != VK_NULL_HANDLE);
-    r.traverse_scomtree (cmd_buff, static_cast <uint32_t> (subtree_count), scomtree_model->get_scene ("tmp").resources.descriptor_set);
+    assert (scomtree_model->get_descriptor_set () != VK_NULL_HANDLE);
+    r.traverse_scomtree (cmd_buff, static_cast <uint32_t> (subtree_count), scomtree_model->get_descriptor_set ());
     r.clear_geometry (cmd_buff);
     r.prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
-    r.marching_cubes_scomtree (cmd_buff, scomtree_model->get_scene ("tmp").resources.descriptor_set);
+    r.marching_cubes_scomtree (cmd_buff, scomtree_model->get_descriptor_set ());
     r.geometry_barrier (cmd_buff);
 
-    vkCmdBeginRenderPass (cmd_buff, &this->render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass (cmd_buff, &this->current_render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
     r.set_default_viewport_and_scissor (cmd_buff);
     r.deferred_rendering (cmd_buff);
     vkCmdEndRenderPass (cmd_buff);
@@ -1723,8 +1747,6 @@ void Renderer::deferred_rendering (VkCommandBuffer cmd_buff) {
     vkCmdBindIndexBuffer (cmd_buff, this->mesh_ds->get_index_buffer (this->frame_index), 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdDrawIndexedIndirect (cmd_buff, this->draw_indexed_indirect_command_ds->get_indirect_buffer (this->frame_index), 0, 1, 0);
-
-    vkCmdEndRenderPass (cmd_buff);
 }
 
 void Renderer::calculate_lighting (VkCommandBuffer cmd_buff) {
@@ -2227,7 +2249,7 @@ const std::unique_ptr <ModelResource>& Renderer::get_model_resource (const std::
         } else if (auto scomtree_model = std::dynamic_pointer_cast <SComTreeModel> (model)) {
             const auto& model_state = scomtree_model->get_state ();
 
-            this->sdf_scomtree_ds->add_scene ("tmp", scomtree_model);
+            it->second = this->sdf_scomtree_ds->create_scene ("tmp", scomtree_model);
 
             LOG_INFO ("[{}] Created gpu resources for sdf-scomtree scene '{}'. Depth: {} (cpu: {}, gpu: {})", RENDERER_NAME
                 , model_state.name

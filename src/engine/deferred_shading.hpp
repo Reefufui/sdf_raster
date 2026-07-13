@@ -28,29 +28,32 @@ public:
     DeferredShading (DeferredShading&&) = delete;
     DeferredShading& operator= (DeferredShading&&) = delete;
 
+    const std::vector <vk_utils::VulkanImageMem>& get_gbuffer () const { return this->g_buffer; }
+    const std::unique_ptr <vk_utils::VulkanImageMem>& get_depth_buffer () const { return this->depth_buffer; };
+
     VkRenderPass get_gbuffer_pass () const { return this->gbuffer_pass; }
+    VkRenderPass get_gbuffer_pass_after () const { return this->gbuffer_pass_after; }
     VkRenderPass get_lighting_pass () const { return this->lighting_pass; }
     VkRenderPass get_render_pass_after () const { return this->after_pass; }
     VkFramebuffer get_gbuffer_fb () const { return this->g_buffer_framebuffer; }
+    VkFramebuffer get_gbuffer_fb_after () const { return this->g_buffer_framebuffer_after; }
     VkFramebuffer get_lighting_fb (uint32_t image_index) const { return this->lighting_framebuffers [image_index]; }
     VkFramebuffer get_framebuffer_after (uint32_t image_index) const { return this->after_framebuffers [image_index]; }
     VkDescriptorSet get_descriptor_set () const { return this->descriptor_set; }
     VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
     DeferredLightingPushConstants& push_constants_ref () { return this->push_constants; }
 
-    VkImage get_depth_buffer () const {
-        return this->depth_buffer->image;
-    }
-
 private:
     VkDevice device = VK_NULL_HANDLE;
 
     VkRenderPass gbuffer_pass = VK_NULL_HANDLE;
+    VkRenderPass gbuffer_pass_after = VK_NULL_HANDLE;
     VkRenderPass lighting_pass = VK_NULL_HANDLE;
     VkRenderPass after_pass = VK_NULL_HANDLE;
 
     std::vector <vk_utils::VulkanImageMem> g_buffer; // NOTE: Pos, Norm, Albedo, Depth
     VkFramebuffer g_buffer_framebuffer = VK_NULL_HANDLE;
+    VkFramebuffer g_buffer_framebuffer_after = VK_NULL_HANDLE;
 
     std::vector <VkFramebuffer> lighting_framebuffers; // NOTE: Output image count
     std::vector <VkFramebuffer> after_framebuffers; // NOTE: In-Flight count

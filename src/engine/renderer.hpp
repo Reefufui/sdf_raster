@@ -136,7 +136,8 @@ private:
 
         VkRenderPassBeginInfo clear_render_pass_info {};
         VkRenderPassBeginInfo load_render_pass_info {};
-        VkRenderPassBeginInfo& current_render_pass_info {this->clear_render_pass_info};
+
+        bool dirty_surface {true};
     };
 
     class RasterMeshForward : public RenderMethod {

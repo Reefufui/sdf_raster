@@ -613,6 +613,7 @@ void UI::renderer_window (Settings& settings, const Stats& stats, Scene& scene) 
     }
     */
 
+    /*
     ImGui::SeparatorText ("Lighting");
     const char* color_modes [] = { "White", "Unique Data", "LOD" };
     int color_leafs_int = static_cast <int> (settings.color_leafs);
@@ -695,6 +696,7 @@ void UI::renderer_window (Settings& settings, const Stats& stats, Scene& scene) 
             lighting.fog_end            = 1.0f;
         }
     }
+    */
 
     ImGui::End ();
 }

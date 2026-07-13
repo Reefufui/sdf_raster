@@ -169,8 +169,8 @@ Renderer::RasterSComTreeViaComputeShadingDeferred::RasterSComTreeViaComputeShadi
 
     this->load_render_pass_info.clearValueCount = 0;
     this->load_render_pass_info.pClearValues = nullptr;
-    // this->load_render_pass_info.renderPass = r.deferred_shading->get_gbuffer_pass_after ();
-    // this->load_render_pass_info.framebuffer = r.deferred_shading->get_gbuffer_fb_after ();
+    this->load_render_pass_info.renderPass = r.deferred_shading->get_gbuffer_pass_after ();
+    this->load_render_pass_info.framebuffer = r.deferred_shading->get_gbuffer_fb_after ();
 }
 
 void Renderer::RasterSComTreeViaComputeShadingDeferred::begin (VkCommandBuffer cmd_buff, bool& dirty_surface) {
@@ -179,11 +179,62 @@ void Renderer::RasterSComTreeViaComputeShadingDeferred::begin (VkCommandBuffer c
     assert (r.deferred_shading && "required for 'Renderer::RasterSComTreeViaComputeShadingDeferred::begin");
     assert (r.render_target && "required for 'Renderer::RasterSComTreeViaComputeShadingDeferred::begin");
 
+    // Barrier to transition images back from READ_ONLY (used in previous frame lighting) 
+    // to ATTACHMENT_OPTIMAL for the upcoming G-Buffer draw.
+    auto add_transition_barrier = [&] (const vk_utils::VulkanImageMem& img) {
+        bool is_depth = (img.aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT);
+
+        VkImageLayout old_layout = is_depth 
+            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL 
+            : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkImageLayout target_layout = is_depth
+            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+            : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkAccessFlags dstAccess = is_depth
+            ? (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
+            : (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+
+        VkPipelineStageFlags dstStage = is_depth
+            ? VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
+            : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+        VkImageMemoryBarrier barrier = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_SHADER_READ_BIT, 
+            .dstAccessMask = dstAccess,
+            .oldLayout = old_layout,
+            .newLayout = target_layout,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = img.image,
+            .subresourceRange = VkImageSubresourceRange {
+                .aspectMask = img.aspectMask,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        };
+
+        vkCmdPipelineBarrier (cmd_buff
+             , VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+             , dstStage
+             , 0
+             , 0, nullptr
+             , 0, nullptr
+             , 1, &barrier);
+    };
+
     if (dirty_surface) {
-        this->current_render_pass_info = this->clear_render_pass_info;
-    } else {
-        assert (false && "after render pass & frame buffer (the one that doesn't clear surface) not yet implemented");
-        this->current_render_pass_info = this->load_render_pass_info;
+        for (auto& img : r.deferred_shading->get_gbuffer ()) {
+            add_transition_barrier (img);
+        }
+        add_transition_barrier (*r.deferred_shading->get_depth_buffer ());
+
+        this->dirty_surface = true;
+        dirty_surface = false;
     }
 }
 
@@ -215,7 +266,12 @@ void Renderer::RasterSComTreeViaComputeShadingDeferred::draw (VkCommandBuffer cm
     r.marching_cubes_scomtree (cmd_buff, scomtree_model->get_descriptor_set ());
     r.geometry_barrier (cmd_buff);
 
-    vkCmdBeginRenderPass (cmd_buff, &this->current_render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    if (dirty_surface) {
+        vkCmdBeginRenderPass (cmd_buff, &this->clear_render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+        dirty_surface = false;
+    } else {
+        vkCmdBeginRenderPass (cmd_buff, &this->load_render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+    }
     r.set_default_viewport_and_scissor (cmd_buff);
     r.deferred_rendering (cmd_buff);
     vkCmdEndRenderPass (cmd_buff);
@@ -1756,6 +1812,43 @@ void Renderer::calculate_lighting (VkCommandBuffer cmd_buff) {
     assert (this->graphics_lighting_pipeline_layout != VK_NULL_HANDLE && "required for 'Renderer::calculate_lighting'");
     assert ((this->dummy_ds || this->hz_buffer_ds) && "required for 'Renderer::calculate_lighting'");
 
+    auto add_barrier = [&] (const vk_utils::VulkanImageMem& img) {
+        VkImageLayout target_layout = (img.aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT)
+            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL 
+            : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkImageMemoryBarrier barrier = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = 0,
+            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = target_layout,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = img.image,
+            .subresourceRange = VkImageSubresourceRange {
+                .aspectMask = img.aspectMask,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        };
+
+        vkCmdPipelineBarrier (cmd_buff
+            , VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+            , VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+            , 0
+            , 0, nullptr
+            , 0, nullptr
+            , 1, &barrier);
+    };
+
+    for (auto& img : this->deferred_shading->get_gbuffer ()) {
+        add_barrier (img);
+    }
+    add_barrier (*this->deferred_shading->get_depth_buffer ());
+
     const auto extent = this->render_target->get_extent ();
     const uint32_t swap_idx = this->render_target->get_current_image_index ();
     const uint32_t fif_idx = this->frame_index;
@@ -2265,17 +2358,33 @@ const std::unique_ptr <ModelResource>& Renderer::get_model_resource (const std::
 }
 
 void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
+    assert (this->render_target && "required for 'Renderer::render_scene'");
+
     const auto& groups = scene.get_groups ();
     bool dirty_surface = true;
 
     const auto& camera = scene.get_camera ();
+    const auto& lighting_settings = scene.get_lighting_settings ();
+
+    this->push_constants.far_plane = camera.get_far_plane ();
+    this->push_constants.near_plane = camera.get_near_plane ();
+    this->push_constants.fov_y = camera.get_fov_y () * (3.14159265359f / 180.0f);
+
+    auto extent = this->render_target->get_extent ();
+    this->push_constants.screen_width = extent.width;
+    this->push_constants.screen_height = extent.height;
+
+    // this->push_constants.color_leafs = settings.color_leafs;
+    // this->clear_color = settings.lighting.clear_color;
 
     for (const auto& [draw_method, batches] : groups) {
         const auto& method = this->get_render_method (draw_method);
         if (!method) {
             continue;
         }
+        // LOG_INFO ("groups size = {}", groups.size ());
 
+        // LOG_INFO ("dirty_surface: {}", dirty_surface);
         method->begin (cmd_buff, dirty_surface);
 
         for (const auto& [mesh_id, model, items] : batches) {
@@ -2284,14 +2393,44 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
                 continue;
             }
 
+            const auto& model_state = model->get_state ();
+
             for (const auto& item : items) {
                 LiteMath::float4x4 inv_model = LiteMath::inverse4x4 (item.transform);
-                LiteMath::float4 world_camera_pos = (this->frustum_draw_buffer) ? this->frozen_camera_pos : LiteMath::to_float4 (camera.get_position (), 1.0f);
+                LiteMath::float4 position {LiteMath::to_float4 (camera.get_position (), 1.0f)};
+                LiteMath::float4 world_camera_pos = (this->frustum_draw_buffer) ? this->frozen_camera_pos : position;
 
                 this->push_constants.view_proj = camera.get_view_projection_matrix () * item.transform;
                 this->push_constants.camera_pos = inv_model * world_camera_pos;
 
+                this->push_constants.max_lod = static_cast <uint> (model_state.max_lod);
+                this->push_constants.min_lod = static_cast <uint> (model_state.min_lod);
+                this->push_constants.subtree_root_level = static_cast <uint> (model_state.cpu_traversed);
+                // this->push_constants.occlusion_culling_level = static_cast <uint> (model_state.occlusion_culling_level);
+                // this->push_constants.frustum_culling_level = static_cast <uint> (model_state.frustum_culling_level);
+                this->push_constants.lod_mode = static_cast <uint> (model_state.lod_mode);
+                this->push_constants.fixed_lod = static_cast <uint> (model_state.fixed_lod);
+                this->push_constants.lod_threshold_pixels = model_state.lod_threshold_pixels;
+                this->push_constants.lod_aggressivity = model_state.lod_aggressivity;
+                this->push_constants.max_voxel_size = 2.0f / std::pow (2.0f, model_state.cpu_traversed);
+                this->push_constants.root_center = model_state.octree_root_center;
+                this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, model_state.octree_depth);
+
+                auto& lighting_pc = this->deferred_shading->push_constants_ref ();
+                lighting_pc.light_color       = LiteMath::to_float4 (lighting_settings.light_color, 1.f);
+                lighting_pc.fog_color         = LiteMath::to_float4 (lighting_settings.fog_color, 1.0f);
+                lighting_pc.ambient_strength  = lighting_settings.ambient_strength;
+                lighting_pc.specular_strength = lighting_settings.specular_strength;
+                lighting_pc.shininess         = lighting_settings.shininess;
+                lighting_pc.depth_threshold   = lighting_settings.depth_threshold;
+                lighting_pc.fog_start         = lighting_settings.fog_start;
+                lighting_pc.fog_end           = lighting_settings.fog_end;
+                lighting_pc.enable_hz_write   = !!this->hz_buffer_ds && !this->frustum_draw_buffer;
+                lighting_pc.camera_pos        = inv_model * position;
+                lighting_pc.light_pos         = inv_model * LiteMath::to_float4 (lighting_settings.light_pos, 1.f);
+
                 method->draw (cmd_buff, model_ds);
+                dirty_surface = false;
             }
         }
 

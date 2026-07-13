@@ -225,19 +225,19 @@ struct adl_serializer <std::optional <T>> {
 } // namespace nlohmann
 
 namespace sdf_raster {
-    NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(
-        LightingSettings,
-        light_pos,
-        light_color,
-        fog_color,
-        clear_color,
-        ambient_strength,
-        specular_strength,
-        shininess,
-        depth_threshold,
-        fog_start,
-        fog_end
-    )
+    // NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(
+    //     LightingSettings,
+    //     light_pos,
+    //     light_color,
+    //     fog_color,
+    //     clear_color,
+    //     ambient_strength,
+    //     specular_strength,
+    //     shininess,
+    //     depth_threshold,
+    //     fog_start,
+    //     fog_end
+    // )
 
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE (
         Settings,
@@ -248,8 +248,8 @@ namespace sdf_raster {
         color_leafs,
         show_ui,
         show_camera_window,
-        show_renderer_window,
-        lighting
+        show_renderer_window
+        // lighting
     )
 
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE (

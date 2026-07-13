@@ -10,20 +10,6 @@
 
 namespace sdf_raster {
 
-struct LightingSettings {
-    LiteMath::float3 light_pos   = {5.f, 5.f, 5.f};
-    LiteMath::float3 light_color = {1.f, 1.f, 1.f};
-    LiteMath::float3 fog_color   = {0.25f, 0.25f, 0.25f};
-    LiteMath::float4 clear_color = {0.25f, 0.25f, 0.25f, 1.f};
-
-    float ambient_strength  = 0.1f;
-    float specular_strength = 0.4f;
-    float shininess         = 64.0f;
-    float depth_threshold   = 0.0001f;
-    float fog_start         = 0.999f;
-    float fog_end           = 1.0f;
-};
-
 struct Settings {
     int window_width = 1980;
     int window_height = 1080;
@@ -40,8 +26,6 @@ struct Settings {
     bool show_renderer_window = false;
     bool show_scene_inspector = false;
     bool animate_rotation = false;
-
-    LightingSettings lighting;
 };
 
 struct SessionState {

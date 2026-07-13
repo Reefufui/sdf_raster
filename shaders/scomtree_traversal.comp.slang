@@ -24,6 +24,8 @@
 [[vk::binding (0, 3)]] Sampler2D <float> g_depth_sampler;
 
 bool is_visible_node (bool frustum_culling, bool occlusion_culling, float3 node_coord, float node_size, out float max_dim) {
+    return true;
+
     if (frustum_culling) {
         if (!aabb_cube_frustum_intersects (g_frustum_geometry, node_coord, node_size)) {
             max_dim = 0.f;

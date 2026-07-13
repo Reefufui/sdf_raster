@@ -10,17 +10,17 @@
 
 namespace {
 
-VkRenderPass create_gbuffer_render_pass (VkDevice device, std::vector <VkFormat> gbuffer_formats, VkFormat depth_format) {
+VkRenderPass create_gbuffer_render_pass (VkDevice device, std::vector <VkFormat> gbuffer_formats, VkFormat depth_format, VkAttachmentLoadOp load_op) {
     std::vector <VkAttachmentDescription> attachments;
 
     for (auto format : gbuffer_formats) {
         VkAttachmentDescription att {
             .format = format,
             .samples = VK_SAMPLE_COUNT_1_BIT,
-            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .loadOp = load_op,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE, // NOTE: used in filter
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL // NOTE: used in filter
+            .initialLayout = (load_op == VK_ATTACHMENT_STORE_OP_STORE) ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
         };
         attachments.push_back (att);
     }
@@ -28,10 +28,10 @@ VkRenderPass create_gbuffer_render_pass (VkDevice device, std::vector <VkFormat>
     VkAttachmentDescription depth_att {
         .format = depth_format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .loadOp = load_op,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE, // NOTE: used in filter
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL // NOTE: used in filter
+        .initialLayout = (load_op == VK_ATTACHMENT_STORE_OP_STORE) ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
     };
     attachments.push_back (depth_att);
 
@@ -345,12 +345,14 @@ DeferredShading::DeferredShading (VkDevice device, VkPhysicalDevice physical_dev
     VkExtent2D extent = this->render_target->get_extent ();
     VkFormat depth_format = this->depth_buffer->format;
 
-    this->gbuffer_pass = create_gbuffer_render_pass (device, config.gbuffer_formats, depth_format);
+    this->gbuffer_pass = create_gbuffer_render_pass (device, config.gbuffer_formats, depth_format, VK_ATTACHMENT_LOAD_OP_CLEAR);
+    this->gbuffer_pass_after = create_gbuffer_render_pass (device, config.gbuffer_formats, depth_format, VK_ATTACHMENT_LOAD_OP_LOAD);
     this->lighting_pass = create_lighting_render_pass (device, this->render_target->get_image_format (), this->render_target->get_output_final_layout ());
     this->after_pass = create_after_render_pass (device, depth_format, this->render_target->get_image_format (), this->render_target->get_output_final_layout ());
 
     this->g_buffer = create_gbuffer_images (device, physical_device, extent, config.gbuffer_formats);
     this->g_buffer_framebuffer = create_gbuffer_framebuffer (device, this->gbuffer_pass, extent, this->g_buffer, this->depth_buffer->view);
+    this->g_buffer_framebuffer_after = create_gbuffer_framebuffer (device, this->gbuffer_pass_after, extent, this->g_buffer, this->depth_buffer->view);
     warmup_gbuffer_images (device, command_pool, queue, this->g_buffer, *this->depth_buffer);
 
     uint32_t output_image_count = this->render_target->get_image_count ();
@@ -383,6 +385,10 @@ DeferredShading::~DeferredShading () {
         vkDestroyFramebuffer (this->device, this->g_buffer_framebuffer, nullptr);
     }
 
+    if (this->g_buffer_framebuffer_after != VK_NULL_HANDLE) {
+        vkDestroyFramebuffer (this->device, this->g_buffer_framebuffer_after, nullptr);
+    }
+
     if (!this->g_buffer.empty () && this->g_buffer [0].mem != VK_NULL_HANDLE) {
         // NOTE: this->g_buffer [0] is enough, as we allocated one memory for all colored image.
         vkFreeMemory (device, this->g_buffer [0].mem, nullptr);
@@ -409,11 +415,13 @@ DeferredShading::~DeferredShading () {
 
     if (this->sampler != VK_NULL_HANDLE) vkDestroySampler (this->device, this->sampler, nullptr);
     if (this->gbuffer_pass != VK_NULL_HANDLE) vkDestroyRenderPass (this->device, this->gbuffer_pass, nullptr);
+    if (this->gbuffer_pass_after != VK_NULL_HANDLE) vkDestroyRenderPass (this->device, this->gbuffer_pass_after, nullptr);
     if (this->lighting_pass != VK_NULL_HANDLE) vkDestroyRenderPass (this->device, this->lighting_pass, nullptr);
     if (this->after_pass != VK_NULL_HANDLE) vkDestroyRenderPass (this->device, this->after_pass, nullptr);
 
     this->sampler = VK_NULL_HANDLE;
     this->gbuffer_pass = VK_NULL_HANDLE;
+    this->gbuffer_pass_after = VK_NULL_HANDLE;
     this->lighting_pass = VK_NULL_HANDLE;
     this->after_pass = VK_NULL_HANDLE;
     this->device = VK_NULL_HANDLE;

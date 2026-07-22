@@ -28,7 +28,7 @@ public:
     VkDescriptorSetLayout get_base_level_layout () const { return this->base_level_descriptor_set_layout; }
 
     struct FrameResources {
-        LiteMath::float4x4 prev_mvp;
+        LiteMath::float4x4 prev_view_proj;
 
         VkDescriptorSet base_level_descriptor_set = VK_NULL_HANDLE;
         std::vector <VkDescriptorSet> gen_descriptor_sets;

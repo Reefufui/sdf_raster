@@ -24,22 +24,21 @@
 [[vk::binding (0, 3)]] Sampler2D <float> g_depth_sampler;
 
 bool is_visible_node (bool frustum_culling, bool occlusion_culling, float3 node_coord, float node_size, out float max_dim) {
-    return true;
-
-    if (frustum_culling) {
+    if (0) {
         if (!aabb_cube_frustum_intersects (g_frustum_geometry, node_coord, node_size)) {
             max_dim = 0.f;
             return false;
         }
     }
 
-    if (occlusion_culling) {
+    if (0) {
         float3 child_corners [8];
         [unroll]
         for (int i = 0; i < 8; ++i) {
             child_corners [i].x = node_coord.x + (((i >> 0) & 1) * node_size);
             child_corners [i].y = node_coord.y + (((i >> 1) & 1) * node_size);
             child_corners [i].z = node_coord.z + (((i >> 2) & 1) * node_size);
+            // child_corners [i] = mul (pc.model_matrix, float4 (child_corners [i], 1.f)).xyz;
         }
 
         if (voxel_occluded (g_depth_sampler, pc.prev_mvp, child_corners, max_dim)) {

@@ -56,7 +56,8 @@ void GUIApplication::run () {
 
     Scene scene;
     // scene.load ("/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/scenes/teapots.json", *this->model_manager);
-    scene.load ("/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/scenes/sphere.json", *this->model_manager);
+    // scene.load ("/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/scenes/sphere.json", *this->model_manager);
+    scene.load ("/Users/andreytrifonov/Development/sdf_raster/debug-build/assets/scenes/test_scene.json", *this->model_manager);
 
     try {
         const uint32_t frames_in_flight = this->presentation_render_target->get_max_frames_in_flight ();

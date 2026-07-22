@@ -303,10 +303,6 @@ void Renderer::RasterSComTreeViaComputeShadingDeferred::end (VkCommandBuffer cmd
         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
         , {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT}
         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
-
-    if (!r.frustum_draw_buffer) {
-        r.hz_buffer_ds->frame_resources_ref (r.frame_index).prev_mvp = r.push_constants.mvp;
-    }
 }
 
 Renderer::RasterSComTreeViaComputeShadingDeferred::~RasterSComTreeViaComputeShadingDeferred () {
@@ -1540,8 +1536,6 @@ void Renderer::prepare_hzbuffer_after_forward_rendering (VkCommandBuffer cmd_buf
     assert (this->hz_buffer_ds && "required for 'prepare_hzbuffer_after_forward_rendering");
     assert (this->forward_shading && "required for 'prepare_hzbuffer_after_forward_rendering");
 
-    this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.mvp;
-
     this->hz_buffer_barrier (cmd_buff
         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
         , {.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = 0}
@@ -2417,6 +2411,7 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, Settings& settings, Scene
                 LiteMath::float4x4 inv_model = LiteMath::inverse4x4 (item.transform);
 
                 this->push_constants.mvp = camera.get_view_projection_matrix () * item.transform;
+                this->push_constants.prev_mvp = this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj;
                 this->push_constants.model_matrix = item.transform;
                 this->push_constants.camera_pos = inv_model * world_camera_pos;
 
@@ -2460,6 +2455,8 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, Settings& settings, Scene
         this->update_frustum_buffer (camera);
         this->frustum_pc.view_proj = camera.get_view_projection_matrix ();
         this->draw_frustum_demo (cmd_buff);
+    } else if (this->hz_buffer_ds) {
+        this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_view_proj = camera.get_view_projection_matrix ();
     }
 }
 

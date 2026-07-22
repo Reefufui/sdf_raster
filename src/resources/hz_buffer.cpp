@@ -60,7 +60,7 @@ HZBufferDescriptorSetInfo::HZBufferDescriptorSetInfo (VkDevice device
         HZBufferDescriptorSetInfo::FrameResources& f = this->frame_resources [frame_idx];
         f.hz_buffer.mipLvls = mip_lvls;
         f.hz_buffer.format = format;
-        f.prev_mvp = LiteMath::float4x4 {};
+        f.prev_view_proj = LiteMath::float4x4 {};
 
         VK_CHECK_RESULT (vkCreateImage (device, &image_info, nullptr, &f.hz_buffer.image));
         vkGetImageMemoryRequirements (device, f.hz_buffer.image, &f.hz_buffer.memReq);

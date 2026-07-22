@@ -40,7 +40,7 @@ public:
 
     void update (uint32_t frame_index, Settings& settings, float delta_time);
     void render (VkCommandBuffer cmd_buff);
-    void render_scene (VkCommandBuffer cmd_buff, const Scene& scene);
+    void render_scene (VkCommandBuffer cmd_buff, Settings& settings, Scene& scene);
     const Stats& get_stats () const;
     void process_commands (std::queue <std::function<void()>>& commands, std::mutex& mutex);
     void apply_model_config (std::shared_ptr <Model> model);
@@ -78,7 +78,7 @@ private:
 
     void set_default_viewport_and_scissor (VkCommandBuffer cmd_buff);
 
-    void update_frustum_buffer (const Camera& camera, const LiteMath::float4x4& inv_model);
+    void update_frustum_buffer (const Camera& camera);
 
     void clear_geometry (VkCommandBuffer cmd_buff);
     void copy_forward_rendered_depth (VkCommandBuffer cmd_buff);
@@ -217,6 +217,8 @@ public:
     PushConstantsData push_constants {};
     Stats stats {};
     LiteMath::float4 clear_color {0.25f, 0.25f, 0.25f, 1.0f};
+
+    FrustumModePushConstants frustum_pc;
 
     uint32_t frame_index {0};
 

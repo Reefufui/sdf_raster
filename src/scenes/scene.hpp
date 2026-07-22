@@ -24,7 +24,7 @@ struct RenderGroup {
 };
 
 struct LightingSettings {
-    LiteMath::float3 light_pos   = {5.f, 5.f, 5.f};
+    LiteMath::float3 light_pos   = {100.f, 100.f, 100.f};
     LiteMath::float3 light_color = {1.f, 1.f, 1.f};
     LiteMath::float3 fog_color   = {0.25f, 0.25f, 0.25f};
     LiteMath::float4 clear_color = {0.25f, 0.25f, 0.25f, 1.f};

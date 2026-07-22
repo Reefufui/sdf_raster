@@ -96,12 +96,12 @@ private:
     LiteMath::float4x4 view_projection_matrix;
     LiteMath::float4x4 inv_view_projection_matrix;
 
-    float movement_speed {0.25f};
+    float movement_speed {3.25f};
     float mouse_sensitivity {0.1f};
 
     float fov_y {default_fov_y};
     float near_plane {0.01f};
-    float far_plane {10.0f};
+    float far_plane {100.0f};
     float aspect_ratio {1.0f};
 
     std::array <LiteMath::float4, 8> frustum_corners;

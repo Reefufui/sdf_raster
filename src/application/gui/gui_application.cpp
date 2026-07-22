@@ -84,7 +84,7 @@ void GUIApplication::run () {
             this->renderer->update (i, this->session.settings, delta_time);
 
             // this->renderer->render (cmd_buff);
-            this->renderer->render_scene (cmd_buff, scene);
+            this->renderer->render_scene (cmd_buff, this->session.settings, scene);
             gui::draw (this->presentation_render_target->get_swapchain_image_index (), cmd_buff);
 
             this->presentation_render_target->end_frame (cmd_buff, i);

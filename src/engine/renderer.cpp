@@ -144,7 +144,7 @@ Renderer::RasterSComTreeViaComputeShadingDeferred::RasterSComTreeViaComputeShadi
         r.init_traverse_scomtree_pipeline ();
     }
 
-    if (r.marching_cubes_octree_pipeline == VK_NULL_HANDLE) {
+    if (r.marching_cubes_scomtree_pipeline == VK_NULL_HANDLE) {
         r.init_marching_cubes_scomtree_pipeline ();
     }
 
@@ -305,7 +305,7 @@ void Renderer::RasterSComTreeViaComputeShadingDeferred::end (VkCommandBuffer cmd
         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
 
     if (!r.frustum_draw_buffer) {
-        r.hz_buffer_ds->frame_resources_ref (r.frame_index).prev_mvp = r.push_constants.view_proj;
+        r.hz_buffer_ds->frame_resources_ref (r.frame_index).prev_mvp = r.push_constants.mvp;
     }
 }
 
@@ -927,7 +927,7 @@ void Renderer::init_frustum_demo_pipeline () {
     maker.inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
     maker.depthStencilTest.depthWriteEnable = VK_FALSE;
 
-    this->frustum_demo_pipeline_layout = maker.MakeLayout (this->context->get_device (), {}, sizeof (PushConstantsData));
+    this->frustum_demo_pipeline_layout = maker.MakeLayout (this->context->get_device (), {}, sizeof (FrustumModePushConstants));
 
     VkVertexInputBindingDescription binding_desc {};
     binding_desc.binding = 0;
@@ -963,15 +963,15 @@ void Renderer::set_default_viewport_and_scissor (VkCommandBuffer cmd_buff) {
     vkCmdSetScissor (cmd_buff, 0, 1, &scissor);
 }
 
-void Renderer::update (uint32_t frame_index, Settings& settings, float delta_time) {
-    // assert (frame_index < this->render_target->get_max_frames_in_flight () && "frame_index must be less than max_frames_in_flight");
-    //
-    // this->frame_index = frame_index;
-    //
-    // if (!this->current_model) {
-    //     return;
-    // }
-    //
+void Renderer::update (uint32_t frame_index, Settings& /*settings*/, float /*delta_time*/) {
+    assert (frame_index < this->render_target->get_max_frames_in_flight () && "frame_index must be less than max_frames_in_flight");
+
+    this->frame_index = frame_index;
+
+    if (!this->current_model) {
+        return;
+    }
+
     // auto& model_state = current_model->get_state ();
     // model_state.camera.update (delta_time);
     //
@@ -979,7 +979,7 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     //     model_state.rotation.y += 45.0f * delta_time;
     //     if (model_state.rotation.y > 360.0f) model_state.rotation.y -= 360.0f;
     // }
-    //
+
     // if (!settings.frustum_view && this->frustum_draw_buffer) {
     //     this->clear_color = this->clear_color * 2.f;
     //     model_state.camera = this->frustum_draw_buffer->get_camera ();
@@ -994,7 +994,7 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     //         , model_state.camera);
     //     LOG_INFO ("[{}] Frustum view mode: ON.", RENDERER_NAME);
     // }
-    //
+
     // this->stats.active_leafs_count = (this->active_leafs_ds) ? this->active_leafs_ds->fetch_active_leaf_counter (this->frame_index) : 0;
     // if (this->sdf_octree_ds) {
     //     this->stats.active_roots_count = this->sdf_octree_ds->get_subtree_count ();
@@ -1011,7 +1011,7 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     //     this->push_constants.prev_mvp = this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp;
     // }
     //
-    // this->push_constants.view_proj = model_state.camera.get_view_projection_matrix ();
+    // this->push_constants.mvp = model_state.camera.get_view_projection_matrix ();
     // if (settings.frustum_view && this->frustum_draw_buffer) {
     //     this->push_constants.camera_pos = this->frozen_camera_pos;
     // } else {
@@ -1066,7 +1066,7 @@ void Renderer::update (uint32_t frame_index, Settings& settings, float delta_tim
     //
     //     lighting_pc.enable_hz_write   = !!this->hz_buffer_ds && !this->frustum_draw_buffer;
     // }
-    //
+
     // if (!settings.frustum_view && this->frustum_ds) {
     //     FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds->get_frustum_geometry_memory_ptr (this->frame_index));
     //
@@ -1096,11 +1096,11 @@ LiteMath::float3 face_normal (const LiteMath::float4& a, const LiteMath::float4&
 
 }
 
-void Renderer::update_frustum_buffer (const Camera& camera, const LiteMath::float4x4& inv_model) {
+void Renderer::update_frustum_buffer (const Camera& camera) {
     const auto& vertices = camera.get_frustum_corners ();
     
     for (size_t i = 0; i < 8; ++i) {
-        this->frustum.vertices [i] = inv_model * vertices [i];
+        this->frustum.vertices [i] = vertices [i];
     }
 
     this->frustum.normals [0] = LiteMath::to_float4 (face_normal (this->frustum.vertices [1], this->frustum.vertices [0], this->frustum.vertices [2]), 1.f); // Near
@@ -1540,7 +1540,7 @@ void Renderer::prepare_hzbuffer_after_forward_rendering (VkCommandBuffer cmd_buf
     assert (this->hz_buffer_ds && "required for 'prepare_hzbuffer_after_forward_rendering");
     assert (this->forward_shading && "required for 'prepare_hzbuffer_after_forward_rendering");
 
-    this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
+    this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.mvp;
 
     this->hz_buffer_barrier (cmd_buff
         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT}
@@ -1744,7 +1744,7 @@ void Renderer::draw_frustum_demo (VkCommandBuffer cmd_buff) {
 
     vkCmdBindPipeline (cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, this->frustum_demo_pipeline);
 
-    vkCmdPushConstants (cmd_buff, this->frustum_demo_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (PushConstantsData), &push_constants);
+    vkCmdPushConstants (cmd_buff, this->frustum_demo_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof (FrustumModePushConstants), &this->frustum_pc);
 
     VkBuffer vertex_buffers [] = { this->frustum_draw_buffer->get_vertex_buffer () };
     VkDeviceSize offsets [] = {0};
@@ -1890,7 +1890,7 @@ void Renderer::calculate_lighting (VkCommandBuffer cmd_buff) {
     vkCmdEndRenderPass (cmd_buff);
 }
 
-void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
+void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer /*cmd_buff*/) {
     // assert (this->sdf_octree_ds && "required for 'raster_octree_via_mesh_shading'");
     // assert (this->marching_cubes_lookup_table_ds && "required for 'raster_octree_via_mesh_shading'");
     // assert (this->active_leafs_ds && "required for 'raster_octree_via_mesh_shading'");
@@ -1906,7 +1906,7 @@ void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     //     float4x4 model = this->current_model->get_model_matrix();
     //     float4x4 inv_model = LiteMath::inverse4x4(model);
     //
-    //     this->push_constants.view_proj = original_push_constants.view_proj * model;
+    //     this->push_constants.mvp = original_push_constants.mvp * model;
     //
     //     float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
     //     this->push_constants.camera_pos = local_cam_pos;
@@ -1972,7 +1972,7 @@ void Renderer::raster_octree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     // }
 }
 
-void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
+void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer /*cmd_buff*/) {
     // assert (this->sdf_scomtree_ds && "required for 'raster_scomtree_via_mesh_shading'");
     // assert (this->marching_cubes_lookup_table_ds && "required for 'raster_scomtree_via_mesh_shading'");
     // assert (this->active_leafs_ds && "required for 'raster_scomtree_via_mesh_shading'");
@@ -1988,7 +1988,7 @@ void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     //     float4x4 model = this->current_model->get_model_matrix();
     //     float4x4 inv_model = LiteMath::inverse4x4(model);
     //
-    //     this->push_constants.view_proj = original_push_constants.view_proj * model;
+    //     this->push_constants.mvp = original_push_constants.mvp * model;
     //
     //     float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
     //     this->push_constants.camera_pos = local_cam_pos;
@@ -2050,7 +2050,7 @@ void Renderer::raster_scomtree_via_mesh_shading (VkCommandBuffer cmd_buff) {
     // this->push_constants = original_push_constants;
 }
 
-void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_buff) {
+void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer /*cmd_buff*/) {
     // assert (this->context && "required for 'raster_scomtree_via_mesh_shading_deferred'");
     // assert (this->deferred_shading && "required for 'raster_scomtree_via_mesh_shading_deferred'");
     // assert (this->draw_indexed_indirect_command_ds && "required for 'raster_scomtree_via_mesh_shading_deferred'");
@@ -2070,7 +2070,7 @@ void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_bu
     // this->prepare_indirect (cmd_buff, uint32_t {1}); // NOTE: brick == meshlet
     //
     //     if (!this->frustum_draw_buffer) {
-    //         this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
+    //         this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.mvp;
     //     }
     //
     // this->hz_buffer_barrier (cmd_buff
@@ -2167,7 +2167,7 @@ void Renderer::raster_scomtree_via_mesh_shading_deferred (VkCommandBuffer cmd_bu
     //     , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
 }
 
-void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
+void Renderer::raster_octree_via_compute_shading (VkCommandBuffer /*cmd_buff*/) {
     // auto original_push_constants = this->push_constants;
     //
     // if (this->current_model) {
@@ -2175,7 +2175,7 @@ void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
     //     float4x4 model = this->current_model->get_model_matrix();
     //     float4x4 inv_model = LiteMath::inverse4x4(model);
     //
-    //     this->push_constants.view_proj = original_push_constants.view_proj * model;
+    //     this->push_constants.mvp = original_push_constants.mvp * model;
     //
     //     float4 local_cam_pos = inv_model * original_push_constants.camera_pos;
     //     this->push_constants.camera_pos = local_cam_pos;
@@ -2201,11 +2201,11 @@ void Renderer::raster_octree_via_compute_shading (VkCommandBuffer cmd_buff) {
     // this->push_constants = original_push_constants;
 }
 
-void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
+void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer /*cmd_buff*/) {
     // /* update push constants */
     // if (this->current_model) {
     //     LiteMath::float4x4 model = this->current_model->get_model_matrix ();
-    //     this->push_constants.view_proj = this->current_model->get_state ().camera.get_view_projection_matrix () * model;
+    //     this->push_constants.mvp = this->current_model->get_state ().camera.get_view_projection_matrix () * model;
     //
     //     LiteMath::float4x4 inv_model = LiteMath::inverse4x4 (model);
     //     LiteMath::float4 camera_pos;
@@ -2261,7 +2261,7 @@ void Renderer::raster_scomtree_via_compute_shading (VkCommandBuffer cmd_buff) {
     //         , {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT});
     //
     //     if (!this->frustum_draw_buffer) {
-    //         this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.view_proj;
+    //         this->hz_buffer_ds->frame_resources_ref (this->frame_index).prev_mvp = this->push_constants.mvp;
     //     }
     // } else {
     //     this->prepare_hzbuffer_after_forward_rendering (cmd_buff);
@@ -2357,13 +2357,13 @@ const std::unique_ptr <ModelResource>& Renderer::get_model_resource (const std::
     return it->second;
 }
 
-void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
+void Renderer::render_scene (VkCommandBuffer cmd_buff, Settings& settings, Scene& scene) {
     assert (this->render_target && "required for 'Renderer::render_scene'");
 
     const auto& groups = scene.get_groups ();
     bool dirty_surface = true;
 
-    const auto& camera = scene.get_camera ();
+    auto& camera = scene.get_camera_ref ();
     const auto& lighting_settings = scene.get_lighting_settings ();
 
     this->push_constants.far_plane = camera.get_far_plane ();
@@ -2374,8 +2374,24 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
     this->push_constants.screen_width = extent.width;
     this->push_constants.screen_height = extent.height;
 
-    // this->push_constants.color_leafs = settings.color_leafs;
-    // this->clear_color = settings.lighting.clear_color;
+    if (!settings.frustum_view && this->frustum_draw_buffer) {
+        this->clear_color = this->clear_color * 2.f;
+        camera = this->frustum_draw_buffer->get_camera ();
+        this->frustum_draw_buffer.reset ();
+        vk_utils::destroyPipelineIfExists (this->context->get_device (), this->frustum_demo_pipeline, this->frustum_demo_pipeline_layout);
+        LOG_INFO ("[{}] Frustum view mode: OFF.", RENDERER_NAME);
+    } else if (settings.frustum_view && !this->frustum_draw_buffer) {
+        this->clear_color = this->clear_color * 0.5f;
+        this->frozen_camera_pos = LiteMath::to_float4 (camera.get_position (), 1.0f);
+        this->frustum_draw_buffer = FrustumDrawBuffer::get_frustum_buffer (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_copy_helper ()
+            , camera);
+        this->init_frustum_demo_pipeline ();
+        LOG_INFO ("[{}] Frustum view mode: ON.", RENDERER_NAME);
+    }
+
+    this->push_constants.color_leafs = 1u;
 
     for (const auto& [draw_method, batches] : groups) {
         const auto& method = this->get_render_method (draw_method);
@@ -2386,6 +2402,8 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
 
         // LOG_INFO ("dirty_surface: {}", dirty_surface);
         method->begin (cmd_buff, dirty_surface);
+        LiteMath::float4 position {LiteMath::to_float4 (camera.get_position (), 1.0f)};
+        LiteMath::float4 world_camera_pos = (this->frustum_draw_buffer) ? this->frozen_camera_pos : position;
 
         for (const auto& [mesh_id, model, items] : batches) {
             const auto& model_ds = this->get_model_resource (mesh_id, model);
@@ -2397,10 +2415,9 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
 
             for (const auto& item : items) {
                 LiteMath::float4x4 inv_model = LiteMath::inverse4x4 (item.transform);
-                LiteMath::float4 position {LiteMath::to_float4 (camera.get_position (), 1.0f)};
-                LiteMath::float4 world_camera_pos = (this->frustum_draw_buffer) ? this->frozen_camera_pos : position;
 
-                this->push_constants.view_proj = camera.get_view_projection_matrix () * item.transform;
+                this->push_constants.mvp = camera.get_view_projection_matrix () * item.transform;
+                this->push_constants.model_matrix = item.transform;
                 this->push_constants.camera_pos = inv_model * world_camera_pos;
 
                 this->push_constants.max_lod = static_cast <uint> (model_state.max_lod);
@@ -2416,28 +2433,32 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, const Scene& scene) {
                 this->push_constants.root_center = model_state.octree_root_center;
                 this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, model_state.octree_depth);
 
-                auto& lighting_pc = this->deferred_shading->push_constants_ref ();
-                lighting_pc.light_color       = LiteMath::to_float4 (lighting_settings.light_color, 1.f);
-                lighting_pc.fog_color         = LiteMath::to_float4 (lighting_settings.fog_color, 1.0f);
-                lighting_pc.ambient_strength  = lighting_settings.ambient_strength;
-                lighting_pc.specular_strength = lighting_settings.specular_strength;
-                lighting_pc.shininess         = lighting_settings.shininess;
-                lighting_pc.depth_threshold   = lighting_settings.depth_threshold;
-                lighting_pc.fog_start         = lighting_settings.fog_start;
-                lighting_pc.fog_end           = lighting_settings.fog_end;
-                lighting_pc.enable_hz_write   = !!this->hz_buffer_ds && !this->frustum_draw_buffer;
-                lighting_pc.camera_pos        = inv_model * position;
-                lighting_pc.light_pos         = inv_model * LiteMath::to_float4 (lighting_settings.light_pos, 1.f);
-
                 method->draw (cmd_buff, model_ds);
                 dirty_surface = false;
             }
         }
 
+        this->push_constants.mvp = camera.get_view_projection_matrix ();
+        auto& lighting_pc = this->deferred_shading->push_constants_ref ();
+        lighting_pc.light_color       = LiteMath::to_float4 (lighting_settings.light_color, 1.f);
+        lighting_pc.fog_color         = LiteMath::to_float4 (lighting_settings.fog_color, 1.0f);
+        lighting_pc.ambient_strength  = lighting_settings.ambient_strength;
+        lighting_pc.specular_strength = lighting_settings.specular_strength;
+        lighting_pc.shininess         = lighting_settings.shininess;
+        lighting_pc.depth_threshold   = lighting_settings.depth_threshold;
+        lighting_pc.fog_start         = lighting_settings.fog_start;
+        lighting_pc.fog_end           = lighting_settings.fog_end;
+        lighting_pc.enable_hz_write   = !!this->hz_buffer_ds && !this->frustum_draw_buffer;
+        lighting_pc.camera_pos        = position;
+        lighting_pc.light_pos         = LiteMath::to_float4 (lighting_settings.light_pos, 1.f);
+
         method->end (cmd_buff);
     }
 
     if (this->frustum_draw_buffer) {
+        // FrustumGeometry* ptr = static_cast <FrustumGeometry*> (this->frustum_ds->get_frustum_geometry_memory_ptr (this->frame_index));
+        this->update_frustum_buffer (camera);
+        this->frustum_pc.view_proj = camera.get_view_projection_matrix ();
         this->draw_frustum_demo (cmd_buff);
     }
 }

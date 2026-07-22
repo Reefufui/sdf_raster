@@ -70,7 +70,8 @@ struct TaskPayload {
 #endif
 
 struct PushConstantsData {
-    alignas (16) column_major float4x4 view_proj;
+    alignas (16) column_major float4x4 mvp;
+    alignas (16) column_major float4x4 model_matrix;
     alignas (16) column_major float4x4 prev_mvp;
     alignas (16) float4 camera_pos;
     alignas (4)  float far_plane;
@@ -111,6 +112,10 @@ struct DeferredLightingPushConstants {
     float  fog_end;            // 1.0 default
 
     uint   enable_hz_write;    // 0 default
+};
+
+struct FrustumModePushConstants {
+    alignas (16) column_major float4x4 view_proj;
 };
 
 struct SComTreeHeader {

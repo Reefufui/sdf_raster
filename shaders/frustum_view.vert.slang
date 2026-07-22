@@ -2,7 +2,7 @@
 
 #include "shader_common.hpp"
 
-[[vk::push_constant]] ConstantBuffer <PushConstantsData> pc;
+[[vk::push_constant]] ConstantBuffer <FrustumModePushConstants> pc;
 
 struct VertexStageOutput {
     float4 sv_position : SV_Position;

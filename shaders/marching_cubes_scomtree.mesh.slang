@@ -195,8 +195,8 @@ void main (
             const float3 norm = normalize (float3 (dx, dy, dz));
 
             MeshOutput v;
-            v.clip_position  = mul (pc.view_proj, float4 (position, 1.0f));
-            v.position       = float4 (position, 1.0f);
+            v.clip_position  = mul (pc.mvp, float4 (position, 1.0f));
+            v.position       = mul (pc.model_matrix, float4 (position, 1.0f));
             v.normal         = float4 (norm, 1.0f);
             if (pc.color_leafs == 1u) {
                 v.color = colors [brick_offset % COLORS_COUNT];

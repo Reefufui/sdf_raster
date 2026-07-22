@@ -170,6 +170,7 @@ void generate_geometry (uint active_leaf_index) {
                 } else if (pc.color_leafs == 2u) {
                     vertex.color = voxel_size_color (voxel_size, pc.min_voxel_size, pc.max_voxel_size);
                 } else {
+                    // vertex.color = float4 (vertex.normal.xyz / 2.0f + 0.5f, 1.0f);
                     vertex.color = float4 (1.f);
                 }
 

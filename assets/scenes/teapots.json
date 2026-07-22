@@ -1,0 +1,28 @@
+{
+    "meshes": [
+        {
+            "id": "teapot",
+            "path": "/Users/andreytrifonov/Development/sdf_raster/assets/teapot.obj"
+        }
+    ],
+    "instances": [
+        {
+            "mesh_id": "teapot",
+            "transform": [
+                1.0, 0.0, 0.0, 1.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0
+            ]
+        },
+        {
+            "mesh_id": "teapot",
+            "transform": [
+                1.0, 0.0, 0.0, -1.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0
+            ]
+        }
+    ]
+}

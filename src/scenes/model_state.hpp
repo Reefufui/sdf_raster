@@ -31,18 +31,18 @@ struct ModelState {
     int octree_depth {16};
     int cpu_traversed {3};
     int gpu_descend {5}; // NOTE: deprecated
-    int max_lod {16};
+    int max_lod {7};
     int min_lod {3};
     int frustum_culling_level {16};
     int occlusion_culling_level {16};
-    LODMode lod_mode = LODMode::Fixed;
+    LODMode lod_mode = LODMode::PerNode;
     int fixed_lod = 6;
     LiteMath::float4 octree_root_center {0.0f, 0.0f, 0.0f, 0.0f};
     LiteMath::float3 position {0.0f, 0.0f, 0.0f};
     LiteMath::float3 rotation {0.0f, 0.0f, 0.0f}; // in degrees
     LiteMath::float3 scale {1.0f, 1.0f, 1.0f};
-    float lod_threshold_pixels {2.0f};
-    float lod_aggressivity {1.0f};
+    float lod_threshold_pixels {4.0f};
+    float lod_aggressivity {0.8f};
 };
 
 constexpr std::string_view draw_method_name (DrawMethod m) {

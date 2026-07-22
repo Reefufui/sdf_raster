@@ -1031,11 +1031,9 @@ void Renderer::update (uint32_t frame_index, Settings& /*settings*/, float /*del
     // auto extent = this->render_target->get_extent ();
     // this->push_constants.screen_width = extent.width;
     // this->push_constants.screen_height = extent.height;
-    // this->push_constants.max_voxel_size = 2.0f / std::pow (2.0f, model_state.cpu_traversed);
     // this->clear_color = settings.lighting.clear_color;
     //
     // // model
-    // this->push_constants.root_center = model_state.octree_root_center;
     // this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, model_state.octree_depth);
     //
     // if (this->deferred_shading) {
@@ -2360,8 +2358,6 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, Settings& settings, Scene
     auto& camera = scene.get_camera_ref ();
     const auto& lighting_settings = scene.get_lighting_settings ();
 
-    this->push_constants.far_plane = camera.get_far_plane ();
-    this->push_constants.near_plane = camera.get_near_plane ();
     this->push_constants.fov_y = camera.get_fov_y () * (3.14159265359f / 180.0f);
 
     auto extent = this->render_target->get_extent ();
@@ -2424,8 +2420,6 @@ void Renderer::render_scene (VkCommandBuffer cmd_buff, Settings& settings, Scene
                 this->push_constants.fixed_lod = static_cast <uint> (model_state.fixed_lod);
                 this->push_constants.lod_threshold_pixels = model_state.lod_threshold_pixels;
                 this->push_constants.lod_aggressivity = model_state.lod_aggressivity;
-                this->push_constants.max_voxel_size = 2.0f / std::pow (2.0f, model_state.cpu_traversed);
-                this->push_constants.root_center = model_state.octree_root_center;
                 this->push_constants.min_voxel_size = 2.0f / std::pow (2.0f, model_state.octree_depth);
 
                 method->draw (cmd_buff, model_ds);

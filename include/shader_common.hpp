@@ -74,8 +74,6 @@ struct PushConstantsData {
     alignas (16) column_major float4x4 model_matrix;
     alignas (16) column_major float4x4 prev_mvp;
     alignas (16) float4 camera_pos;
-    alignas (4)  float far_plane;
-    alignas (4)  float near_plane;
     alignas (4)  uint max_octree_depth;
     alignas (4)  uint max_lod;
     alignas (4)  uint min_lod;
@@ -86,7 +84,6 @@ struct PushConstantsData {
     alignas (4)  uint color_leafs;
     alignas (4)  uint lod_mode;  // 0 = fixed (fixed_lod), 1 = global (calc), 2 = per-node
     alignas (4)  uint fixed_lod;
-    alignas (16) float4 root_center;
     alignas (4)  float lod_threshold_pixels;
     alignas (4)  float lod_aggressivity;
     alignas (4)  float fov_y;

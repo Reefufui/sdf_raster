@@ -251,7 +251,7 @@ bool descend_path (uint path [MAX_DIRECT_DESCEND_PATH], inout SComTreeStackEleme
 [numthreads (8, 8, 8)]
 void main (uint3 dti :  SV_DispatchThreadID, uint3 gi : SV_GroupID, uint3 gti : SV_GroupThreadID) {
     const uint lod = (pc.lod_mode == LOD_MODE_FIXED) ? pc.fixed_lod
-        : (pc.lod_mode == LOD_MODE_PER_TREE) ? calc_lod_for_node (pc.root_center.xyz - 0.5f * pc.max_voxel_size, pc.max_voxel_size, pc.subtree_root_level, pc.max_lod)
+        : (pc.lod_mode == LOD_MODE_PER_TREE) ? get_global_lod ()
         : uint (MAX_OCTREE_DEPTH);
 
     SComTreeStackElement cur = g_roots [gi.z];

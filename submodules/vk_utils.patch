@@ -1,0 +1,113 @@
+diff --git a/vk_copy.cpp b/vk_copy.cpp
+index a7cd0cf..08549f4 100644
+--- a/vk_copy.cpp
++++ b/vk_copy.cpp
+@@ -225,13 +225,20 @@ void vk_utils::SimpleCopyHelper::ReadImage(VkImage a_image, void* a_dst, int a_w
+ 
+     vk_utils::executeCommandBufferNow(cmdBuff, queue, dev);
+ 
++    auto currMapSize = numLinesToCopy * lineSize;
++    if(currMapSize % m_nonCoherentAtomSize != 0)
++    {
++      currMapSize = m_nonCoherentAtomSize * (currMapSize / m_nonCoherentAtomSize + 1);
++    }
++
+     void* mappedMemory = nullptr;
+-    vkMapMemory(dev, stagingBuffMemory, 0, numLinesToCopy * lineSize, 0, &mappedMemory);
++    vkMapMemory(dev, stagingBuffMemory, 0, currMapSize, 0, &mappedMemory);
+ 
+-    VkMappedMemoryRange range;
++    VkMappedMemoryRange range{};
+     range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
++    range.pNext = nullptr;
+     range.memory = stagingBuffMemory;
+-    range.size = numLinesToCopy * lineSize;
++    range.size   = currMapSize;
+     range.offset = 0;
+     vkInvalidateMappedMemoryRanges(dev, 1, &range);
+ 
+diff --git a/vk_pipeline.cpp b/vk_pipeline.cpp
+index acb49f0..183ab07 100644
+--- a/vk_pipeline.cpp
++++ b/vk_pipeline.cpp
+@@ -111,6 +111,7 @@ VkPipelineLayout vk_utils::GraphicsPipelineMaker::MakeLayout(VkDevice a_device,
+ 
+ void vk_utils::GraphicsPipelineMaker::SetDefaultState(uint32_t a_width, uint32_t a_height, uint32_t rt_count)
+ {
++  inputAssembly = IA_TList();
+   VkExtent2D a_screenExtent{ a_width, a_height };
+ 
+   viewport.x        = 0.0f;
+@@ -213,6 +214,47 @@ VkPipeline vk_utils::GraphicsPipelineMaker::MakePipeline(VkDevice a_device, VkPi
+   return m_pipeline;
+ }
+ 
++VkPipeline vk_utils::MeshPipelineMaker::MakePipeline(VkDevice a_device, VkRenderPass a_renderPass,
++                                                     std::vector<VkDynamicState> a_dynamicStates,
++                                                     uint32_t subpass)
++{
++  VkPipelineDynamicStateCreateInfo dynamicState = {};
++  dynamicState.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
++  dynamicState.dynamicStateCount = (uint32_t)a_dynamicStates.size();
++  dynamicState.pDynamicStates    = a_dynamicStates.data();
++
++  VkPipelineVertexInputStateCreateInfo emptyInputState = {};
++  emptyInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
++
++  pipelineInfo = {};
++  pipelineInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
++  pipelineInfo.flags               = 0;
++  pipelineInfo.stageCount          = m_stagesNum;
++  pipelineInfo.pStages             = shaderStageInfos;
++  pipelineInfo.pVertexInputState   = &emptyInputState;
++  pipelineInfo.pInputAssemblyState = &inputAssembly;
++  pipelineInfo.pViewportState      = &viewportState;
++  pipelineInfo.pRasterizationState = &rasterizer;
++  pipelineInfo.pMultisampleState   = &multisampling;
++  pipelineInfo.pColorBlendState    = &colorBlending;
++  pipelineInfo.layout              = m_pipelineLayout;
++  pipelineInfo.renderPass          = a_renderPass;
++  pipelineInfo.subpass             = subpass;
++  pipelineInfo.pDynamicState       = &dynamicState;
++  pipelineInfo.basePipelineHandle  = VK_NULL_HANDLE;
++  pipelineInfo.pDepthStencilState  = &depthStencilTest;
++
++  VK_CHECK_RESULT(vkCreateGraphicsPipelines(a_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline));
++
++  for (size_t i = 0; i < m_stagesNum; ++i)
++  {
++    if(shaderModules[i] != VK_NULL_HANDLE)
++      vkDestroyShaderModule(a_device, shaderModules[i], VK_NULL_HANDLE);
++    shaderModules[i] = VK_NULL_HANDLE;
++  }
++
++  return m_pipeline;
++}
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////////
+ ////////////////////////////////////////////////////////////////////////////////////////////////
+diff --git a/vk_pipeline.h b/vk_pipeline.h
+index 886edae..adae554 100644
+--- a/vk_pipeline.h
++++ b/vk_pipeline.h
+@@ -45,12 +45,19 @@ namespace vk_utils
+                                   std::vector<VkDynamicState> a_dynamicStates = {},
+                                   VkPipelineInputAssemblyStateCreateInfo a_inputAssembly = IA_TList(),
+                                   uint32_t subpass = 0);
+-  private:
++  protected:
+     uint32_t         m_stagesNum = 0;
+     VkPipeline       m_pipeline  = VK_NULL_HANDLE;
+     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
+   };
+ 
++  struct MeshPipelineMaker : public GraphicsPipelineMaker
++  {
++    VkPipeline MakePipeline(VkDevice a_device, VkRenderPass a_renderPass,
++                            std::vector<VkDynamicState> a_dynamicStates = {},
++                            uint32_t subpass = 0);
++  };
++
+   struct ComputePipelineMaker
+   {
+     VkShaderModule                  shaderModule = VK_NULL_HANDLE;

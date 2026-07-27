@@ -23,6 +23,20 @@ CLIApplication::CLIApplication (const SessionState& session, int argc_, char* ar
 
 int CLIApplication::run () {
     CLIArguments args = this->parse_args (this->argc, this->argv);
+
+    if (args.export_mesh_path) {
+        std::filesystem::path scene_path;
+        if (args.scene_path) {
+            scene_path = *args.scene_path;
+        } else if (this->session.current_scene_path) {
+            scene_path = *this->session.current_scene_path;
+        } else {
+            throw std::runtime_error ("export-mesh: no scene path. Use --scene <path> or pass the scene as positional arg.");
+        }
+        this->run_export (*args.export_mesh_path, scene_path);
+        return 0;
+    }
+
     BenchmarkConfig config = this->fill_config (args, this->session);
     this->run_benchmark (config);
     return 0;
@@ -197,6 +211,37 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
         scene,
         render_target->get_timestamp_period ()
     );
+
+    renderer.reset ();
+    render_target.reset ();
+    vulkan_context->shutdown ();
+}
+
+void CLIApplication::run_export (const std::filesystem::path& output_path, const std::filesystem::path& scene_path) {
+    LOG_INFO ("[Export] Scene: {} -> Output: {}", scene_path.string (), output_path.string ());
+
+    auto vulkan_context = std::make_shared <VulkanContext> ();
+    vulkan_context->init ();
+
+    auto scene_manager = this->create_scene_manager ();
+    auto scene = this->load_scene (scene_path, *scene_manager);
+    if (!scene) {
+        throw std::runtime_error ("export-mesh: failed to load scene: " + scene_path.string ());
+    }
+
+    LOG_INFO ("[Export] Scene memory size: {:.2f} MB", scene->get_memory_size () / (1024.0 * 1024.0));
+
+    auto render_target = std::make_shared <OffscreenRenderTarget> (
+        vulkan_context,
+        1920,
+        1080,
+        VK_FORMAT_R8G8B8A8_UNORM
+    );
+
+    auto renderer = std::make_unique <Renderer> (vulkan_context, render_target);
+    renderer->apply_scene_config (scene);
+
+    renderer->export_mesh (output_path, this->session.settings);
 
     renderer.reset ();
     render_target.reset ();

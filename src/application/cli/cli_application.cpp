@@ -62,6 +62,10 @@ CLIArguments CLIApplication::parse_args (int argc, char* argv[]) {
             if (++i < argc) {
                 args.measurement_frames = static_cast <uint32_t> (std::stoul (argv [i]));
             }
+        } else if (arg == "--export-mesh" || arg == "-e") {
+            if (++i < argc) {
+                args.export_mesh_path = std::filesystem::path (argv [i]);
+            }
         } else {
             args.scene_path = std::filesystem::path (arg);
         }

@@ -66,9 +66,10 @@ int main (int argc, char* argv []) {
             cli_argc -= 2;
         } else if (arg == "--help") {
             std::cout << "Usage: " << argv [0] << " [options]\n"
-                      << "  --headless        Run in CLI mode\n"
-                      << "  --session <path>  Session file (default: /tmp/sdf_raster.json)\n"
-                      << "  --help            Show this help\n";
+                      << "  --headless              Run in CLI mode\n"
+                      << "  --session <path>        Session file (default: /tmp/sdf_raster.json)\n"
+                      << "  --export-mesh <path>    Convert scene to OBJ at <path> (headless only)\n"
+                      << "  --help                  Show this help\n";
             std::exit (EXIT_SUCCESS);
         } else {
             ++i;

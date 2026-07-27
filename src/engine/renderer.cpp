@@ -2875,6 +2875,10 @@ void Renderer::export_mesh (const std::filesystem::path& path, Settings& setting
     }
 
     this->update (0, settings, 0.0f);
+
+    this->push_constants.frustum_culling_level = 1;
+    this->push_constants.occlusion_culling_level = 1;
+
     this->sdf_scomtree_ds->update_subtree_root_buffer_all (this->frame_index);
 
     VkCommandBuffer cmd_buff = this->render_target->begin_frame (this->frame_index);
@@ -2882,6 +2886,7 @@ void Renderer::export_mesh (const std::filesystem::path& path, Settings& setting
         throw std::runtime_error ("export-mesh: begin_frame returned VK_NULL_HANDLE");
     }
 
+    this->copy_subtrees (cmd_buff);
     this->reset_active_leafs_counter (cmd_buff);
     this->traverse_scomtree (cmd_buff);
     this->clear_geometry (cmd_buff);

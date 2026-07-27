@@ -2861,9 +2861,48 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
 }
 
 void Renderer::export_mesh (const std::filesystem::path& path, Settings& settings) {
-    (void) path;
-    (void) settings;
-    throw std::runtime_error ("export_mesh not yet implemented");
+    auto scomtree_scene = std::dynamic_pointer_cast <SComTreeScene> (this->current_scene);
+    if (!scomtree_scene) {
+        throw std::runtime_error ("export-mesh currently supports only scomtree scenes");
+    }
+
+    if (!this->sdf_scomtree_ds || !this->mesh_ds) {
+        throw std::runtime_error ("export-mesh requires a scomtree scene with marching cubes buffers; call apply_scene_config first");
+    }
+
+    if (this->render_target->get_max_frames_in_flight () == 0) {
+        throw std::runtime_error ("export-mesh requires a render target with at least one frame in flight");
+    }
+
+    this->update (0, settings, 0.0f);
+    this->sdf_scomtree_ds->update_subtree_root_buffer_all (this->frame_index);
+
+    VkCommandBuffer cmd_buff = this->render_target->begin_frame (this->frame_index);
+    if (cmd_buff == VK_NULL_HANDLE) {
+        throw std::runtime_error ("export-mesh: begin_frame returned VK_NULL_HANDLE");
+    }
+
+    this->reset_active_leafs_counter (cmd_buff);
+    this->traverse_scomtree (cmd_buff);
+    this->clear_geometry (cmd_buff);
+    this->prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
+    this->marching_cubes_scomtree (cmd_buff);
+    this->geometry_barrier (cmd_buff);
+
+    this->render_target->end_frame (cmd_buff, this->frame_index);
+
+    const LiteMath::uint flag = this->mesh_ds->fetch_insufficent_mem_flag ();
+    if (flag != 0) {
+        LOG_WARN ("[Renderer] export_mesh: insufficient GPU buffer (capacity {} verts / {} indices). OBJ will be truncated.",
+            this->push_constants.active_leafs_max_count * MAX_LEAF_VERTS,
+            this->push_constants.active_leafs_max_count * MAX_LEAF_PRIMS * 3);
+    }
+
+    Mesh mesh = this->mesh_ds->fetch_mesh_from_device (this->frame_index);
+    LOG_INFO ("[Renderer] export_mesh: read {} verts, {} indices ({} triangles)",
+        mesh.get_vertices ().size (), mesh.get_indices ().size (), mesh.get_indices ().size () / 3);
+
+    save_mesh_as_obj (mesh, path.string ());
 }
 
 } // namespace sdf_raster

@@ -2860,5 +2860,11 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
     // LOG_INFO ("[{}] Rendering pipeline set to: {}", RENDERER_NAME, this->current_scene->get_state ().draw_method);
 }
 
+void Renderer::export_mesh (const std::filesystem::path& path, Settings& settings) {
+    (void) path;
+    (void) settings;
+    throw std::runtime_error ("export_mesh not yet implemented");
+}
+
 } // namespace sdf_raster
 

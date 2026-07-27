@@ -41,6 +41,7 @@ public:
     void render (VkCommandBuffer cmd_buff);
     void process_commands (std::queue <std::function<void()>>& commands, std::mutex& mutex);
     void apply_scene_config (std::shared_ptr <Scene> scene);
+    void export_mesh (const std::filesystem::path& path, Settings& settings);
     const Stats& get_stats ();
     void resize ();
 

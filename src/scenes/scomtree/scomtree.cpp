@@ -566,6 +566,10 @@ std::vector <SComTreeStackElement> SComTreeScene::collect_visible_subtrees (cons
     return visible;
 }
 
+std::vector <SComTreeStackElement> SComTreeScene::collect_all_subtrees () const {
+    return this->cached_all_subtrees;
+}
+
 std::span <const DrawMethod> SComTreeScene::get_available_draw_methods () const {
     return this->available_methods;
 }

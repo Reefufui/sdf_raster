@@ -39,6 +39,8 @@ public:
 
     std::vector <SComTreeStackElement> collect_visible_subtrees (const FrustumGeometry& frustum) const;
 
+    std::vector <SComTreeStackElement> collect_all_subtrees () const;
+
     void dump_as_json (const std::filesystem::path& path) const;
 
     Mesh generate_mesh () const;

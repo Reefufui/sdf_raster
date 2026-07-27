@@ -12,6 +12,7 @@
 #include <vk_pipeline.h>
 
 #include <array>
+#include <algorithm>
 #include <cassert>
 #include <fstream>
 #include <iomanip>
@@ -2866,7 +2867,7 @@ void Renderer::export_mesh (const std::filesystem::path& path, Settings& setting
         throw std::runtime_error ("export-mesh currently supports only scomtree scenes");
     }
 
-    if (!this->sdf_scomtree_ds || !this->mesh_ds) {
+    if (!this->sdf_scomtree_ds || !this->mesh_ds || !this->active_leafs_ds) {
         throw std::runtime_error ("export-mesh requires a scomtree scene with marching cubes buffers; call apply_scene_config first");
     }
 
@@ -2905,8 +2906,20 @@ void Renderer::export_mesh (const std::filesystem::path& path, Settings& setting
     }
 
     Mesh mesh = this->mesh_ds->fetch_mesh_from_device (this->frame_index);
-    LOG_INFO ("[Renderer] export_mesh: read {} verts, {} indices ({} triangles)",
-        mesh.get_vertices ().size (), mesh.get_indices ().size (), mesh.get_indices ().size () / 3);
+
+    const uint32_t active_leafs_count = this->active_leafs_ds->fetch_active_leaf_counter (this->frame_index);
+    const size_t mesh_vert_capacity = mesh.get_vertices ().size ();
+    const size_t mesh_index_capacity = mesh.get_indices ().size ();
+    const size_t actual_vert_count = std::min <size_t> (static_cast <size_t> (active_leafs_count) * MAX_LEAF_VERTS, mesh_vert_capacity);
+    const size_t actual_index_count = std::min <size_t> (static_cast <size_t> (active_leafs_count) * MAX_LEAF_PRIMS * 3, mesh_index_capacity);
+
+    std::vector <::Vertex> trimmed_verts (mesh.get_vertices ().begin (), mesh.get_vertices ().begin () + actual_vert_count);
+    std::vector <uint32_t> trimmed_idxs (mesh.get_indices ().begin (), mesh.get_indices ().begin () + actual_index_count);
+    mesh.set_data (std::move (trimmed_verts), std::move (trimmed_idxs));
+
+    LOG_INFO ("[Renderer] export_mesh: trimmed to {} verts, {} indices ({} triangles) from {} active leaves (capacity was {} / {})",
+        mesh.get_vertices ().size (), mesh.get_indices ().size (), mesh.get_indices ().size () / 3,
+        active_leafs_count, mesh_vert_capacity, mesh_index_capacity);
 
     save_mesh_as_obj (mesh, path.string ());
 }

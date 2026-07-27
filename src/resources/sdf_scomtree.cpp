@@ -171,4 +171,13 @@ void SComTreeTreeDescriptorSetInfo::update_subtree_root_buffer (const FrustumGeo
     }
 }
 
+void SComTreeTreeDescriptorSetInfo::update_subtree_root_buffer_all (uint32_t fif_index) {
+    assert (this->scene);
+    auto all_subtrees = this->scene->collect_all_subtrees ();
+    this->subtree_count = all_subtrees.size ();
+    if (this->subtree_count) {
+        memcpy (this->subtrees_memory_mapped [fif_index], all_subtrees.data (), this->subtree_count * sizeof (SComTreeStackElement));
+    }
+}
+
 } // sdf_raster

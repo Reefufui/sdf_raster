@@ -31,6 +31,7 @@ public:
     VkDescriptorSetLayout get_layout () const { return this->descriptor_set_layout; }
 
     void update_subtree_root_buffer (const FrustumGeometry& frustum, uint32_t fif_index);
+    void update_subtree_root_buffer_all (uint32_t fif_index);
     VkBuffer get_subtree_root_buffer (uint32_t fif_index) const { return this->subtree_root_buffers [fif_index]; }
     VkBuffer get_subtree_root_staging_buffer (uint32_t fif_index) const { return this->subtree_roots_staging_buffers [fif_index]; }
     size_t get_subtree_count () const { return this->subtree_count; }

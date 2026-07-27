@@ -2890,6 +2890,7 @@ void Renderer::export_mesh (const std::filesystem::path& path, Settings& setting
     this->geometry_barrier (cmd_buff);
 
     this->render_target->end_frame (cmd_buff, this->frame_index);
+    vkDeviceWaitIdle (this->context->get_device ());
 
     const LiteMath::uint flag = this->mesh_ds->fetch_insufficent_mem_flag ();
     if (flag != 0) {

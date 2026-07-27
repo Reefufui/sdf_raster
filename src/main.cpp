@@ -1,5 +1,7 @@
 // main.cpp
+#include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,6 +15,7 @@ namespace sdf_raster {
 struct AppConfig {
     std::string config_path = "/tmp/sdf_raster.json";
     bool headless = false;
+    std::optional<std::filesystem::path> export_mesh_path;
 };
 
 AppConfig parse_args (int argc, char* argv []) {
@@ -23,11 +26,14 @@ AppConfig parse_args (int argc, char* argv []) {
             config.headless = true;
         } else if (arg == "--session" && i + 1 < argc) {
             config.config_path = argv [++i];
+        } else if (arg == "--export-mesh" && i + 1 < argc) {
+            config.export_mesh_path = std::filesystem::path (argv [++i]);
         } else if (arg == "--help") {
             std::cout << "Usage: " << argv [0] << " [options]\n"
-                      << "  --headless        Run in CLI mode\n"
-                      << "  --session <path>  Session file (default: /tmp/sdf_raster.json)\n"
-                      << "  --help            Show this help\n";
+                      << "  --headless              Run in CLI mode\n"
+                      << "  --session <path>        Session file (default: /tmp/sdf_raster.json)\n"
+                      << "  --export-mesh <path>    Convert scene to OBJ at <path> (headless only)\n"
+                      << "  --help                  Show this help\n";
             std::exit (EXIT_SUCCESS);
         }
     }
@@ -54,6 +60,10 @@ int main (int argc, char* argv []) {
             config.config_path = cli_argv [i + 1];
             cli_argv.erase (cli_argv.begin () + i, cli_argv.begin () + i + 2);
             cli_argc -= 2;
+        } else if (arg == "--export-mesh" && i + 1 < cli_argc) {
+            config.export_mesh_path = std::filesystem::path (cli_argv [i + 1]);
+            cli_argv.erase (cli_argv.begin () + i, cli_argv.begin () + i + 2);
+            cli_argc -= 2;
         } else if (arg == "--help") {
             std::cout << "Usage: " << argv [0] << " [options]\n"
                       << "  --headless        Run in CLI mode\n"
@@ -67,6 +77,11 @@ int main (int argc, char* argv []) {
 
     sdf_raster::SessionState session;
     sdf_raster::load_session (session, config.config_path);
+
+    if (config.export_mesh_path && !config.headless) {
+        LOG_WARN ("--export-mesh only works in headless mode; ignoring");
+        config.export_mesh_path.reset ();
+    }
 
     int exit_code = EXIT_SUCCESS;
     try {

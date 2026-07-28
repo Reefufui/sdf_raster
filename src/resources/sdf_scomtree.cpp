@@ -11,6 +11,7 @@
 #include <fstream>
 #include <stack>
 #include <future>
+#include <algorithm>
 
 namespace sdf_raster {
 
@@ -186,6 +187,19 @@ void SComTreeTreeDescriptorSetInfo::update_subtree_root_buffer_single (size_t su
     assert (subtree_index < all_subtrees.size ());
     this->subtree_count = 1;
     memcpy (this->subtrees_memory_mapped [fif_index], &all_subtrees [subtree_index], sizeof (SComTreeStackElement));
+}
+
+void SComTreeTreeDescriptorSetInfo::update_subtree_root_buffer_range (size_t start, size_t count, uint32_t fif_index) {
+    assert (this->scene);
+    auto all_subtrees = this->scene->collect_all_subtrees ();
+    if (start >= all_subtrees.size ()) {
+        this->subtree_count = 0;
+        return;
+    }
+    size_t end = std::min (start + count, all_subtrees.size ());
+    size_t actual_count = end - start;
+    this->subtree_count = actual_count;
+    memcpy (this->subtrees_memory_mapped [fif_index], &all_subtrees [start], actual_count * sizeof (SComTreeStackElement));
 }
 
 } // sdf_raster

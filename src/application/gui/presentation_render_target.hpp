@@ -35,6 +35,7 @@ public:
 
     VkCommandBuffer begin_frame (uint32_t a_frame_index) override;
     void end_frame (VkCommandBuffer a_cmd_buff, uint32_t a_frame_index) override;
+    void wait_for_frame (uint32_t a_frame_index) override;
     inline uint32_t get_max_frames_in_flight () const override { return this->max_frames_in_flight; }
     inline uint32_t get_current_image_index () const override { return this->acquired_image_index; }
     inline uint32_t get_swapchain_image_index () const { return this->acquired_image_index; }

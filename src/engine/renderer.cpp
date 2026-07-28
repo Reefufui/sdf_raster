@@ -2974,7 +2974,8 @@ void Renderer::export_mesh (const std::filesystem::path& path, Settings& setting
         const size_t i0 = old_to_new [trimmed_idxs [i + 0]];
         const size_t i1 = old_to_new [trimmed_idxs [i + 1]];
         const size_t i2 = old_to_new [trimmed_idxs [i + 2]];
-        if (i0 != SIZE_MAX && i1 != SIZE_MAX && i2 != SIZE_MAX) {
+        if (i0 != SIZE_MAX && i1 != SIZE_MAX && i2 != SIZE_MAX
+            && i0 != i1 && i1 != i2 && i0 != i2) {
             compact_idxs.push_back (static_cast <uint32_t> (i0));
             compact_idxs.push_back (static_cast <uint32_t> (i1));
             compact_idxs.push_back (static_cast <uint32_t> (i2));
@@ -3033,10 +3034,19 @@ void Renderer::export_mesh_chunked (const std::filesystem::path& path, Settings&
     size_t total_verts = 0;
     size_t total_indices = 0;
 
-    for (size_t i = 0; i < N; ++i) {
-        this->sdf_scomtree_ds->update_subtree_root_buffer_single (i, this->frame_index);
+    const size_t batch_size = 64;
+    const size_t num_batches = (N + batch_size - 1) / batch_size;
+    LOG_INFO ("[Renderer] export_mesh_chunked: {} batches of up to {} subtrees each", num_batches, batch_size);
 
-        VkCommandBuffer cmd_buff = this->render_target->begin_frame (this->frame_index);
+    const uint32_t max_fif = this->render_target->get_max_frames_in_flight ();
+
+    auto process_batch = [&] (size_t b, uint32_t target_fif) {
+        size_t start = b * batch_size;
+        size_t count = std::min (batch_size, N - start);
+
+        this->sdf_scomtree_ds->update_subtree_root_buffer_range (start, count, target_fif);
+
+        VkCommandBuffer cmd_buff = this->render_target->begin_frame (target_fif);
         if (cmd_buff == VK_NULL_HANDLE) {
             throw std::runtime_error ("export-mesh-chunked: begin_frame returned VK_NULL_HANDLE");
         }
@@ -3049,11 +3059,17 @@ void Renderer::export_mesh_chunked (const std::filesystem::path& path, Settings&
         this->marching_cubes_scomtree (cmd_buff);
         this->geometry_barrier (cmd_buff);
 
-        this->render_target->end_frame (cmd_buff, this->frame_index);
-        vkDeviceWaitIdle (this->context->get_device ());
+        this->render_target->end_frame (cmd_buff, target_fif);
+    };
 
-        const uint32_t active_leafs_count = this->active_leafs_ds->fetch_active_leaf_counter (this->frame_index);
-        Mesh mesh = this->mesh_ds->fetch_mesh_from_device (this->frame_index);
+    auto finalize_batch = [&] (size_t b, uint32_t target_fif, size_t& vertex_offset, size_t& total_verts, size_t& total_indices) -> std::pair <uint32_t, size_t> {
+        size_t start = b * batch_size;
+        size_t count = std::min (batch_size, N - start);
+
+        this->render_target->wait_for_frame (target_fif);
+
+        const uint32_t active_leafs_count = this->active_leafs_ds->fetch_active_leaf_counter (target_fif);
+        Mesh mesh = this->mesh_ds->fetch_mesh_from_device (target_fif);
 
         const size_t mesh_vert_capacity = mesh.get_vertices ().size ();
         const size_t mesh_index_capacity = mesh.get_indices ().size ();
@@ -3082,7 +3098,8 @@ void Renderer::export_mesh_chunked (const std::filesystem::path& path, Settings&
             const size_t i0 = old_to_new [trimmed_idxs [k + 0]];
             const size_t i1 = old_to_new [trimmed_idxs [k + 1]];
             const size_t i2 = old_to_new [trimmed_idxs [k + 2]];
-            if (i0 != SIZE_MAX && i1 != SIZE_MAX && i2 != SIZE_MAX) {
+            if (i0 != SIZE_MAX && i1 != SIZE_MAX && i2 != SIZE_MAX
+                && i0 != i1 && i1 != i2 && i0 != i2) {
                 compact_idxs.push_back (static_cast <uint32_t> (i0));
                 compact_idxs.push_back (static_cast <uint32_t> (i1));
                 compact_idxs.push_back (static_cast <uint32_t> (i2));
@@ -3097,8 +3114,33 @@ void Renderer::export_mesh_chunked (const std::filesystem::path& path, Settings&
         total_verts += mesh.get_vertices ().size ();
         total_indices += mesh.get_indices ().size ();
 
-        LOG_INFO ("[Renderer] export_mesh_chunked: subtree {}/{}: {} verts, {} triangles ({} active leaves)",
-            i + 1, N, mesh.get_vertices ().size (), mesh.get_indices ().size () / 3, active_leafs_count);
+        LOG_INFO ("[Renderer] export_mesh_chunked: batch {}/{} (subtrees {}-{}, fif={}): {} verts, {} triangles ({} active leaves)",
+            b + 1, num_batches, start + 1, start + count, target_fif,
+            mesh.get_vertices ().size (), mesh.get_indices ().size () / 3, active_leafs_count);
+
+        return { active_leafs_count, mesh.get_indices ().size () / 3 };
+    };
+
+    int prev_fif = -1;
+    int prev_b = -1;
+
+    for (size_t b = 0; b < num_batches; ++b) {
+        uint32_t target_fif = static_cast <uint32_t> (b % max_fif);
+
+        if (prev_b >= 0) {
+            this->frame_index = static_cast <uint32_t> (prev_fif);
+            finalize_batch (static_cast <size_t> (prev_b), static_cast <uint32_t> (prev_fif), vertex_offset, total_verts, total_indices);
+        }
+
+        this->frame_index = target_fif;
+        process_batch (b, target_fif);
+
+        prev_fif = static_cast <int> (target_fif);
+        prev_b = static_cast <int> (b);
+    }
+
+    if (prev_b >= 0) {
+        finalize_batch (static_cast <size_t> (prev_b), static_cast <uint32_t> (prev_fif), vertex_offset, total_verts, total_indices);
     }
 
     LOG_INFO ("[Renderer] export_mesh_chunked: total {} verts, {} indices ({} triangles) from {} subtrees",

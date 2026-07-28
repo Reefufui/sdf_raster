@@ -127,6 +127,11 @@ VkCommandBuffer PresentationRenderTarget::begin_frame (uint32_t frame_idx) {
     return frame.command_buffer;
 }
 
+void PresentationRenderTarget::wait_for_frame (uint32_t frame_idx) {
+    auto& frame = frame_resources [frame_idx];
+    vkWaitForFences (this->context->get_device (), 1, &frame.in_flight_fence, VK_TRUE, UINT64_MAX);
+}
+
 void PresentationRenderTarget::end_frame (VkCommandBuffer command_buffer, uint32_t frame_idx) {
     auto& frame = frame_resources [frame_idx];
 

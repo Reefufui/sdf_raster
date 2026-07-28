@@ -249,6 +249,11 @@ void OffscreenRenderTarget::end_frame (VkCommandBuffer cmd_buff, uint32_t frame_
     frame.timestamps_consumed = false;
 }
 
+void OffscreenRenderTarget::wait_for_frame (uint32_t frame_idx) {
+    auto& frame = this->frame_resources [frame_idx];
+    vkWaitForFences (this->context->get_device (), 1, &frame.fence, VK_TRUE, UINT64_MAX);
+}
+
 void OffscreenRenderTarget::collect_frame_timestamp (FrameResources& frame) {
     if (!frame.has_valid_timestamps || frame.timestamps_consumed) {
         return;

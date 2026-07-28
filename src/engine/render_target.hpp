@@ -31,6 +31,7 @@ public:
 
     virtual VkCommandBuffer begin_frame (uint32_t frame_idx) = 0;
     virtual void end_frame (VkCommandBuffer cmd_buff, uint32_t frame_idx) = 0;
+    virtual void wait_for_frame (uint32_t frame_idx) = 0;
 
     virtual uint32_t get_current_image_index () const { return 0; }
 

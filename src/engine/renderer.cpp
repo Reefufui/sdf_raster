@@ -3014,6 +3014,16 @@ void Renderer::export_mesh_chunked (const std::filesystem::path& path, Settings&
     LOG_INFO ("[Renderer] export_mesh_chunked: {} subtrees at cpu depth {} (scene max depth {})",
         N, cpu_traversed_depth, state.octree_depth);
 
+    this->destroy_pipelines ();
+    this->sdf_scomtree_ds = std::make_unique <SComTreeTreeDescriptorSetInfo> (this->context->get_device ()
+        , this->context->get_physical_device ()
+        , this->context->get_copy_helper ()
+        , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_MESH_BIT_EXT
+        , scomtree_scene
+        , this->render_target->get_max_frames_in_flight ()
+    );
+    this->create_required_pipelines ();
+
     this->update (0, settings, 0.0f);
 
     this->push_constants.lod_mode = static_cast <uint> (LODMode::Fixed);

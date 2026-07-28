@@ -2877,6 +2877,9 @@ void Renderer::export_mesh (const std::filesystem::path& path, Settings& setting
 
     this->update (0, settings, 0.0f);
 
+    this->push_constants.lod_mode = static_cast <uint> (LODMode::Fixed);
+    this->push_constants.fixed_lod = this->push_constants.max_lod;
+
     this->push_constants.frustum_culling_level = 1;
     this->push_constants.occlusion_culling_level = 1;
 

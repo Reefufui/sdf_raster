@@ -2915,7 +2915,34 @@ void Renderer::export_mesh (const std::filesystem::path& path, Settings& setting
 
     std::vector <::Vertex> trimmed_verts (mesh.get_vertices ().begin (), mesh.get_vertices ().begin () + actual_vert_count);
     std::vector <uint32_t> trimmed_idxs (mesh.get_indices ().begin (), mesh.get_indices ().begin () + actual_index_count);
-    mesh.set_data (std::move (trimmed_verts), std::move (trimmed_idxs));
+
+    const size_t trimmed_vert_count = trimmed_verts.size ();
+    std::vector <size_t> old_to_new (trimmed_vert_count, SIZE_MAX);
+    std::vector <::Vertex> compact_verts;
+    compact_verts.reserve (trimmed_vert_count);
+
+    for (size_t i = 0; i < trimmed_vert_count; ++i) {
+        const auto& v = trimmed_verts [i];
+        if (v.position.x != 0.0f || v.position.y != 0.0f || v.position.z != 0.0f) {
+            old_to_new [i] = compact_verts.size ();
+            compact_verts.push_back (v);
+        }
+    }
+
+    std::vector <uint32_t> compact_idxs;
+    compact_idxs.reserve (trimmed_idxs.size ());
+    for (size_t i = 0; i + 2 < trimmed_idxs.size (); i += 3) {
+        const size_t i0 = old_to_new [trimmed_idxs [i + 0]];
+        const size_t i1 = old_to_new [trimmed_idxs [i + 1]];
+        const size_t i2 = old_to_new [trimmed_idxs [i + 2]];
+        if (i0 != SIZE_MAX && i1 != SIZE_MAX && i2 != SIZE_MAX) {
+            compact_idxs.push_back (static_cast <uint32_t> (i0));
+            compact_idxs.push_back (static_cast <uint32_t> (i1));
+            compact_idxs.push_back (static_cast <uint32_t> (i2));
+        }
+    }
+
+    mesh.set_data (std::move (compact_verts), std::move (compact_idxs));
 
     LOG_INFO ("[Renderer] export_mesh: trimmed to {} verts, {} indices ({} triangles) from {} active leaves (capacity was {} / {})",
         mesh.get_vertices ().size (), mesh.get_indices ().size (), mesh.get_indices ().size () / 3,

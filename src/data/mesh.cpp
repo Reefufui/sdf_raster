@@ -4,6 +4,8 @@
 #include "vk_buffers.h"
 #include "mesh.hpp"
 
+#include <algorithm>
+
 namespace sdf_raster {
 
 Mesh::Mesh() {
@@ -197,6 +199,23 @@ Mesh MeshDescriptorSetInfo::fetch_mesh_from_device (size_t fif_index) {
 
     this->copy_helper->ReadBuffer (this->indices_buffers [fif_index], 0, idxs.data (), sizeof (uint32_t) * this->indices_count);
     this->copy_helper->ReadBuffer (this->vertices_buffers [fif_index], 0, verts.data (), sizeof (Vertex) * this->vertices_count);
+
+    return {std::move (idxs), std::move (verts)};
+}
+
+Mesh MeshDescriptorSetInfo::fetch_mesh_from_device_partial (size_t fif_index, size_t verts_to_read, size_t idxs_to_read) {
+    verts_to_read = std::min (verts_to_read, this->vertices_count);
+    idxs_to_read = std::min (idxs_to_read, this->indices_count);
+
+    std::vector <uint32_t> idxs (idxs_to_read);
+    std::vector <Vertex> verts (verts_to_read);
+
+    if (idxs_to_read > 0) {
+        this->copy_helper->ReadBuffer (this->indices_buffers [fif_index], 0, idxs.data (), sizeof (uint32_t) * idxs_to_read);
+    }
+    if (verts_to_read > 0) {
+        this->copy_helper->ReadBuffer (this->vertices_buffers [fif_index], 0, verts.data (), sizeof (Vertex) * verts_to_read);
+    }
 
     return {std::move (idxs), std::move (verts)};
 }

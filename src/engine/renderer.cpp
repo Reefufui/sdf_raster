@@ -3069,12 +3069,14 @@ void Renderer::export_mesh_chunked (const std::filesystem::path& path, Settings&
         this->render_target->wait_for_frame (target_fif);
 
         const uint32_t active_leafs_count = this->active_leafs_ds->fetch_active_leaf_counter (target_fif);
-        Mesh mesh = this->mesh_ds->fetch_mesh_from_device (target_fif);
+        Mesh mesh = this->mesh_ds->fetch_mesh_from_device_partial (target_fif,
+            static_cast <size_t> (active_leafs_count) * MAX_BRICK_VERTS,
+            static_cast <size_t> (active_leafs_count) * MAX_BRICK_PRIMS * 3);
 
         const size_t mesh_vert_capacity = mesh.get_vertices ().size ();
         const size_t mesh_index_capacity = mesh.get_indices ().size ();
-        const size_t actual_vert_count = std::min <size_t> (static_cast <size_t> (active_leafs_count) * MAX_BRICK_VERTS, mesh_vert_capacity);
-        const size_t actual_index_count = std::min <size_t> (static_cast <size_t> (active_leafs_count) * MAX_BRICK_PRIMS * 3, mesh_index_capacity);
+        const size_t actual_vert_count = mesh_vert_capacity;
+        const size_t actual_index_count = mesh_index_capacity;
 
         std::vector <::Vertex> trimmed_verts (mesh.get_vertices ().begin (), mesh.get_vertices ().begin () + actual_vert_count);
         std::vector <uint32_t> trimmed_idxs (mesh.get_indices ().begin (), mesh.get_indices ().begin () + actual_index_count);

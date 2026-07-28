@@ -69,6 +69,7 @@ public:
 
     LiteMath::uint fetch_insufficent_mem_flag ();
     Mesh fetch_mesh_from_device (size_t fif_index);
+    Mesh fetch_mesh_from_device_partial (size_t fif_index, size_t verts_to_read, size_t idxs_to_read);
 
 private:
     VkDevice device = VK_NULL_HANDLE;

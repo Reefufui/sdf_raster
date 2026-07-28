@@ -68,6 +68,37 @@ void save_mesh_as_obj (const Mesh& mesh, const std::string& filename) {
     printf ("Saved mesh to '%s'.\n", filename.c_str ());
 }
 
+void save_mesh_as_obj_append (const Mesh& mesh, const std::string& filename, uint32_t vertex_offset) {
+    std::ofstream out (filename, std::ios::app);
+    if (!out) {
+        throw std::runtime_error ("Failed to open file for append: " + filename);
+    }
+
+    const auto& vertices = mesh.get_vertices ();
+    const auto& indices  = mesh.get_indices ();
+
+    for (const auto& v : vertices) {
+        out << "v "
+            << v.position.x << " " << v.position.y << " " << v.position.z
+            << "\n";
+    }
+    for (const auto& v : vertices) {
+        out << "vn "
+            << v.normal.x << " " << v.normal.y << " " << v.normal.z
+            << "\n";
+    }
+
+    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        uint32_t i0 = indices[i + 0] + 1 + vertex_offset;
+        uint32_t i1 = indices[i + 1] + 1 + vertex_offset;
+        uint32_t i2 = indices[i + 2] + 1 + vertex_offset;
+        out << "f "
+            << i0 << "//" << i0 << " "
+            << i1 << "//" << i1 << " "
+            << i2 << "//" << i2 << "\n";
+    }
+}
+
 MeshDescriptorSetInfo::MeshDescriptorSetInfo (VkDevice device
     , VkPhysicalDevice physical_device
     , std::shared_ptr <vk_utils::ICopyEngine> copy_helper

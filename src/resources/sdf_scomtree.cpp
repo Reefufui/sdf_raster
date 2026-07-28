@@ -180,4 +180,12 @@ void SComTreeTreeDescriptorSetInfo::update_subtree_root_buffer_all (uint32_t fif
     }
 }
 
+void SComTreeTreeDescriptorSetInfo::update_subtree_root_buffer_single (size_t subtree_index, uint32_t fif_index) {
+    assert (this->scene);
+    auto all_subtrees = this->scene->collect_all_subtrees ();
+    assert (subtree_index < all_subtrees.size ());
+    this->subtree_count = 1;
+    memcpy (this->subtrees_memory_mapped [fif_index], &all_subtrees [subtree_index], sizeof (SComTreeStackElement));
+}
+
 } // sdf_raster

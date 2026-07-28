@@ -40,6 +40,7 @@ private:
 };
 
 void save_mesh_as_obj (const Mesh& mesh, const std::string& filename);
+void save_mesh_as_obj_append (const Mesh& mesh, const std::string& filename, uint32_t vertex_offset);
 
 class MeshDescriptorSetInfo {
 public:

@@ -47,7 +47,7 @@ public:
 
     Mesh generate_voxel_mesh () const;
 
-protected:
+public:
     void invalidate_cache () override;
 
 private:

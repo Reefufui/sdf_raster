@@ -39,6 +39,8 @@ struct CLIArguments {
     std::optional <uint32_t> warmup_frames;
     std::optional <uint32_t> measurement_frames;
     std::optional <std::filesystem::path> export_mesh_path;
+    std::optional <int> export_mesh_max_lod;
+    std::optional <int> export_mesh_cpu_depth;
 };
 
 class CLIApplication {
@@ -58,7 +60,7 @@ private:
                         double timestamp_period);
     void drain_pending_frames (std::shared_ptr <OffscreenRenderTarget> render_target);
     void run_benchmark (const BenchmarkConfig& config);
-    void run_export (const std::filesystem::path& output_path, const std::filesystem::path& scene_path);
+    void run_export (const std::filesystem::path& output_path, const std::filesystem::path& scene_path, int max_lod_override = -1, int cpu_depth_override = -1);
 
     SessionState session;
     int argc = 0;

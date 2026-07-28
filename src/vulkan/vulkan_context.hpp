@@ -30,6 +30,7 @@ public:
     inline uint32_t get_graphics_queue_family_index () const { return this->device_queue_ids.graphics; }
     inline std::shared_ptr <vk_utils::ICopyEngine> get_copy_helper () const { return this->copy_helper; }
     inline bool get_use_mesh_shading () const { return this->use_mesh_shading; }
+    inline VkDeviceSize get_max_memory_allocation_size () const { return this->max_memory_allocation_size; }
 
 private:
     void create_instance ();
@@ -60,6 +61,7 @@ private:
 
     bool use_mesh_shading;
     VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_properties;
+    VkDeviceSize max_memory_allocation_size = 0;
 
     bool initialized = false;
 };

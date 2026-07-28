@@ -2680,6 +2680,31 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
 
     const auto method = scene->get_state ().draw_method;
 
+    // Per-method active_leafs_max_count: scomtree writes 96 verts/indices per leaf
+    // (per-brick stride) vs octree's 12, so scomtree needs ~8x more GPU memory.
+    // Cap to fit within VkPhysicalDeviceLimits::maxMemoryAllocationSize (3.2 GB on
+    // macOS MoltenVK) so the per-frame buffer allocation does not exceed it.
+    {
+        const bool is_scomtree = (method == DrawMethod::SComTreeCompute
+            || method == DrawMethod::SComTreeComputeDeferred
+            || method == DrawMethod::SComTreeMesh
+            || method == DrawMethod::SComTreeMeshDeferred);
+        const VkDeviceSize per_leaf_bytes = is_scomtree
+            ? (VkDeviceSize (MAX_BRICK_VERTS) * sizeof (Vertex) + VkDeviceSize (MAX_BRICK_PRIMS) * 3 * sizeof (uint32_t))
+            : (VkDeviceSize (MAX_LEAF_VERTS)  * sizeof (Vertex) + VkDeviceSize (MAX_LEAF_PRIMS)  * 3 * sizeof (uint32_t));
+        const VkDeviceSize fif = std::max <VkDeviceSize> (1, VkDeviceSize (this->render_target->get_max_frames_in_flight ()));
+        // 80% of device limit for the mesh buffer; rest goes to other GPU resources.
+        const VkDeviceSize usable = (this->context->get_max_memory_allocation_size () * 8) / 10;
+        const VkDeviceSize safe_max_leafs = (per_leaf_bytes > 0) ? (usable / (per_leaf_bytes * fif)) : 0;
+        const uint32_t requested = this->push_constants.active_leafs_max_count;
+        if (safe_max_leafs > 0 && safe_max_leafs < requested) {
+            this->push_constants.active_leafs_max_count = static_cast <uint32_t> (safe_max_leafs);
+            LOG_WARN ("[{}] Lowered active_leafs_max_count from {} to {} for {} (device memory cap)",
+                RENDERER_NAME, requested, this->push_constants.active_leafs_max_count,
+                is_scomtree ? "scomtree" : "octree");
+        }
+    }
+
     if (method == DrawMethod::ExplicitDeferred || method == DrawMethod::SComTreeComputeDeferred || method == DrawMethod::SComTreeMeshDeferred) {
         this->deferred_shading = std::make_unique <DeferredShading> (this->context->get_device ()
             , this->context->get_physical_device ()
@@ -2693,8 +2718,15 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
     }
 
     if (method == DrawMethod::SComTreeCompute || method == DrawMethod::SComTreeComputeDeferred
-        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred
-        || method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
+        || method == DrawMethod::SComTreeMesh || method == DrawMethod::SComTreeMeshDeferred) {
+        this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
+            , this->context->get_physical_device ()
+            , this->context->get_copy_helper ()
+            , VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+            , this->push_constants.active_leafs_max_count * MAX_BRICK_VERTS
+            , this->push_constants.active_leafs_max_count * MAX_BRICK_PRIMS * 3
+            , this->render_target->get_max_frames_in_flight ());
+    } else if (method == DrawMethod::OctreeCompute || method == DrawMethod::OctreeMesh) {
         this->mesh_ds = std::make_unique <MeshDescriptorSetInfo> (this->context->get_device ()
             , this->context->get_physical_device ()
             , this->context->get_copy_helper ()
@@ -2861,7 +2893,7 @@ void Renderer::apply_scene_config (std::shared_ptr <Scene> scene) {
     // LOG_INFO ("[{}] Rendering pipeline set to: {}", RENDERER_NAME, this->current_scene->get_state ().draw_method);
 }
 
-void Renderer::export_mesh (const std::filesystem::path& path, Settings& settings) {
+void Renderer::export_mesh (const std::filesystem::path& path, Settings& settings, int max_lod_override) {
     auto scomtree_scene = std::dynamic_pointer_cast <SComTreeScene> (this->current_scene);
     if (!scomtree_scene) {
         throw std::runtime_error ("export-mesh currently supports only scomtree scenes");
@@ -2878,7 +2910,11 @@ void Renderer::export_mesh (const std::filesystem::path& path, Settings& setting
     this->update (0, settings, 0.0f);
 
     this->push_constants.lod_mode = static_cast <uint> (LODMode::Fixed);
-    this->push_constants.fixed_lod = this->push_constants.max_lod;
+    if (max_lod_override >= 0) {
+        this->push_constants.fixed_lod = std::min <int> (max_lod_override, this->push_constants.max_lod);
+    } else {
+        this->push_constants.fixed_lod = this->push_constants.max_lod;
+    }
 
     this->push_constants.frustum_culling_level = 1;
     this->push_constants.occlusion_culling_level = 1;
@@ -2952,6 +2988,121 @@ void Renderer::export_mesh (const std::filesystem::path& path, Settings& setting
         active_leafs_count, mesh_vert_capacity, mesh_index_capacity);
 
     save_mesh_as_obj (mesh, path.string ());
+}
+
+void Renderer::export_mesh_chunked (const std::filesystem::path& path, Settings& settings, int cpu_traversed_depth, int max_lod_override) {
+    auto scomtree_scene = std::dynamic_pointer_cast <SComTreeScene> (this->current_scene);
+    if (!scomtree_scene) {
+        throw std::runtime_error ("export-mesh-chunked currently supports only scomtree scenes");
+    }
+
+    if (!this->sdf_scomtree_ds || !this->mesh_ds || !this->active_leafs_ds) {
+        throw std::runtime_error ("export-mesh-chunked requires a scomtree scene with marching cubes buffers; call apply_scene_config first");
+    }
+
+    if (this->render_target->get_max_frames_in_flight () == 0) {
+        throw std::runtime_error ("export-mesh-chunked requires a render target with at least one frame in flight");
+    }
+
+    auto& state = scomtree_scene->get_state ();
+    state.cpu_traversed = cpu_traversed_depth;
+    scomtree_scene->invalidate_cache ();
+
+    auto all_subtrees = scomtree_scene->collect_all_subtrees ();
+    const size_t N = all_subtrees.size ();
+    LOG_INFO ("[Renderer] export_mesh_chunked: {} subtrees at cpu depth {} (scene max depth {})",
+        N, cpu_traversed_depth, state.octree_depth);
+
+    this->update (0, settings, 0.0f);
+
+    this->push_constants.lod_mode = static_cast <uint> (LODMode::Fixed);
+    if (max_lod_override >= 0) {
+        this->push_constants.fixed_lod = std::min <int> (max_lod_override, this->push_constants.max_lod);
+    } else {
+        this->push_constants.fixed_lod = this->push_constants.max_lod;
+    }
+
+    this->push_constants.frustum_culling_level = 1;
+    this->push_constants.occlusion_culling_level = 1;
+
+    {
+        std::ofstream trunc (path);
+    }
+
+    size_t vertex_offset = 0;
+    size_t total_verts = 0;
+    size_t total_indices = 0;
+
+    for (size_t i = 0; i < N; ++i) {
+        this->sdf_scomtree_ds->update_subtree_root_buffer_single (i, this->frame_index);
+
+        VkCommandBuffer cmd_buff = this->render_target->begin_frame (this->frame_index);
+        if (cmd_buff == VK_NULL_HANDLE) {
+            throw std::runtime_error ("export-mesh-chunked: begin_frame returned VK_NULL_HANDLE");
+        }
+
+        this->copy_subtrees (cmd_buff);
+        this->reset_active_leafs_counter (cmd_buff);
+        this->traverse_scomtree (cmd_buff);
+        this->clear_geometry (cmd_buff);
+        this->prepare_indirect (cmd_buff, uint32_t {BRICKS_PER_COMPUTE_WORKGROUP});
+        this->marching_cubes_scomtree (cmd_buff);
+        this->geometry_barrier (cmd_buff);
+
+        this->render_target->end_frame (cmd_buff, this->frame_index);
+        vkDeviceWaitIdle (this->context->get_device ());
+
+        const uint32_t active_leafs_count = this->active_leafs_ds->fetch_active_leaf_counter (this->frame_index);
+        Mesh mesh = this->mesh_ds->fetch_mesh_from_device (this->frame_index);
+
+        const size_t mesh_vert_capacity = mesh.get_vertices ().size ();
+        const size_t mesh_index_capacity = mesh.get_indices ().size ();
+        const size_t actual_vert_count = std::min <size_t> (static_cast <size_t> (active_leafs_count) * MAX_BRICK_VERTS, mesh_vert_capacity);
+        const size_t actual_index_count = std::min <size_t> (static_cast <size_t> (active_leafs_count) * MAX_BRICK_PRIMS * 3, mesh_index_capacity);
+
+        std::vector <::Vertex> trimmed_verts (mesh.get_vertices ().begin (), mesh.get_vertices ().begin () + actual_vert_count);
+        std::vector <uint32_t> trimmed_idxs (mesh.get_indices ().begin (), mesh.get_indices ().begin () + actual_index_count);
+
+        const size_t trimmed_vert_count = trimmed_verts.size ();
+        std::vector <size_t> old_to_new (trimmed_vert_count, SIZE_MAX);
+        std::vector <::Vertex> compact_verts;
+        compact_verts.reserve (trimmed_vert_count);
+
+        for (size_t k = 0; k < trimmed_vert_count; ++k) {
+            const auto& v = trimmed_verts [k];
+            if (v.position.x != 0.0f || v.position.y != 0.0f || v.position.z != 0.0f) {
+                old_to_new [k] = compact_verts.size ();
+                compact_verts.push_back (v);
+            }
+        }
+
+        std::vector <uint32_t> compact_idxs;
+        compact_idxs.reserve (trimmed_idxs.size ());
+        for (size_t k = 0; k + 2 < trimmed_idxs.size (); k += 3) {
+            const size_t i0 = old_to_new [trimmed_idxs [k + 0]];
+            const size_t i1 = old_to_new [trimmed_idxs [k + 1]];
+            const size_t i2 = old_to_new [trimmed_idxs [k + 2]];
+            if (i0 != SIZE_MAX && i1 != SIZE_MAX && i2 != SIZE_MAX) {
+                compact_idxs.push_back (static_cast <uint32_t> (i0));
+                compact_idxs.push_back (static_cast <uint32_t> (i1));
+                compact_idxs.push_back (static_cast <uint32_t> (i2));
+            }
+        }
+
+        mesh.set_data (std::move (compact_verts), std::move (compact_idxs));
+
+        save_mesh_as_obj_append (mesh, path.string (), static_cast <uint32_t> (vertex_offset));
+
+        vertex_offset += mesh.get_vertices ().size ();
+        total_verts += mesh.get_vertices ().size ();
+        total_indices += mesh.get_indices ().size ();
+
+        LOG_INFO ("[Renderer] export_mesh_chunked: subtree {}/{}: {} verts, {} triangles ({} active leaves)",
+            i + 1, N, mesh.get_vertices ().size (), mesh.get_indices ().size () / 3, active_leafs_count);
+    }
+
+    LOG_INFO ("[Renderer] export_mesh_chunked: total {} verts, {} indices ({} triangles) from {} subtrees",
+        total_verts, total_indices, total_indices / 3, N);
 }
 
 } // namespace sdf_raster

@@ -268,14 +268,20 @@ void VulkanContext::create_device () {
     mesh_shader_properties_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
     mesh_shader_properties_query.pNext = nullptr;
 
+    VkPhysicalDeviceVulkan11Properties vulkan11_properties_query {};
+    vulkan11_properties_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
+    vulkan11_properties_query.pNext = &mesh_shader_properties_query;
+
     device_features_2.pNext = pNext_query_chain;
 
     vkGetPhysicalDeviceFeatures2 (this->get_physical_device (), &device_features_2);
 
     VkPhysicalDeviceProperties2 properties_2 {};
     properties_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-    properties_2.pNext = &mesh_shader_properties_query;
+    properties_2.pNext = &vulkan11_properties_query;
     vkGetPhysicalDeviceProperties2 (this->get_physical_device (), &properties_2);
+
+    this->max_memory_allocation_size = vulkan11_properties_query.maxMemoryAllocationSize;
 
     if (!device_features_2.features.wideLines) {
         LOG_WARN ("[VulkanContext] Physical device does NOT support wideLines. Defaulting to lineWidth = 1.0.");

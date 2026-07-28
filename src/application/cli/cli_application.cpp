@@ -33,7 +33,9 @@ int CLIApplication::run () {
         } else {
             throw std::runtime_error ("export-mesh: no scene path. Use --scene <path> or pass the scene as positional arg.");
         }
-        this->run_export (*args.export_mesh_path, scene_path);
+        this->run_export (*args.export_mesh_path, scene_path,
+            args.export_mesh_max_lod.value_or (-1),
+            args.export_mesh_cpu_depth.value_or (-1));
         return 0;
     }
 
@@ -79,6 +81,14 @@ CLIArguments CLIApplication::parse_args (int argc, char* argv[]) {
         } else if (arg == "--export-mesh" || arg == "-e") {
             if (++i < argc) {
                 args.export_mesh_path = std::filesystem::path (argv [i]);
+            }
+        } else if (arg == "--export-mesh-max-lod") {
+            if (++i < argc) {
+                args.export_mesh_max_lod = std::stoi (argv [i]);
+            }
+        } else if (arg == "--export-mesh-cpu-depth") {
+            if (++i < argc) {
+                args.export_mesh_cpu_depth = std::stoi (argv [i]);
             }
         } else {
             args.scene_path = std::filesystem::path (arg);
@@ -217,7 +227,7 @@ void CLIApplication::run_benchmark (const BenchmarkConfig& config) {
     vulkan_context->shutdown ();
 }
 
-void CLIApplication::run_export (const std::filesystem::path& output_path, const std::filesystem::path& scene_path) {
+void CLIApplication::run_export (const std::filesystem::path& output_path, const std::filesystem::path& scene_path, int max_lod_override, int cpu_depth_override) {
     LOG_INFO ("[Export] Scene: {} -> Output: {}", scene_path.string (), output_path.string ());
 
     auto vulkan_context = std::make_shared <VulkanContext> ();
@@ -241,7 +251,11 @@ void CLIApplication::run_export (const std::filesystem::path& output_path, const
     auto renderer = std::make_unique <Renderer> (vulkan_context, render_target);
     renderer->apply_scene_config (scene);
 
-    renderer->export_mesh (output_path, this->session.settings);
+    if (cpu_depth_override >= 0) {
+        renderer->export_mesh_chunked (output_path, this->session.settings, cpu_depth_override, max_lod_override);
+    } else {
+        renderer->export_mesh (output_path, this->session.settings, max_lod_override);
+    }
 
     renderer.reset ();
     render_target.reset ();

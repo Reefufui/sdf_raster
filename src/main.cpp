@@ -45,25 +45,32 @@ AppConfig parse_args (int argc, char* argv []) {
 int main (int argc, char* argv []) {
     sdf_raster::log_app_start ();
 
-    int cli_argc = argc;
-    std::vector <char*> cli_argv (argv, argv + argc);
-
     sdf_raster::AppConfig config;
-    int i = 1;
-    while (i < cli_argc) {
-        std::string arg = cli_argv [i];
+    std::vector<std::string> remaining_args;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv [i];
         if (arg == "--headless") {
             config.headless = true;
-            cli_argv.erase (cli_argv.begin () + i);
-            cli_argc--;
-        } else if (arg == "--session" && i + 1 < cli_argc) {
-            config.config_path = cli_argv [i + 1];
-            cli_argv.erase (cli_argv.begin () + i, cli_argv.begin () + i + 2);
-            cli_argc -= 2;
-        } else if (arg == "--export-mesh" && i + 1 < cli_argc) {
-            config.export_mesh_path = std::filesystem::path (cli_argv [i + 1]);
-            cli_argv.erase (cli_argv.begin () + i, cli_argv.begin () + i + 2);
-            cli_argc -= 2;
+        } else if (arg == "--session" && i + 1 < argc) {
+            config.config_path = argv [++i];
+        } else if (arg == "--export-mesh") {
+            if (i + 1 < argc) {
+                config.export_mesh_path = std::filesystem::path (argv [i + 1]);
+            }
+            remaining_args.push_back (arg);
+            if (i + 1 < argc) {
+                remaining_args.push_back (argv [++i]);
+            }
+        } else if (arg == "--export-mesh-cpu-depth") {
+            remaining_args.push_back (arg);
+            if (i + 1 < argc) {
+                remaining_args.push_back (argv [++i]);
+            }
+        } else if (arg == "--export-mesh-max-lod") {
+            remaining_args.push_back (arg);
+            if (i + 1 < argc) {
+                remaining_args.push_back (argv [++i]);
+            }
         } else if (arg == "--help") {
             std::cout << "Usage: " << argv [0] << " [options]\n"
                       << "  --headless              Run in CLI mode\n"
@@ -72,9 +79,21 @@ int main (int argc, char* argv []) {
                       << "  --help                  Show this help\n";
             std::exit (EXIT_SUCCESS);
         } else {
-            ++i;
+            remaining_args.push_back (arg);
         }
     }
+
+    int cli_argc = static_cast<int> (remaining_args.size ());
+    std::vector<std::string> full_args;
+    full_args.push_back ("sdf_raster");
+    for (auto& s : remaining_args) {
+        full_args.push_back (s);
+    }
+    std::vector<char*> cli_argv_ptrs;
+    for (auto& s : full_args) {
+        cli_argv_ptrs.push_back (s.data ());
+    }
+    cli_argc = static_cast<int> (full_args.size ());
 
     sdf_raster::SessionState session;
     sdf_raster::load_session (session, config.config_path);
@@ -87,7 +106,7 @@ int main (int argc, char* argv []) {
     int exit_code = EXIT_SUCCESS;
     try {
         if (config.headless) {
-            sdf_raster::CLIApplication app (session, cli_argc, cli_argv.data ());
+            sdf_raster::CLIApplication app (session, cli_argc, cli_argv_ptrs.data ());
             exit_code = app.run ();
         } else {
             sdf_raster::GUIApplication app (session);

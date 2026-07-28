@@ -41,7 +41,8 @@ public:
     void render (VkCommandBuffer cmd_buff);
     void process_commands (std::queue <std::function<void()>>& commands, std::mutex& mutex);
     void apply_scene_config (std::shared_ptr <Scene> scene);
-    void export_mesh (const std::filesystem::path& path, Settings& settings);
+    void export_mesh (const std::filesystem::path& path, Settings& settings, int max_lod_override = -1);
+    void export_mesh_chunked (const std::filesystem::path& path, Settings& settings, int cpu_traversed_depth, int max_lod_override = -1);
     const Stats& get_stats ();
     void resize ();
 
